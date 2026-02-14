@@ -1,0 +1,43 @@
+package templates
+
+import "github.com/wadahiro/fedlens/internal/ui/templates/components"
+
+// SAMLSignatureData holds signature info for display.
+type SAMLSignatureData struct {
+	Title string
+	Rows  []components.SignatureRow
+}
+
+// SAMLDebugData holds all data for the SAML post-login page.
+type SAMLDebugData struct {
+	Name            string
+	Attributes      []components.ClaimRow
+	Signatures      []SAMLSignatureData
+	AuthnRequestXML string
+	SAMLResponseXML string
+	IDPMetadataXML  string
+}
+
+templ SAMLDebug(tabs []NavTab, data SAMLDebugData) {
+	@Layout("SAML - " + data.Name) {
+		@Nav(tabs)
+		<hgroup>
+			<h1>Logged in</h1>
+			<p>SAML SP: { data.Name }</p>
+		</hgroup>
+		<a href="/logout" role="button" class="outline">Logout</a>
+		@components.ClaimsTable("saml-attributes", "Attributes", data.Attributes)
+		for _, sig := range data.Signatures {
+			@components.SignatureTable(sig.Title, sig.Rows)
+		}
+		if data.AuthnRequestXML != "" {
+			@components.XMLCodeBlock("AuthnRequest", data.AuthnRequestXML)
+		}
+		if data.SAMLResponseXML != "" {
+			@components.XMLCodeBlock("SAML Response", data.SAMLResponseXML)
+		}
+		if data.IDPMetadataXML != "" {
+			@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
+		}
+	}
+}

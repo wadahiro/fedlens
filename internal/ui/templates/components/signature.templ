@@ -1,0 +1,27 @@
+package components
+
+// SignatureRow represents a single signature info key-value pair.
+type SignatureRow struct {
+	Label string
+	Value string
+}
+
+templ SignatureTable(title string, rows []SignatureRow) {
+	<article>
+		<header>{ title }</header>
+		<div class="overflow-auto">
+			<table>
+				<tbody>
+					for _, row := range rows {
+						if row.Value != "" {
+							<tr>
+								<td>{ row.Label }</td>
+								<td>{ row.Value }</td>
+							</tr>
+						}
+					}
+				</tbody>
+			</table>
+		</div>
+	</article>
+}

@@ -6,30 +6,37 @@ A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **Op
 
 ### OIDC (OpenID Connect)
 
+- **Authorization Code Flow** with optional **PKCE** support (S256 / plain)
 - **ID Token Claims** table with timestamp formatting
 - **Access Token Claims** table (when JWT)
 - **UserInfo Claims** table
-- **Signature Verification** details for ID Token and Access Token (algorithm, key ID, JWKS key info)
-- **Authorization Request / Response** raw display
-- **Token Response** (full JSON)
-- **ID Token / Access Token** decoded header and payload
-- **UserInfo Response** (full JSON)
-- **JWKS Response** (full JSON)
-- **OpenID Provider Configuration** (discovery metadata)
+- **Signature Verification** details (algorithm, key ID, JWKS key info)
+- **Token Refresh Flow** with before/after comparison
+- **Custom Scopes**, **Response Mode**, and **Extra Auth Parameters**
+- Authorization Request / Response, Token Response, JWKS, Discovery metadata display
+- **Sequence Diagram** showing the Authorization Code Flow
 
 ### SAML
 
+- **SP-initiated SSO** (HTTP-Redirect and HTTP-POST bindings)
+- **IdP-initiated SSO** support
 - **Attributes** table
-- **Signature Verification** details for Response and Assertion (algorithm, digest, certificate info, fingerprint)
-- **AuthnRequest XML** (formatted)
-- **SAML Response XML** (formatted)
-- **IdP Metadata** (formatted XML)
+- **Signature Verification** details for Response and Assertion
+- **External Certificate** support (load from file) or auto-generated self-signed cert
+- AuthnRequest XML, SAML Response XML, IdP Metadata display
+- **Sequence Diagram** showing the SP-Initiated SSO flow
 
 ### General
 
-- Navigation tabs to switch between OIDC and SAML views
-- All protocol data visible on both pre-login and post-login screens
+- **Multiple SP/RP** support via TOML configuration
+- **Tab Navigation** to switch between multiple OIDC RPs and SAML SPs
+- **Dark Mode** toggle with system preference detection
+- **Syntax Highlighting** for JSON and XML (Prism.js)
+- **Copy Buttons** on all code blocks
+- **Collapsible Sections** with state persistence
 - Single binary, Docker-ready
+- Structured logging (`log/slog`) with configurable log level
+- Graceful shutdown (SIGINT / SIGTERM)
 
 ## Quick Start
 
@@ -59,55 +66,162 @@ docker compose up
 
 **Test user:** `testuser` / `password`
 
-### Docker
+### Build from Source
 
 ```bash
-docker build -t fedlens .
-docker run -p 3000:3000 \
-  -e OIDC_HOST=test-oidc.example.com \
-  -e SAML_HOST=test-saml.example.com \
-  -e OIDC_ISSUER=https://your-idp.example.com/realms/master \
-  -e OIDC_CLIENT_ID=your-client-id \
-  -e OIDC_CLIENT_SECRET=your-client-secret \
-  -e OIDC_REDIRECT_URI=https://test-oidc.example.com/callback \
-  -e SAML_IDP_METADATA_URL=https://your-idp.example.com/realms/master/protocol/saml/descriptor \
-  -e SAML_ENTITY_ID=https://test-saml.example.com/saml/metadata \
-  -e SAML_ROOT_URL=https://test-saml.example.com \
-  fedlens
+make build
 ```
 
-### Build from source
-
-```bash
-go build -o fedlens .
-```
+This runs `templ generate` and then builds the Go binary. The output is a single `fedlens` binary with all static assets embedded.
 
 ## Configuration
 
-All configuration is done via environment variables.
+Set the `CONFIG_FILE` environment variable to point to your TOML file:
 
-| Variable | Required | Description |
+```bash
+CONFIG_FILE=config.toml ./fedlens
+```
+
+See [config.example.toml](config.example.toml) for a full example.
+
+#### Global Settings
+
+| Key | Default | Description |
 |---|---|---|
-| `OIDC_HOST` | Yes | Hostname for OIDC requests (e.g. `test-oidc.example.com`) |
-| `SAML_HOST` | Yes | Hostname for SAML requests (e.g. `test-saml.example.com`) |
-| `OIDC_ISSUER` | Yes | OIDC Issuer URL |
-| `OIDC_CLIENT_ID` | Yes | OIDC Client ID |
-| `OIDC_CLIENT_SECRET` | Yes | OIDC Client Secret |
-| `OIDC_REDIRECT_URI` | Yes | OIDC Redirect URI (callback URL) |
-| `SAML_IDP_METADATA_URL` | Yes | SAML IdP Metadata URL |
-| `SAML_ENTITY_ID` | Yes | SAML SP Entity ID |
-| `SAML_ROOT_URL` | Yes | SAML SP Root URL |
-| `LISTEN_ADDR` | No | Listen address (default: `:3000`) |
-| `INSECURE_SKIP_VERIFY` | No | Skip TLS certificate verification (default: `false`) |
+| `listen_addr` | `:3000` | Listen address |
+| `insecure_skip_verify` | `false` | Skip TLS certificate verification |
+| `log_level` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+
+#### OIDC RP (`[[oidc]]`)
+
+Each `[[oidc]]` block defines a separate OIDC Relying Party.
+
+| Key | Required | Default | Description |
+|---|---|---|---|
+| `name` | Yes | | Display name (shown in tab) |
+| `host` | Yes | | Host for routing (e.g. `oidc.example.com:3000`) |
+| `issuer` | Yes | | OIDC Issuer URL |
+| `client_id` | Yes | | Client ID |
+| `client_secret` | Yes | | Client Secret |
+| `redirect_uri` | Yes | | Redirect URI (callback URL) |
+| `scopes` | No | `["openid", "profile", "email"]` | Requested scopes |
+| `pkce` | No | `false` | Enable PKCE |
+| `pkce_method` | No | `S256` | PKCE method (`S256` or `plain`) |
+| `response_type` | No | `code` | Response type |
+| `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
+| `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
+| `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
+
+#### SAML SP (`[[saml]]`)
+
+Each `[[saml]]` block defines a separate SAML Service Provider.
+
+| Key | Required | Default | Description |
+|---|---|---|---|
+| `name` | Yes | | Display name (shown in tab) |
+| `host` | Yes | | Host for routing (e.g. `saml.example.com:3000`) |
+| `idp_metadata_url` | Yes | | IdP Metadata URL |
+| `entity_id` | Yes | | SP Entity ID |
+| `root_url` | Yes | | SP Root URL |
+| `acs_path` | No | `/saml/acs` | Assertion Consumer Service path (for mocking SaaS SP) |
+| `slo_path` | No | `/saml/slo` | Single Logout endpoint path |
+| `metadata_path` | No | `/saml/metadata` | SP Metadata endpoint path |
+| `cert_path` | No | (auto-generated) | Path to SP certificate PEM file |
+| `key_path` | No | (auto-generated) | Path to SP private key PEM file |
+
+#### Example: Multiple SP/RP
+
+```toml
+listen_addr = ":3000"
+log_level = "debug"
+
+[[oidc]]
+name = "Keycloak OIDC"
+host = "kc-oidc.example.com:3000"
+issuer = "https://keycloak.example.com/realms/test"
+client_id = "fedlens"
+client_secret = "secret"
+redirect_uri = "http://kc-oidc.example.com:3000/callback"
+pkce = true
+
+[[oidc]]
+name = "Entra ID"
+host = "entra-oidc.example.com:3000"
+issuer = "https://login.microsoftonline.com/xxx/v2.0"
+client_id = "yyy"
+client_secret = "zzz"
+redirect_uri = "http://entra-oidc.example.com:3000/callback"
+extra_auth_params = { login_hint = "user@example.com" }
+
+[[saml]]
+name = "Keycloak SAML"
+host = "kc-saml.example.com:3000"
+idp_metadata_url = "https://keycloak.example.com/realms/test/protocol/saml/descriptor"
+entity_id = "http://kc-saml.example.com:3000/saml/metadata"
+root_url = "http://kc-saml.example.com:3000"
+
+[[saml]]
+name = "Okta SAML"
+host = "okta-saml.example.com:3000"
+idp_metadata_url = "https://okta.example.com/app/xxx/sso/saml/metadata"
+entity_id = "http://okta-saml.example.com:3000/saml/metadata"
+root_url = "http://okta-saml.example.com:3000"
+```
+
+This produces tabs: `Keycloak OIDC` | `Entra ID` | `Keycloak SAML` | `Okta SAML`
 
 ## How It Works
 
 fedlens runs a single HTTP server that routes requests based on the `Host` header:
 
-- Requests to `OIDC_HOST` are handled by the OIDC Relying Party
-- Requests to `SAML_HOST` are handled by the SAML Service Provider
+- Each `[[oidc]]` entry creates an OIDC RP handler bound to its `host`
+- Each `[[saml]]` entry creates a SAML SP handler bound to its `host`
 
 On startup, fedlens fetches OIDC discovery metadata and SAML IdP metadata, making them available on the pre-login screen. After authentication, all protocol exchange details (tokens, assertions, signatures) are displayed.
+
+## Development
+
+```bash
+# Build (generate templ + compile)
+make build
+
+# Development mode (generate + run)
+make dev
+
+# Run unit tests
+make test
+
+# Run E2E tests (requires Docker)
+make e2e
+
+# Clean build artifacts
+make clean
+```
+
+### E2E Tests
+
+E2E tests use [Playwright](https://playwright.dev/) and run against Chromium, Firefox, and WebKit.
+
+```bash
+# Setup (first time)
+cd e2e && npm install && npx playwright install && cd ..
+
+# Run all E2E tests
+make e2e
+```
+
+### Tech Stack
+
+| Component | Technology |
+|---|---|
+| Language | Go 1.26+ |
+| Templates | [templ](https://templ.guide/) (compiled to Go) |
+| Dynamic UI | [htmx](https://htmx.org/) 2.0.7 |
+| CSS | [Pico CSS](https://picocss.com/) 2.1.1 |
+| Syntax Highlighting | [Prism.js](https://prismjs.com/) 1.30.0 |
+| Configuration | [TOML](https://toml.io/) (BurntSushi/toml) |
+| OIDC | coreos/go-oidc + golang.org/x/oauth2 |
+| SAML | crewjam/saml |
 
 ## License
 

@@ -1,0 +1,65 @@
+package templates
+
+import "github.com/wadahiro/fedlens/internal/ui/templates/components"
+
+// OIDCDebugData holds all data for the OIDC post-login page.
+type OIDCDebugData struct {
+	Name               string
+	IDTokenClaims      []components.ClaimRow
+	IDTokenSigRows     []components.SignatureRow
+	AccessTokenClaims  []components.ClaimRow
+	AccessTokenSigRows []components.SignatureRow
+	UserInfoClaims     []components.ClaimRow
+	AuthRequestURL     string
+	AuthResponseRaw    string
+	TokenResponseJSON  string
+	IDTokenHeader      string
+	IDTokenPayload     string
+	AccessTokenDisplay string
+	UserInfoJSON       string
+	JWKSJSON           string
+	DiscoveryJSON      string
+	HasRefreshToken    bool
+}
+
+templ OIDCDebug(tabs []NavTab, data OIDCDebugData) {
+	@Layout("OIDC - " + data.Name) {
+		@Nav(tabs)
+		<hgroup>
+			<h1>Logged in</h1>
+			<p>OIDC RP: { data.Name }</p>
+		</hgroup>
+		<div role="group">
+			<a href="/logout" role="button" class="outline">Logout</a>
+			if data.HasRefreshToken {
+				<a href="/refresh" role="button" class="secondary">Refresh Token</a>
+			}
+		</div>
+		@components.ClaimsTable("id-token-claims", "ID Token Claims", data.IDTokenClaims)
+		if len(data.IDTokenSigRows) > 0 {
+			@components.SignatureTable("ID Token Signature Verification", data.IDTokenSigRows)
+		}
+		if len(data.AccessTokenClaims) > 0 {
+			@components.ClaimsTable("access-token-claims", "Access Token Claims", data.AccessTokenClaims)
+		}
+		if len(data.AccessTokenSigRows) > 0 {
+			@components.SignatureTable("Access Token Signature Verification", data.AccessTokenSigRows)
+		}
+		if len(data.UserInfoClaims) > 0 {
+			@components.ClaimsTable("userinfo-claims", "UserInfo Claims", data.UserInfoClaims)
+		}
+		@components.CodeBlock("Authorization Request", data.AuthRequestURL)
+		@components.CodeBlock("Authorization Response", data.AuthResponseRaw)
+		@components.CodeBlock("Token Response", data.TokenResponseJSON)
+		@components.CodeBlock("ID Token Header", data.IDTokenHeader)
+		@components.CodeBlock("ID Token Payload", data.IDTokenPayload)
+		@components.CodeBlock("Access Token", data.AccessTokenDisplay)
+		@components.CodeBlock("UserInfo Response", data.UserInfoJSON)
+		if data.JWKSJSON != "" {
+			@components.CodeBlock("JWKS Response", data.JWKSJSON)
+		}
+		if data.DiscoveryJSON != "" {
+			@components.CodeBlock("OpenID Provider Configuration", data.DiscoveryJSON)
+		}
+	}
+}

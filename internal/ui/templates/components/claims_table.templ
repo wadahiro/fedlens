@@ -1,0 +1,31 @@
+package components
+
+// ClaimRow represents a single key-value row.
+type ClaimRow struct {
+	Key   string
+	Value string
+}
+
+templ ClaimsTable(id string, title string, rows []ClaimRow) {
+	<article>
+		<header>{ title }</header>
+		<div class="overflow-auto">
+			<table id={ id }>
+				<thead>
+					<tr>
+						<th>Claim</th>
+						<th>Value</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, row := range rows {
+						<tr data-attr={ row.Key }>
+							<td>{ row.Key }</td>
+							<td>{ row.Value }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+	</article>
+}

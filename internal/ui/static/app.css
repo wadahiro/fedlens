@@ -1,0 +1,46 @@
+/* fedlens custom styles on top of Pico CSS */
+
+/* Active tab styling */
+nav [aria-current="page"] {
+  font-weight: bold;
+  border-bottom: 3px solid var(--pico-primary);
+}
+
+/* Protocol data display */
+pre {
+  max-height: 60vh;
+  overflow: auto;
+}
+
+/* Claims/attributes tables */
+table td:first-child {
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+/* Article header with copy button */
+article > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Copy button */
+.copy-btn {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  margin: 0;
+  width: auto;
+}
+
+/* Override Prism background to work with Pico dark mode */
+[data-theme="dark"] pre[class*="language-"],
+[data-theme="dark"] code[class*="language-"] {
+  background: var(--pico-card-background-color);
+}
+
+/* Collapsible sections - Pico handles details/summary styling */
+details {
+  margin-bottom: 1rem;
+}

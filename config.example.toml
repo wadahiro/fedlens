@@ -1,0 +1,52 @@
+# fedlens configuration
+
+# Global settings
+listen_addr = ":3000"
+insecure_skip_verify = true
+log_level = "debug"
+
+# OIDC RP definitions (multiple allowed)
+[[oidc]]
+name = "Keycloak OIDC"
+host = "oidc.example.com:3000"
+issuer = "http://idp.example.com:8080/realms/fedlens"
+client_id = "fedlens-oidc"
+client_secret = "fedlens-oidc-secret"
+redirect_uri = "http://oidc.example.com:3000/callback"
+scopes = ["openid", "profile", "email"]
+# pkce = true
+# pkce_method = "S256"              # S256 or plain (default: S256)
+# response_type = "code"            # code, token, id_token, etc.
+# response_mode = ""                # query, fragment, form_post
+# callback_path = "/callback"       # IdP redirect-back path (default: /callback)
+# extra_auth_params = { prompt = "consent" }
+
+# [[oidc]]
+# name = "Entra ID"
+# host = "entra-oidc.example.com:3000"
+# issuer = "https://login.microsoftonline.com/xxx/v2.0"
+# client_id = "yyy"
+# client_secret = "zzz"
+# redirect_uri = "http://entra-oidc.example.com:3000/callback"
+# pkce = true
+# extra_auth_params = { login_hint = "user@example.com" }
+
+# SAML SP definitions (multiple allowed)
+[[saml]]
+name = "Keycloak SAML"
+host = "saml.example.com:3000"
+idp_metadata_url = "http://idp.example.com:8080/realms/fedlens/protocol/saml/descriptor"
+entity_id = "http://saml.example.com:3000/saml/metadata"
+root_url = "http://saml.example.com:3000"
+# acs_path = "/saml/acs"            # Assertion Consumer Service path (default: /saml/acs)
+# slo_path = "/saml/slo"            # Single Logout path (default: /saml/slo)
+# metadata_path = "/saml/metadata"  # SP Metadata path (default: /saml/metadata)
+# cert_path = "/path/to/cert.pem"   # omit for auto-generated self-signed cert
+# key_path = "/path/to/key.pem"
+
+# [[saml]]
+# name = "Okta SAML"
+# host = "okta-saml.example.com:3000"
+# idp_metadata_url = "https://okta.example.com/app/xxx/sso/saml/metadata"
+# entity_id = "http://okta-saml.example.com:3000/saml/metadata"
+# root_url = "http://okta-saml.example.com:3000"

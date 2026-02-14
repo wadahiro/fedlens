@@ -1,0 +1,15 @@
+package components
+
+templ Collapsible(id string, title string, open bool) {
+	if open {
+		<details data-persist={ id } open>
+			<summary>{ title }</summary>
+			{ children... }
+		</details>
+	} else {
+		<details data-persist={ id }>
+			<summary>{ title }</summary>
+			{ children... }
+		</details>
+	}
+}

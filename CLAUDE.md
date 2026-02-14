@@ -8,56 +8,69 @@ fedlens is a single Go binary that acts as both an **OIDC Relying Party** and a 
 
 ## Architecture
 
-- **Single file**: `main.go` contains all logic
-- **Host-based routing**: Routes requests by `Host` header to OIDC or SAML handler
+- **Modular packages**: `internal/config`, `internal/protocol`, `internal/oidc`, `internal/saml`, `internal/ui`
+- **Host-based routing**: Routes requests by `Host` header to the corresponding OIDC RP or SAML SP handler
+- **Multiple SP/RP**: TOML configuration allows defining multiple `[[oidc]]` and `[[saml]]` entries, each with its own host, session store, and IdP connection
 - **No database**: Sessions stored in-memory maps with mutex protection
 - **No framework**: Uses only `net/http` stdlib
+- **UI stack**: templ (type-safe HTML) + htmx 2.0.7 + Pico CSS 2.1.1 + Prism.js 1.30.0, all embedded via `go:embed`
 
-### Key functions
+### Key packages
 
-- `setupOIDC(httpClient)` - Configures OIDC RP, discovery, login/callback/logout handlers
-- `setupSAML(httpClient)` - Configures SAML SP, metadata fetch, ACS/login/logout handlers
-- `main()` - Wires everything together with host-based routing
+- `main.go` - Entry point: config loading, logger setup, handler initialization, host-based routing, graceful shutdown
+- `internal/config/` - TOML configuration loading with environment variable fallback
+- `internal/protocol/` - Shared utilities: JWT decode, XML formatting, SAML signature extraction, crypto helpers
+- `internal/oidc/` - OIDC RP handlers (login, callback, logout, refresh), session management
+- `internal/saml/` - SAML SP handlers (login, ACS, logout, metadata), session management, certificate handling
+- `internal/ui/` - Static assets (`go:embed`) and templ templates
 
 ### Dependencies
 
+- `github.com/a-h/templ` - Type-safe HTML templating
+- `github.com/BurntSushi/toml` - TOML configuration parser
 - `github.com/coreos/go-oidc/v3` - OIDC provider discovery and token verification
 - `github.com/crewjam/saml` + `samlsp` - SAML SP implementation
-- `github.com/beevik/etree` - XML tree manipulation (AuthnRequest serialization, signature parsing)
+- `github.com/beevik/etree` - XML tree manipulation
 - `golang.org/x/oauth2` - OAuth2 token exchange
 
 ## Conventions
 
 - **Go version**: 1.26+, use modern Go idioms (`var`, `range` over int, etc.)
 - **Commit messages**: English, semantic prefix (`test:`, `fix:`, `feat:`, `chore:` etc.)
-- **Configuration**: All via environment variables (see README.md)
+- **Configuration**: TOML file (via `CONFIG_FILE` env var) or environment variables (legacy mode)
 
 ## Development
 
 ```bash
-# Build
-go build -o fedlens .
+# Build (templ generate + go build)
+make build
 
-# Docker build
-docker build -t fedlens .
+# Development mode (generate + run)
+make dev
+
+# Unit tests
+make test
+
+# E2E tests (Playwright, requires Docker)
+make e2e
+
+# Clean
+make clean
 ```
 
 ## Current State
 
 ### Implemented
 
-- OIDC: Authorization Code Flow, ID Token / Access Token claims display, signature verification, UserInfo, JWKS, Discovery metadata
-- SAML: SP-initiated SSO (HTTP-Redirect and HTTP-POST bindings), attributes display, signature verification (Response/Assertion level), AuthnRequest/Response XML display, IdP Metadata
-- Navigation tabs between OIDC and SAML views
-- Pre-login screens show Discovery metadata (OIDC) and IdP Metadata (SAML)
-- SP-initiated Single Logout (OIDC and SAML)
-- Self-signed certificate generation for SAML SP
-
-### Future Ideas
-
-- Make it more generic/reusable as an OSS tool
-- Improve UI (CSS styling, collapsible sections)
-- Support multiple IdP configurations
-- Add OIDC PKCE support
-- Add token refresh flow display
-- Add SAML IdP-initiated SSO support
+- OIDC: Authorization Code Flow with PKCE support, custom scopes, extra auth params, response mode
+- OIDC: ID Token / Access Token claims display, signature verification, UserInfo, JWKS, Discovery metadata
+- OIDC: Token Refresh Flow with UI button
+- SAML: SP-initiated SSO (HTTP-Redirect and HTTP-POST bindings) and IdP-initiated SSO
+- SAML: Attributes display, signature verification (Response/Assertion level), AuthnRequest/Response XML display
+- SAML: External certificate loading or auto-generated self-signed cert
+- Multiple SP/RP via TOML configuration with tab navigation
+- Pico CSS dark mode toggle, Prism.js syntax highlighting, copy buttons, collapsible sections
+- SVG sequence diagrams for OIDC and SAML flows
+- Structured logging (log/slog), graceful shutdown
+- Unit tests (config, protocol/jwt, protocol/crypto)
+- E2E test suite (Playwright: Chromium/Firefox/WebKit)

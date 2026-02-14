@@ -1,0 +1,60 @@
+package templates
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1"/>
+			<title>{ title } - fedlens</title>
+			<link rel="stylesheet" href="/static/pico.min.css"/>
+			<link rel="stylesheet" href="/static/prism.min.css"/>
+			<link rel="stylesheet" href="/static/app.css"/>
+			<script src="/static/htmx.min.js"></script>
+			<script src="/static/prism.min.js"></script>
+		</head>
+		<body>
+			<main class="container">
+				{ children... }
+			</main>
+			<script>
+				// Theme toggle
+				(function() {
+					var stored = localStorage.getItem("fedlens-theme");
+					if (stored) {
+						document.documentElement.setAttribute("data-theme", stored);
+					}
+				})();
+				function toggleTheme() {
+					var current = document.documentElement.getAttribute("data-theme");
+					var next = (current === "dark") ? "light" : "dark";
+					document.documentElement.setAttribute("data-theme", next);
+					localStorage.setItem("fedlens-theme", next);
+				}
+				// Copy button
+				function copyToClipboard(btn) {
+					var code = btn.closest("article").querySelector("code");
+					if (code) {
+						navigator.clipboard.writeText(code.textContent);
+						btn.textContent = "Copied!";
+						setTimeout(function() { btn.textContent = "Copy"; }, 2000);
+					}
+				}
+				// Collapsible state persistence
+				document.addEventListener("DOMContentLoaded", function() {
+					document.querySelectorAll("details[data-persist]").forEach(function(el) {
+						var key = "fedlens-details-" + el.getAttribute("data-persist");
+						var stored = localStorage.getItem(key);
+						if (stored === "open") { el.open = true; }
+						else if (stored === "closed") { el.open = false; }
+						el.addEventListener("toggle", function() {
+							localStorage.setItem(key, el.open ? "open" : "closed");
+						});
+					});
+					// Syntax highlighting
+					Prism.highlightAll();
+				});
+			</script>
+		</body>
+	</html>
+}
