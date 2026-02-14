@@ -10,6 +10,21 @@ func copyClaimsOnClick(id string) string {
 	return "copyClaimsAsJSON('" + id + "')"
 }
 
+templ SubjectTable(label string, value string) {
+	<article>
+		<header>{ label }</header>
+		<div class="overflow-auto">
+			<table>
+				<tbody>
+					<tr>
+						<td>{ value }</td>
+					</tr>
+				</tbody>
+			</table>
+		</div>
+	</article>
+}
+
 templ ClaimsTable(id string, title string, rows []ClaimRow) {
 	<article>
 		<header>
@@ -17,7 +32,7 @@ templ ClaimsTable(id string, title string, rows []ClaimRow) {
 			<button class="copy-btn copy-json-btn outline secondary" onclick={ templ.ComponentScript{Call: copyClaimsOnClick(id)} }>Copy as JSON</button>
 		</header>
 		<div class="overflow-auto">
-			<table id={ id }>
+			<table id={ id } class="striped">
 				<thead>
 					<tr>
 						<th>Claim</th>

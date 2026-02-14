@@ -22,14 +22,16 @@ import (
 
 // Handler is a per-SP SAML handler set.
 type Handler struct {
-	Config         config.SAMLConfig
-	debugSessions  *DebugSessionStore
-	sp             *samlsp.Middleware
-	httpClient     *http.Client
-	idpMetadataRaw string
-	rootURLStr     string
-	navTabs        []templates.NavTab
-	defaultTheme   string
+	Config          config.SAMLConfig
+	debugSessions   *DebugSessionStore
+	sp              *samlsp.Middleware
+	httpClient      *http.Client
+	idpMetadataRaw  string
+	rootURLStr      string
+	navTabs         []templates.NavTab
+	defaultTheme    string
+	requestBinding  string // "redirect" or "post"
+	responseBinding string // "redirect" or "post"
 }
 
 // NewHandler creates and initializes a SAML handler for the given config.
@@ -100,13 +102,21 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 	sp.ServiceProvider.SloURL = *rootURL.ResolveReference(&url.URL{Path: cfg.SLOPath})
 	sp.ServiceProvider.MetadataURL = *rootURL.ResolveReference(&url.URL{Path: cfg.MetadataPath})
 
+	// Determine request binding (same logic as handleLogin)
+	reqBinding := "redirect"
+	if sp.ServiceProvider.GetSSOBindingLocation(samlpkg.HTTPRedirectBinding) == "" {
+		reqBinding = "post"
+	}
+
 	return &Handler{
-		Config:         cfg,
-		debugSessions:  NewDebugSessionStore(),
-		sp:             sp,
-		httpClient:     httpClient,
-		idpMetadataRaw: idpMetadataRaw,
-		rootURLStr:     cfg.RootURL,
+		Config:          cfg,
+		debugSessions:   NewDebugSessionStore(),
+		sp:              sp,
+		httpClient:      httpClient,
+		idpMetadataRaw:  idpMetadataRaw,
+		rootURLStr:      cfg.RootURL,
+		requestBinding:  reqBinding,
+		responseBinding: "post", // SAML Response is always HTTP-POST binding
 	}, nil
 }
 
@@ -153,15 +163,15 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			Tabs:         h.navTabs,
 			ActiveTab:    h.activeTab(),
 			Status:       "disconnected",
-			StatusLabel:  "Not Authenticated",
+			StatusLabel:  "No Session",
 			LoginURL:     "/login",
 			DefaultTheme: h.defaultTheme,
-			Sections: []templates.Section{
+			References: []templates.Section{
 				{ID: "sec-flow", Label: "Flow Diagram"},
-				{ID: "sec-config", Label: "Configuration"},
+				{ID: "sec-config", Label: "IdP Metadata"},
 			},
 		}
-		templates.SAMLIndex(page, h.Config.Name, idpMetadataXML, h.Config.ACSPath).Render(r.Context(), w)
+		templates.SAMLIndex(page, h.Config.Name, idpMetadataXML, h.Config.ACSPath, h.requestBinding, h.responseBinding).Render(r.Context(), w)
 		return
 	}
 
@@ -173,11 +183,20 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	attrs := sa.GetAttributes()
 	debugSession := h.debugSessions.Get(r)
 
+	// Extract NameID from session
+	var subject string
+	if claims, ok := session.(samlsp.JWTSessionClaims); ok {
+		subject = claims.Subject
+	}
+
 	// Build template data
 	data := templates.SAMLDebugData{
-		Name:           h.Config.Name,
-		IDPMetadataXML: protocol.FormatXML(h.idpMetadataRaw),
-		ACSPath:        h.Config.ACSPath,
+		Name:            h.Config.Name,
+		Subject:         subject,
+		IDPMetadataXML:  protocol.FormatXML(h.idpMetadataRaw),
+		ACSPath:         h.Config.ACSPath,
+		RequestBinding:  h.requestBinding,
+		ResponseBinding: h.responseBinding,
 	}
 
 	// Attributes
@@ -249,15 +268,18 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Tabs:         h.navTabs,
 		ActiveTab:    h.activeTab(),
 		Status:       "connected",
-		StatusLabel:  "Authenticated",
+		StatusLabel:  "Active Session",
 		LogoutURL:    "/logout",
 		DefaultTheme: h.defaultTheme,
-		Sections: []templates.Section{
-			{ID: "sec-attrs", Label: "Attributes"},
-			{ID: "sec-response", Label: "Response Details"},
-			{ID: "sec-sigs", Label: "Signatures"},
-			{ID: "sec-protocol", Label: "Protocol"},
+		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
+			{ID: "sec-idp", Label: "IdP Info"},
+		},
+		Sections: []templates.Section{
+			{ID: "sec-claims", Label: "Identity & Claims"},
+			{ID: "sec-response", Label: "SAML Response Details"},
+			{ID: "sec-sigs", Label: "Signature Verification"},
+			{ID: "sec-protocol", Label: "Protocol Messages"},
 		},
 	}
 

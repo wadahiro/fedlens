@@ -2,13 +2,41 @@ package components
 
 templ Collapsible(id string, title string, open bool) {
 	if open {
-		<details id={ id } data-persist={ id } open>
+		<details id={ id }  open>
 			<summary>{ title }</summary>
 			{ children... }
 		</details>
 	} else {
-		<details id={ id } data-persist={ id }>
+		<details id={ id } >
 			<summary>{ title }</summary>
+			{ children... }
+		</details>
+	}
+}
+
+templ CollapsibleWithStatus(id string, title string, verified bool, open bool) {
+	if open {
+		<details id={ id }  open>
+			<summary>
+				{ title }
+				if verified {
+					<span class="verification-badge verified">Verified</span>
+				} else {
+					<span class="verification-badge not-verified">Unverified</span>
+				}
+			</summary>
+			{ children... }
+		</details>
+	} else {
+		<details id={ id } >
+			<summary>
+				{ title }
+				if verified {
+					<span class="verification-badge verified">Verified</span>
+				} else {
+					<span class="verification-badge not-verified">Unverified</span>
+				}
+			</summary>
 			{ children... }
 		</details>
 	}

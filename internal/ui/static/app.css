@@ -7,7 +7,7 @@
 h1 { --pico-font-size: 1.5rem; }
 h2 { --pico-font-size: 1.25rem; }
 h3 { --pico-font-size: 1.125rem; }
-pre, code { font-size: 0.8125rem; }
+pre, code { font-size: 0.75rem; }
 table { font-size: 0.875rem; }
 small { font-size: 0.75rem; }
 
@@ -31,11 +31,17 @@ small { font-size: 0.75rem; }
   color: var(--pico-primary);
   white-space: nowrap;
 }
+.header-spacer {
+  flex: 1;
+}
 .header-status {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  flex: 1;
+}
+.header-protocol-label {
+  color: var(--pico-muted-color);
+  font-size: 0.875rem;
 }
 .header-actions {
   display: flex;
@@ -213,11 +219,37 @@ pre {
   white-space: pre-wrap;
   word-break: break-all;
 }
+/* Override Prism.js pre styles (higher specificity than prism.min.css) */
+pre[class*="language-"],
+code[class*="language-"] {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  word-break: break-all;
+  font-size: 0.75rem;
+}
 
 /* === Claims/attributes tables === */
 table td:first-child {
   white-space: nowrap;
   font-weight: 600;
+  min-width: 160px;
+  color: var(--pico-muted-color);
+}
+table td:last-child {
+  font-family: var(--pico-font-family-monospace);
+  word-break: break-all;
+}
+table td,
+table th {
+  padding: 0.5rem 0.75rem;
+}
+/* Table header row - distinct background */
+[data-theme="light"] table thead th,
+:root:not([data-theme="dark"]) table thead th {
+  background-color: #d5dbe3;
+}
+[data-theme="dark"] table thead th {
+  background-color: #1e293b;
 }
 
 /* === Article header with copy button === */
@@ -225,6 +257,13 @@ article > header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+[data-theme="light"] article > header,
+:root:not([data-theme="dark"]) article > header {
+  background-color: #dde2e9;
+}
+[data-theme="dark"] article > header {
+  background-color: #283040;
 }
 
 /* === Copy button === */
@@ -250,14 +289,32 @@ details > summary {
   font-weight: 600;
   font-size: 1.05rem;
   padding: 0.75rem 1rem;
-  background-color: var(--pico-card-sectioning-background-color);
   border-radius: var(--pico-border-radius);
   cursor: pointer;
   list-style: revert;
 }
+[data-theme="light"] details > summary,
+:root:not([data-theme="dark"]) details > summary {
+  background-color: #e8ecf1;
+}
+[data-theme="dark"] details > summary {
+  background-color: #2a3444;
+}
 details[open] > summary {
   margin-bottom: 1rem;
   border-radius: var(--pico-border-radius) var(--pico-border-radius) 0 0;
+}
+details[open] > article,
+details[open] > table,
+details[open] > details {
+  margin-left: 1.25rem;
+  padding-left: 1rem;
+  border-left: 3px solid var(--pico-primary);
+}
+details[open] > .claims-pair {
+  margin-left: 1.25rem;
+  padding-left: 0;
+  border-left: 3px solid var(--pico-primary);
 }
 
 /* === Signature verification colors === */
@@ -275,27 +332,74 @@ tr.verified-false td:last-child {
   margin-bottom: 2rem;
 }
 
-/* === Grouped table (SAML Response Details) === */
-.grouped-table tr.group-header td {
-  font-weight: 700;
-  font-size: 0.8125rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 0.5rem 0.75rem;
-}
-[data-theme="light"] .grouped-table tr.group-header td,
-:root:not([data-theme="dark"]) .grouped-table tr.group-header td {
-  background-color: #f1f5f9;
-  color: #475569;
-}
-[data-theme="dark"] .grouped-table tr.group-header td {
-  background-color: #1e293b;
-  color: #94a3b8;
-}
+
 
 /* === Claims pair grid (wide screens) === */
 .claims-pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
   gap: 1rem;
+}
+
+/* === Flow Diagram SVG size === */
+.sequence-diagram svg {
+  max-width: 800px;
+  width: 100%;
+  height: auto;
+}
+
+/* === Section anchor scroll offset (for sticky header) === */
+details[id] {
+  scroll-margin-top: 80px;
+}
+
+/* === Section highlight flash on anchor navigation === */
+details:target > summary {
+  animation: highlight-flash 1.5s ease-out;
+}
+@keyframes highlight-flash {
+  0% { background-color: var(--pico-primary-focus); }
+}
+
+/* === Verification badge in collapsible summary === */
+.verification-badge {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
+}
+.verification-badge.verified {
+  color: var(--pico-ins-color);
+  background-color: color-mix(in srgb, var(--pico-ins-color) 15%, transparent);
+}
+.verification-badge.not-verified {
+  color: var(--pico-del-color);
+  background-color: color-mix(in srgb, var(--pico-del-color) 15%, transparent);
+}
+
+/* === View switching (RESULTS / REFERENCE) === */
+.view-group.view-hidden { display: none; }
+.sidebar-tab {
+  cursor: pointer;
+  user-select: none;
+  padding-bottom: 0.25rem;
+  border-bottom: 2px solid transparent;
+}
+.sidebar-tab:hover { color: var(--pico-primary); }
+.sidebar-tab-active {
+  color: var(--pico-primary);
+  border-bottom: 2px solid var(--pico-primary);
+}
+/* === Scroll spy active indicator === */
+.sidebar-section-list li a[aria-current="true"] {
+  border-left: 3px solid var(--pico-primary);
+  font-weight: 600;
+}
+[data-theme="light"] .sidebar-section-list li a[aria-current="true"],
+:root:not([data-theme="dark"]) .sidebar-section-list li a[aria-current="true"] {
+  background-color: #eef2ff;
+}
+[data-theme="dark"] .sidebar-section-list li a[aria-current="true"] {
+  background-color: #1e293b;
 }

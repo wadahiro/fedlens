@@ -5,13 +5,16 @@ import "github.com/wadahiro/fedlens/internal/ui/templates/components"
 // OIDCDebugData holds all data for the OIDC post-login page.
 type OIDCDebugData struct {
 	Name               string
+	Subject            string
 	IDTokenClaims      []components.ClaimRow
 	IDTokenSigRows     []components.SignatureRow
 	AccessTokenClaims  []components.ClaimRow
 	AccessTokenSigRows []components.SignatureRow
 	UserInfoClaims     []components.ClaimRow
 	AuthRequestURL     string
+	AuthRequestParams  []components.ClaimRow
 	AuthResponseRaw    string
+	AuthResponseParams []components.ClaimRow
 	TokenResponseJSON  string
 	IDTokenHeader      string
 	IDTokenPayload     string
@@ -22,59 +25,115 @@ type OIDCDebugData struct {
 	HasRefreshToken    bool
 	CallbackPath       string
 	SigVerifiedAll     bool
+	RefreshResult      *OIDCRefreshResultData
+}
+
+// OIDCRefreshResultData holds data from a token refresh for template display.
+type OIDCRefreshResultData struct {
+	Timestamp          string
+	TokenResponseJSON  string
+	IDTokenClaims      []components.ClaimRow
+	IDTokenSigRows     []components.SignatureRow
+	AccessTokenClaims  []components.ClaimRow
+	AccessTokenSigRows []components.SignatureRow
+	IDTokenHeader      string
+	IDTokenPayload     string
+	AccessTokenDisplay string
+	SigVerifiedAll     bool
 }
 
 templ OIDCDebug(page PageInfo, data OIDCDebugData) {
 	@Layout("OIDC - " + data.Name, page) {
-		<!-- Claims & Identity -->
-		@components.Collapsible("sec-claims", "Claims & Identity", true) {
-			<div class="claims-pair">
-				@components.ClaimsTable("id-token-claims", "ID Token Claims", data.IDTokenClaims)
-				if len(data.AccessTokenClaims) > 0 {
-					@components.ClaimsTable("access-token-claims", "Access Token Claims", data.AccessTokenClaims)
+		<!-- REFERENCE view (default) -->
+		<div class="view-group" data-view="reference">
+			<!-- Flow Diagram -->
+			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+				@components.OIDCSequence(data.CallbackPath)
+			}
+			<!-- OpenID Provider -->
+			@components.Collapsible("sec-provider", "OpenID Provider", false) {
+				@components.CodeBlock("JWKS Response", data.JWKSJSON)
+				@components.CodeBlock("OpenID Provider Configuration", data.DiscoveryJSON)
+			}
+		</div>
+		<!-- RESULTS view -->
+		<div class="view-group" data-view="results" style="display:none">
+			<!-- Refresh Result (shown first when available) -->
+			if data.RefreshResult != nil {
+				@components.Collapsible("sec-refresh", "Refresh Result (" + data.RefreshResult.Timestamp + ")", true) {
+					if len(data.RefreshResult.IDTokenClaims) > 0 {
+						<div class="claims-pair">
+							@components.ClaimsTable("refresh-id-token-claims", "ID Token Claims", data.RefreshResult.IDTokenClaims)
+							if len(data.RefreshResult.AccessTokenClaims) > 0 {
+								@components.ClaimsTable("refresh-access-token-claims", "Access Token Claims", data.RefreshResult.AccessTokenClaims)
+							}
+						</div>
+					}
+					@components.CollapsibleWithStatus("sec-refresh-sigs", "Signature Verification", data.RefreshResult.SigVerifiedAll, false) {
+						if len(data.RefreshResult.IDTokenSigRows) > 0 {
+							@components.SignatureTable("ID Token Signature Verification", data.RefreshResult.IDTokenSigRows)
+						}
+						if len(data.RefreshResult.AccessTokenSigRows) > 0 {
+							@components.SignatureTable("Access Token Signature Verification", data.RefreshResult.AccessTokenSigRows)
+						}
+					}
+					@components.CodeBlock("Token Response", data.RefreshResult.TokenResponseJSON)
+					if data.RefreshResult.IDTokenHeader != "" {
+						@components.CodeBlock("ID Token Header", data.RefreshResult.IDTokenHeader)
+						@components.CodeBlock("ID Token Payload", data.RefreshResult.IDTokenPayload)
+					}
+					if data.RefreshResult.AccessTokenDisplay != "" {
+						@components.CodeBlock("Access Token", data.RefreshResult.AccessTokenDisplay)
+					}
 				}
-			</div>
-			if len(data.UserInfoClaims) > 0 {
-				@components.ClaimsTable("userinfo-claims", "UserInfo Claims", data.UserInfoClaims)
 			}
-		}
-		<!-- Signature Verification -->
-		@components.Collapsible("sec-sigs", sigTitle(data.SigVerifiedAll, "Signature Verification"), false) {
-			if len(data.IDTokenSigRows) > 0 {
-				@components.SignatureTable("ID Token Signature Verification", data.IDTokenSigRows)
+			<!-- Identity & Claims -->
+			@components.Collapsible("sec-claims", "Identity & Claims", true) {
+				if data.Subject != "" {
+					@components.SubjectTable("Subject (sub)", data.Subject)
+				}
+				<div class="claims-pair">
+					@components.ClaimsTable("id-token-claims", "ID Token Claims", data.IDTokenClaims)
+					if len(data.AccessTokenClaims) > 0 {
+						@components.ClaimsTable("access-token-claims", "Access Token Claims", data.AccessTokenClaims)
+					}
+				</div>
+				if len(data.UserInfoClaims) > 0 {
+					@components.ClaimsTable("userinfo-claims", "UserInfo Claims", data.UserInfoClaims)
+				}
 			}
-			if len(data.AccessTokenSigRows) > 0 {
-				@components.SignatureTable("Access Token Signature Verification", data.AccessTokenSigRows)
+			<!-- Signature Verification -->
+			@components.CollapsibleWithStatus("sec-sigs", "Signature Verification", data.SigVerifiedAll, false) {
+				if len(data.IDTokenSigRows) > 0 {
+					@components.SignatureTable("ID Token Signature Verification", data.IDTokenSigRows)
+				}
+				if len(data.AccessTokenSigRows) > 0 {
+					@components.SignatureTable("Access Token Signature Verification", data.AccessTokenSigRows)
+				}
 			}
-		}
-		<!-- Protocol Details -->
-		@components.Collapsible("sec-protocol", "Protocol Details", false) {
-			@components.CodeBlock("Authorization Request", data.AuthRequestURL)
-			@components.CodeBlock("Authorization Response", data.AuthResponseRaw)
-			@components.CodeBlock("Token Response", data.TokenResponseJSON)
-		}
-		<!-- Raw Tokens -->
-		@components.Collapsible("sec-tokens", "Raw Tokens", false) {
-			@components.CodeBlock("ID Token Header", data.IDTokenHeader)
-			@components.CodeBlock("ID Token Payload", data.IDTokenPayload)
-			@components.CodeBlock("Access Token", data.AccessTokenDisplay)
-		}
-		<!-- Flow Diagram -->
-		@components.Collapsible("sec-flow", "Flow Diagram", false) {
-			@components.OIDCSequence(data.CallbackPath)
-		}
-		<!-- Provider Info -->
-		@components.Collapsible("sec-provider", "Provider Info", false) {
-			@components.CodeBlock("UserInfo Response", data.UserInfoJSON)
-			@components.CodeBlock("JWKS Response", data.JWKSJSON)
-			@components.CodeBlock("OpenID Provider Configuration", data.DiscoveryJSON)
-		}
+			<!-- Protocol Details -->
+			@components.Collapsible("sec-protocol", "Protocol Details", false) {
+				if len(data.AuthRequestParams) > 0 {
+					@components.ParamsTable("Authorization Request", data.AuthRequestParams, data.AuthRequestURL)
+				} else {
+					@components.CodeBlock("Authorization Request", data.AuthRequestURL)
+				}
+				if len(data.AuthResponseParams) > 0 {
+					@components.ParamsTable("Authorization Response", data.AuthResponseParams, data.AuthResponseRaw)
+				} else {
+					@components.CodeBlock("Authorization Response", data.AuthResponseRaw)
+				}
+				@components.CodeBlock("Token Response", data.TokenResponseJSON)
+				if data.UserInfoJSON != "" {
+					@components.CodeBlock("UserInfo Response", data.UserInfoJSON)
+				}
+			}
+			<!-- Raw Tokens -->
+			@components.Collapsible("sec-tokens", "Raw Tokens", false) {
+				@components.CodeBlock("ID Token Header", data.IDTokenHeader)
+				@components.CodeBlock("ID Token Payload", data.IDTokenPayload)
+				@components.CodeBlock("Access Token", data.AccessTokenDisplay)
+			}
+		</div>
 	}
-}
-
-func sigTitle(allVerified bool, base string) string {
-	if allVerified {
-		return base + " - All Verified"
-	}
-	return base
 }

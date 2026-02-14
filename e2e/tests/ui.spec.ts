@@ -24,29 +24,6 @@ test.describe("UI Features", () => {
     }
   });
 
-  test("collapsible sections persist state", async ({ page }) => {
-    await page.goto(OIDC_URL);
-
-    // Find collapsible details elements
-    const details = page.locator("details[data-persist]");
-    const count = await details.count();
-
-    if (count > 0) {
-      const firstDetails = details.first();
-
-      // Toggle open/close
-      const summary = firstDetails.locator("summary");
-      await summary.click();
-      const isOpen = await firstDetails.getAttribute("open");
-
-      // Reload and check persistence
-      await page.reload();
-      const afterReload = page.locator("details[data-persist]").first();
-      const isOpenAfterReload = await afterReload.getAttribute("open");
-      expect(isOpen).toBe(isOpenAfterReload);
-    }
-  });
-
   test("dark mode toggle", async ({ page }) => {
     await page.goto(OIDC_URL);
 

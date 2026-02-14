@@ -1,0 +1,34 @@
+package components
+
+templ ParamsTable(title string, rows []ClaimRow, rawValue string) {
+	<article>
+		<header>
+			{ title }
+			<button class="copy-btn outline secondary" onclick="copyToClipboard(this)">Copy</button>
+		</header>
+		<div class="overflow-auto">
+			<table class="striped">
+				<thead>
+					<tr>
+						<th>Parameter</th>
+						<th>Value</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, row := range rows {
+						<tr>
+							<td>{ row.Key }</td>
+							<td>{ row.Value }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		if rawValue != "" {
+			<details>
+				<summary>Raw</summary>
+				<pre><code class="language-json">{ rawValue }</code></pre>
+			</details>
+		}
+	</article>
+}

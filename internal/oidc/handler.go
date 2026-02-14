@@ -155,23 +155,36 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			Tabs:         h.navTabs,
 			ActiveTab:    h.activeTab(),
 			Status:       "disconnected",
-			StatusLabel:  "Not Authenticated",
+			StatusLabel:  "No Session",
 			LoginURL:     "/login",
 			DefaultTheme: h.defaultTheme,
-			Sections: []templates.Section{
+			References: []templates.Section{
 				{ID: "sec-flow", Label: "Flow Diagram"},
-				{ID: "sec-config", Label: "Configuration"},
+				{ID: "sec-config", Label: "OpenID Provider Configuration"},
 			},
 		}
 		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath).Render(r.Context(), w)
 		return
 	}
 
+	// Parse URL params for display
+	authRequestParams := parseToClaimRows(protocol.ParseURLParams(session.AuthRequestURL))
+	authResponseParams := parseToClaimRows(protocol.ParseURLParams(session.AuthResponseRaw))
+
 	// Build template data
+	// Extract subject from ID Token claims
+	var subject string
+	if sub, ok := session.Claims["sub"]; ok {
+		subject = protocol.FormatValue(sub)
+	}
+
 	data := templates.OIDCDebugData{
-		Name:              h.Config.Name,
-		AuthRequestURL:    session.AuthRequestURL,
-		AuthResponseRaw:   session.AuthResponseRaw,
+		Name:               h.Config.Name,
+		Subject:            subject,
+		AuthRequestURL:     session.AuthRequestURL,
+		AuthRequestParams:  authRequestParams,
+		AuthResponseRaw:    session.AuthResponseRaw,
+		AuthResponseParams: authResponseParams,
 		TokenResponseJSON: protocol.PrettyJSON(session.TokenResponse),
 		UserInfoJSON:      protocol.PrettyJSON(session.UserInfoResponse),
 		JWKSJSON:          protocol.PrettyJSON(session.JWKSResponse),
@@ -244,25 +257,85 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	data.SigVerifiedAll = sigVerifiedAll
 
+	// Build RefreshResult display data
+	if session.RefreshResult != nil {
+		rr := session.RefreshResult
+		refreshData := &templates.OIDCRefreshResultData{
+			Timestamp:         formatRefreshTimestamp(rr.Timestamp),
+			TokenResponseJSON: protocol.PrettyJSON(rr.TokenResponse),
+		}
+
+		if len(rr.Claims) > 0 {
+			for _, k := range protocol.SortedKeys(rr.Claims) {
+				refreshData.IDTokenClaims = append(refreshData.IDTokenClaims, components.ClaimRow{
+					Key:   k,
+					Value: protocol.FormatClaimValue(k, rr.Claims[k]),
+				})
+			}
+		}
+		if rr.IDTokenSigInfo != nil {
+			refreshData.IDTokenSigRows = buildJWTSigRows(rr.IDTokenSigInfo)
+		}
+		if protocol.IsJWT(rr.AccessTokenRaw) {
+			_, atPayloadRaw := protocol.DecodeJWTRaw(rr.AccessTokenRaw)
+			var atClaims map[string]any
+			if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
+				for _, k := range protocol.SortedKeys(atClaims) {
+					refreshData.AccessTokenClaims = append(refreshData.AccessTokenClaims, components.ClaimRow{
+						Key:   k,
+						Value: protocol.FormatClaimValue(k, atClaims[k]),
+					})
+				}
+			}
+			if rr.AccessTokenSigInfo != nil {
+				refreshData.AccessTokenSigRows = buildJWTSigRows(rr.AccessTokenSigInfo)
+			}
+		}
+		if rr.IDTokenRaw != "" {
+			refreshData.IDTokenHeader, refreshData.IDTokenPayload = protocol.DecodeJWT(rr.IDTokenRaw)
+		}
+		if protocol.IsJWT(rr.AccessTokenRaw) {
+			atH, atP := protocol.DecodeJWT(rr.AccessTokenRaw)
+			refreshData.AccessTokenDisplay = "Header:\n" + atH + "\n\nPayload:\n" + atP
+		} else if rr.AccessTokenRaw != "" {
+			refreshData.AccessTokenDisplay = rr.AccessTokenRaw
+		}
+		refreshSigOK := true
+		if rr.IDTokenSigInfo != nil && !rr.IDTokenSigInfo.Verified {
+			refreshSigOK = false
+		}
+		if rr.AccessTokenSigInfo != nil && !rr.AccessTokenSigInfo.Verified {
+			refreshSigOK = false
+		}
+		refreshData.SigVerifiedAll = refreshSigOK
+		data.RefreshResult = refreshData
+	}
+
 	page := templates.PageInfo{
 		Tabs:         h.navTabs,
 		ActiveTab:    h.activeTab(),
 		Status:       "connected",
-		StatusLabel:  "Authenticated",
+		StatusLabel:  "Active Session",
 		LogoutURL:    "/logout",
 		DefaultTheme: h.defaultTheme,
-		Sections: []templates.Section{
-			{ID: "sec-claims", Label: "Claims"},
-			{ID: "sec-sigs", Label: "Signatures"},
-			{ID: "sec-protocol", Label: "Protocol"},
-			{ID: "sec-tokens", Label: "Tokens"},
+		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
-			{ID: "sec-provider", Label: "Provider"},
+			{ID: "sec-provider", Label: "OpenID Provider"},
 		},
 	}
 	if data.HasRefreshToken {
 		page.RefreshURL = "/refresh"
 	}
+	// Build Sections: Refresh Result first (if present), then the rest
+	if data.RefreshResult != nil {
+		page.Sections = append(page.Sections, templates.Section{ID: "sec-refresh", Label: "Refresh Result"})
+	}
+	page.Sections = append(page.Sections,
+		templates.Section{ID: "sec-claims", Label: "Identity & Claims"},
+		templates.Section{ID: "sec-sigs", Label: "Signature Verification"},
+		templates.Section{ID: "sec-protocol", Label: "Protocol Details"},
+		templates.Section{ID: "sec-tokens", Label: "Raw Tokens"},
+	)
 
 	templates.OIDCDebug(page, data).Render(r.Context(), w)
 }
@@ -522,42 +595,43 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Update session with new tokens
-	session.TokenResponse = marshalTokenResponse(newToken)
-	session.AccessTokenRaw = newToken.AccessToken
-
-	if newRT := newToken.Extra("refresh_token"); newRT != nil {
-		if rt, ok := newRT.(string); ok {
-			session.RefreshTokenRaw = rt
-		}
+	// Build RefreshResult (preserve original session data)
+	result := &RefreshResult{
+		Timestamp:      time.Now(),
+		TokenResponse:  marshalTokenResponse(newToken),
+		AccessTokenRaw: newToken.AccessToken,
 	}
 
 	if newIDToken, ok := newToken.Extra("id_token").(string); ok {
-		session.IDTokenRaw = newIDToken
+		result.IDTokenRaw = newIDToken
 		if idToken, err := h.verifier.Verify(tokenCtx, newIDToken); err == nil {
 			var claims map[string]any
 			if err := idToken.Claims(&claims); err == nil {
-				session.Claims = claims
+				result.Claims = claims
 			}
 		}
-		// Update signature info
 		var jwksRaw json.RawMessage
 		if h.providerInfo.JwksURI != "" {
 			jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
 		}
-		session.IDTokenSigInfo = protocol.BuildJWTSignatureInfo(newIDToken, jwksRaw, true)
-		session.JWKSResponse = jwksRaw
+		result.IDTokenSigInfo = protocol.BuildJWTSignatureInfo(newIDToken, jwksRaw, true)
 	}
 
 	if protocol.IsJWT(newToken.AccessToken) {
 		var jwksRaw json.RawMessage
-		if session.JWKSResponse != nil {
-			jwksRaw = session.JWKSResponse
-		} else if h.providerInfo.JwksURI != "" {
+		if h.providerInfo.JwksURI != "" {
 			jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
-			session.JWKSResponse = jwksRaw
 		}
-		session.AccessTokenSigInfo = protocol.BuildJWTSignatureInfo(newToken.AccessToken, jwksRaw, true)
+		result.AccessTokenSigInfo = protocol.BuildJWTSignatureInfo(newToken.AccessToken, jwksRaw, true)
+	}
+
+	session.RefreshResult = result
+
+	// Update refresh token for subsequent refreshes
+	if newRT := newToken.Extra("refresh_token"); newRT != nil {
+		if rt, ok := newRT.(string); ok {
+			session.RefreshTokenRaw = rt
+		}
 	}
 
 	h.sessions.Set(cookie.Value, session)
@@ -565,7 +639,6 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Redirect back to index to see updated data
 	http.Redirect(w, r, "/", http.StatusFound)
 }
-
 func buildJWTSigRows(info *protocol.JWTSignatureInfo) []components.SignatureRow {
 	verifiedStr := "false"
 	if info.Verified {
@@ -584,6 +657,17 @@ func buildJWTSigRows(info *protocol.JWTSignatureInfo) []components.SignatureRow 
 		if p.value != "" {
 			rows = append(rows, components.SignatureRow{Label: p.label, Value: p.value})
 		}
+	}
+	return rows
+}
+
+func parseToClaimRows(params []protocol.KeyValue) []components.ClaimRow {
+	if len(params) == 0 {
+		return nil
+	}
+	rows := make([]components.ClaimRow, len(params))
+	for i, p := range params {
+		rows[i] = components.ClaimRow{Key: p.Key, Value: p.Value}
 	}
 	return rows
 }
@@ -642,4 +726,11 @@ func fetchJWKS(client *http.Client, jwksURL string) json.RawMessage {
 		return nil
 	}
 	return json.RawMessage(body)
+}
+
+func formatRefreshTimestamp(t time.Time) string {
+	if protocol.DisplayLocation != nil {
+		t = t.In(protocol.DisplayLocation)
+	}
+	return t.Format("2006-01-02 15:04:05 MST")
 }

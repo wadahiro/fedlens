@@ -12,44 +12,59 @@ type SAMLSignatureData struct {
 
 // SAMLDebugData holds all data for the SAML post-login page.
 type SAMLDebugData struct {
-	Name            string
-	Attributes      []components.ClaimRow
-	Signatures      []SAMLSignatureData
-	AuthnRequestXML string
-	SAMLResponseXML string
-	IDPMetadataXML  string
-	ResponseGroups  []components.RowGroup
-	ACSPath         string
-	SigVerifiedAll  bool
+	Name             string
+	Subject          string
+	Attributes       []components.ClaimRow
+	Signatures       []SAMLSignatureData
+	AuthnRequestXML  string
+	SAMLResponseXML  string
+	IDPMetadataXML   string
+	ResponseGroups   []components.RowGroup
+	ACSPath          string
+	SigVerifiedAll   bool
+	RequestBinding   string // "redirect" or "post"
+	ResponseBinding  string // "redirect" or "post"
 }
 
 templ SAMLDebug(page PageInfo, data SAMLDebugData) {
 	@Layout("SAML - " + data.Name, page) {
-		<!-- Attributes -->
-		@components.Collapsible("sec-attrs", "Attributes", true) {
-			@components.ClaimsTable("saml-attributes", "Attributes", data.Attributes)
-		}
-		<!-- SAML Response Details -->
-		if len(data.ResponseGroups) > 0 {
-			@components.Collapsible("sec-response", "SAML Response Details", true) {
-				@components.GroupedTable(data.ResponseGroups)
+		<!-- REFERENCE view (default) -->
+		<div class="view-group" data-view="reference">
+			<!-- Flow Diagram -->
+			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+				@components.SAMLSequence(data.ACSPath, data.RequestBinding, data.ResponseBinding)
 			}
-		}
-		<!-- Signature Verification -->
-		@components.Collapsible("sec-sigs", sigTitle(data.SigVerifiedAll, "Signature Verification"), false) {
-			for _, sig := range data.Signatures {
-				@components.SignatureTable(sig.Title, sig.Rows)
+			<!-- IdP Info -->
+			@components.Collapsible("sec-idp", "IdP Info", false) {
+				@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
 			}
-		}
-		<!-- Protocol Messages -->
-		@components.Collapsible("sec-protocol", "Protocol Messages", false) {
-			@components.XMLCodeBlock("AuthnRequest", data.AuthnRequestXML)
-			@components.XMLCodeBlock("SAML Response", data.SAMLResponseXML)
-			@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
-		}
-		<!-- Flow Diagram -->
-		@components.Collapsible("sec-flow", "Flow Diagram", false) {
-			@components.SAMLSequence(data.ACSPath)
-		}
+		</div>
+		<!-- RESULTS view -->
+		<div class="view-group" data-view="results" style="display:none">
+			<!-- Identity & Claims -->
+			@components.Collapsible("sec-claims", "Identity & Claims", true) {
+				if data.Subject != "" {
+					@components.SubjectTable("Subject (NameID)", data.Subject)
+				}
+				@components.ClaimsTable("saml-attributes", "SAML Attributes", data.Attributes)
+			}
+			<!-- SAML Response Details -->
+			if len(data.ResponseGroups) > 0 {
+				@components.Collapsible("sec-response", "SAML Response Details", true) {
+					@components.GroupedTable(data.ResponseGroups)
+				}
+			}
+			<!-- Signature Verification -->
+			@components.CollapsibleWithStatus("sec-sigs", "Signature Verification", data.SigVerifiedAll, false) {
+				for _, sig := range data.Signatures {
+					@components.SignatureTable(sig.Title, sig.Rows)
+				}
+			}
+			<!-- Protocol Messages -->
+			@components.Collapsible("sec-protocol", "Protocol Messages", false) {
+				@components.XMLCodeBlock("AuthnRequest", data.AuthnRequestXML)
+				@components.XMLCodeBlock("SAML Response", data.SAMLResponseXML)
+			}
+		</div>
 	}
 }

@@ -4,13 +4,15 @@ import "github.com/wadahiro/fedlens/internal/ui/templates/components"
 
 templ OIDCIndex(page PageInfo, name string, discoveryJSON string, callbackPath string) {
 	@Layout("OIDC - " + name, page) {
-		@components.Collapsible("sec-flow", "Flow Diagram", false) {
-			@components.OIDCSequence(callbackPath)
-		}
-		if discoveryJSON != "" {
-			@components.Collapsible("sec-config", "OpenID Provider Configuration", false) {
-				@components.CodeBlock("", discoveryJSON)
+		<div class="view-group" data-view="reference">
+			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+				@components.OIDCSequence(callbackPath)
 			}
-		}
+			if discoveryJSON != "" {
+				@components.Collapsible("sec-config", "OpenID Provider Configuration", false) {
+					@components.CodeBlock("", discoveryJSON)
+				}
+			}
+		</div>
 	}
 }

@@ -22,7 +22,7 @@ templ SignatureTable(title string, rows []SignatureRow) {
 	<article>
 		<header>{ title }</header>
 		<div class="overflow-auto">
-			<table>
+			<table class="striped">
 				<tbody>
 					for _, row := range rows {
 						if row.Value != "" {
@@ -51,21 +51,21 @@ templ SignatureTable(title string, rows []SignatureRow) {
 }
 
 templ GroupedTable(groups []RowGroup) {
-	<div class="overflow-auto">
-		<table class="grouped-table">
-			<tbody>
-				for _, group := range groups {
-					<tr class="group-header">
-						<td colspan="2">{ group.Name }</td>
-					</tr>
-					for _, row := range group.Rows {
-						<tr>
-							<td>{ row.Label }</td>
-							<td>{ row.Value }</td>
-						</tr>
-					}
-				}
-			</tbody>
-		</table>
-	</div>
+	for _, group := range groups {
+		<article>
+			<header>{ group.Name }</header>
+			<div class="overflow-auto">
+				<table class="striped">
+					<tbody>
+						for _, row := range group.Rows {
+							<tr>
+								<td>{ row.Label }</td>
+								<td>{ row.Value }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</article>
+	}
 }
