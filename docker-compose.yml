@@ -1,0 +1,46 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.5.3
+    hostname: idp.example.com
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: idp.example.com
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200 OK'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  fedlens:
+    build: .
+    environment:
+      OIDC_HOST: "oidc.example.com:3000"
+      SAML_HOST: "saml.example.com:3000"
+      OIDC_ISSUER: "http://idp.example.com:8080/realms/fedlens"
+      OIDC_CLIENT_ID: "fedlens-oidc"
+      OIDC_CLIENT_SECRET: "fedlens-oidc-secret"
+      OIDC_REDIRECT_URI: "http://oidc.example.com:3000/callback"
+      SAML_IDP_METADATA_URL: "http://idp.example.com:8080/realms/fedlens/protocol/saml/descriptor"
+      SAML_ENTITY_ID: "http://saml.example.com:3000/saml/metadata"
+      SAML_ROOT_URL: "http://saml.example.com:3000"
+      INSECURE_SKIP_VERIFY: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      keycloak:
+        condition: service_healthy

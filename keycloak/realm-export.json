@@ -1,0 +1,73 @@
+{
+  "realm": "fedlens",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "clients": [
+    {
+      "clientId": "fedlens-oidc",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "fedlens-oidc-secret",
+      "redirectUris": [
+        "http://oidc.example.com:3000/callback"
+      ],
+      "webOrigins": [
+        "http://oidc.example.com:3000"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "post.logout.redirect.uris": "http://oidc.example.com:3000/*",
+        "access.token.signed.response.alg": "RS256",
+        "id.token.signed.response.alg": "RS256"
+      }
+    },
+    {
+      "clientId": "http://saml.example.com:3000/saml/metadata",
+      "enabled": true,
+      "protocol": "saml",
+      "fullScopeAllowed": true,
+      "frontchannelLogout": true,
+      "attributes": {
+        "saml.assertion.signature": "true",
+        "saml.server.signature": "true",
+        "saml_assertion_consumer_url_post": "http://saml.example.com:3000/saml/acs",
+        "saml_assertion_consumer_url_redirect": "http://saml.example.com:3000/saml/acs",
+        "saml_single_logout_service_url_post": "http://saml.example.com:3000/saml/slo",
+        "saml_single_logout_service_url_redirect": "http://saml.example.com:3000/saml/slo",
+        "saml.force.post.binding": "false",
+        "saml_name_id_format": "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+        "saml.client.signature": "false"
+      },
+      "redirectUris": [
+        "http://saml.example.com:3000/*"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "testuser",
+      "enabled": true,
+      "email": "testuser@example.com",
+      "firstName": "Test",
+      "lastName": "User",
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

@@ -89,8 +89,10 @@ var (
 )
 
 var (
-	oidcHost string
-	samlHost string
+	oidcHost    string
+	samlHost    string
+	oidcBaseURL string // scheme://host (derived from OIDC_REDIRECT_URI)
+	samlBaseURL string // scheme://host (derived from SAML_ROOT_URL)
 )
 
 func main() {
@@ -104,6 +106,18 @@ func main() {
 
 	oidcHost = requireEnv("OIDC_HOST")
 	samlHost = requireEnv("SAML_HOST")
+
+	// Derive base URLs (scheme://host) for navigation links
+	if redirectURI, err := url.Parse(requireEnv("OIDC_REDIRECT_URI")); err == nil {
+		oidcBaseURL = redirectURI.Scheme + "://" + redirectURI.Host
+	} else {
+		log.Fatalf("Invalid OIDC_REDIRECT_URI: %v", err)
+	}
+	if rootURL, err := url.Parse(requireEnv("SAML_ROOT_URL")); err == nil {
+		samlBaseURL = rootURL.Scheme + "://" + rootURL.Host
+	} else {
+		log.Fatalf("Invalid SAML_ROOT_URL: %v", err)
+	}
 
 	listenAddr := os.Getenv("LISTEN_ADDR")
 	if listenAddr == "" {
@@ -906,9 +920,9 @@ func setupSAML(httpClient *http.Client) http.Handler {
 // --- navigation ---
 
 func navTabs(active string) string {
-	tabs := []struct{ label, host string }{
-		{"OIDC", oidcHost},
-		{"SAML", samlHost},
+	tabs := []struct{ label, baseURL string }{
+		{"OIDC", oidcBaseURL},
+		{"SAML", samlBaseURL},
 	}
 	var sb strings.Builder
 	sb.WriteString(`<nav style="display:flex;gap:0;margin-bottom:1em;border-bottom:2px solid #ccc">`)
@@ -916,7 +930,7 @@ func navTabs(active string) string {
 		if t.label == active {
 			sb.WriteString(fmt.Sprintf(`<span style="padding:8px 16px;border:2px solid #ccc;border-bottom:2px solid #fff;margin-bottom:-2px;font-weight:bold">%s</span>`, t.label))
 		} else {
-			sb.WriteString(fmt.Sprintf(`<a href="https://%s/" style="padding:8px 16px;text-decoration:none;color:#666">%s</a>`, t.host, t.label))
+			sb.WriteString(fmt.Sprintf(`<a href="%s/" style="padding:8px 16px;text-decoration:none;color:#666">%s</a>`, t.baseURL, t.label))
 		}
 	}
 	sb.WriteString(`</nav>`)

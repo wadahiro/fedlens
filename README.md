@@ -33,6 +33,32 @@ A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **Op
 
 ## Quick Start
 
+### Docker Compose (with Keycloak)
+
+The easiest way to try fedlens is using Docker Compose with a pre-configured Keycloak instance.
+
+**Prerequisites:**
+
+Add the following entries to your `/etc/hosts`:
+
+```
+127.0.0.1 idp.example.com oidc.example.com saml.example.com
+```
+
+**Start:**
+
+```bash
+docker compose up
+```
+
+**Access:**
+
+- OIDC view: http://oidc.example.com:3000
+- SAML view: http://saml.example.com:3000
+- Keycloak Admin Console: http://idp.example.com:8080 (admin / admin)
+
+**Test user:** `testuser` / `password`
+
 ### Docker
 
 ```bash
