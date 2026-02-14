@@ -16,6 +16,7 @@ import (
 
 	"github.com/wadahiro/fedlens/internal/config"
 	fedoidc "github.com/wadahiro/fedlens/internal/oidc"
+	"github.com/wadahiro/fedlens/internal/protocol"
 	fedsaml "github.com/wadahiro/fedlens/internal/saml"
 	"github.com/wadahiro/fedlens/internal/ui"
 	"github.com/wadahiro/fedlens/internal/ui/templates"
@@ -48,6 +49,17 @@ func main() {
 
 	// Setup structured logging
 	setupLogger(cfg.LogLevel)
+
+	// Setup display timezone
+	if cfg.Timezone != "" && cfg.Timezone != "UTC" {
+		loc, err := time.LoadLocation(cfg.Timezone)
+		if err != nil {
+			slog.Error("Invalid timezone", "timezone", cfg.Timezone, "error", err)
+			os.Exit(1)
+		}
+		protocol.DisplayLocation = loc
+		slog.Info("Display timezone configured", "timezone", cfg.Timezone)
+	}
 
 	httpClient := &http.Client{}
 	if cfg.InsecureSkipVerify {
@@ -97,6 +109,7 @@ func main() {
 			os.Exit(1)
 		}
 		handler.SetNavTabs(makeTabsWithActive(allTabs, hostTabIndex[oidcCfg.Host]))
+		handler.SetDefaultTheme(cfg.Theme)
 
 		mux := http.NewServeMux()
 		mux.Handle("/static/", http.StripPrefix("/static/", staticHandler))
@@ -113,6 +126,7 @@ func main() {
 			os.Exit(1)
 		}
 		handler.SetNavTabs(makeTabsWithActive(allTabs, hostTabIndex[samlCfg.Host]))
+		handler.SetDefaultTheme(cfg.Theme)
 
 		mux := http.NewServeMux()
 		mux.Handle("/static/", http.StripPrefix("/static/", staticHandler))

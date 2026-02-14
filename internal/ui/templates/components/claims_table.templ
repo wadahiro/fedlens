@@ -6,9 +6,16 @@ type ClaimRow struct {
 	Value string
 }
 
+func copyClaimsOnClick(id string) string {
+	return "copyClaimsAsJSON('" + id + "')"
+}
+
 templ ClaimsTable(id string, title string, rows []ClaimRow) {
 	<article>
-		<header>{ title }</header>
+		<header>
+			{ title }
+			<button class="copy-btn copy-json-btn outline secondary" onclick={ templ.ComponentScript{Call: copyClaimsOnClick(id)} }>Copy as JSON</button>
+		</header>
 		<div class="overflow-auto">
 			<table id={ id }>
 				<thead>

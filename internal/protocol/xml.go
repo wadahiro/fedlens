@@ -167,8 +167,8 @@ func parseCertDetails(b64Cert string, info *SAMLSignatureInfo) {
 	info.CertSubject = cert.Subject.String()
 	info.CertIssuer = cert.Issuer.String()
 	info.CertSerialNumber = cert.SerialNumber.String()
-	info.CertNotBefore = cert.NotBefore.UTC().Format(time.RFC3339)
-	info.CertNotAfter = cert.NotAfter.UTC().Format(time.RFC3339)
+	info.CertNotBefore = FormatTimestamp(cert.NotBefore.UTC().Format(time.RFC3339))
+	info.CertNotAfter = FormatTimestamp(cert.NotAfter.UTC().Format(time.RFC3339))
 
 	// SHA-256 fingerprint
 	fingerprint := sha256.Sum256(certDER)
@@ -185,4 +185,145 @@ func ShortenAlgorithmURI(uri string) string {
 		return uri[idx+1:]
 	}
 	return uri
+}
+
+// SAMLResponseInfoRow is a single key-value row within a group.
+type SAMLResponseInfoRow struct {
+	Label string
+	Value string
+}
+
+// SAMLResponseInfoGroup is a named group of rows.
+type SAMLResponseInfoGroup struct {
+	Name string
+	Rows []SAMLResponseInfoRow
+}
+
+// SAMLResponseInfo holds structured metadata extracted from a SAML Response XML.
+type SAMLResponseInfo struct {
+	Groups []SAMLResponseInfoGroup
+}
+
+// ExtractSAMLResponseInfo parses a SAML Response XML and extracts structured metadata.
+func ExtractSAMLResponseInfo(xmlStr string) *SAMLResponseInfo {
+	if xmlStr == "" {
+		return nil
+	}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xmlStr); err != nil {
+		log.Printf("Failed to parse SAML Response XML for info extraction: %v", err)
+		return nil
+	}
+	root := doc.Root()
+	if root == nil {
+		return nil
+	}
+
+	info := &SAMLResponseInfo{}
+
+	// Response group
+	var responseRows []SAMLResponseInfoRow
+	if v := root.SelectAttrValue("ID", ""); v != "" {
+		responseRows = append(responseRows, SAMLResponseInfoRow{Label: "ID", Value: v})
+	}
+	if issuer := findChildElement(root, "Issuer"); issuer != nil {
+		responseRows = append(responseRows, SAMLResponseInfoRow{Label: "Issuer", Value: issuer.Text()})
+	}
+	if v := root.SelectAttrValue("IssueInstant", ""); v != "" {
+		responseRows = append(responseRows, SAMLResponseInfoRow{Label: "IssueInstant", Value: FormatTimestamp(v)})
+	}
+	if v := root.SelectAttrValue("InResponseTo", ""); v != "" {
+		responseRows = append(responseRows, SAMLResponseInfoRow{Label: "InResponseTo", Value: v})
+	}
+	if v := root.SelectAttrValue("Destination", ""); v != "" {
+		responseRows = append(responseRows, SAMLResponseInfoRow{Label: "Destination", Value: v})
+	}
+	if status := findChildElement(root, "Status"); status != nil {
+		if statusCode := findChildElement(status, "StatusCode"); statusCode != nil {
+			if v := statusCode.SelectAttrValue("Value", ""); v != "" {
+				responseRows = append(responseRows, SAMLResponseInfoRow{Label: "Status", Value: v})
+			}
+		}
+	}
+	if len(responseRows) > 0 {
+		info.Groups = append(info.Groups, SAMLResponseInfoGroup{Name: "Response", Rows: responseRows})
+	}
+
+	// Find Assertion (with or without namespace prefix)
+	assertion := findChildElement(root, "Assertion")
+	if assertion == nil {
+		for _, child := range root.ChildElements() {
+			if child.Tag == "Assertion" {
+				assertion = child
+				break
+			}
+		}
+	}
+	if assertion == nil {
+		return info
+	}
+
+	// Subject group
+	var subjectRows []SAMLResponseInfoRow
+	if subject := findChildElement(assertion, "Subject"); subject != nil {
+		if nameID := findChildElement(subject, "NameID"); nameID != nil {
+			subjectRows = append(subjectRows, SAMLResponseInfoRow{Label: "NameID", Value: nameID.Text()})
+			if v := nameID.SelectAttrValue("Format", ""); v != "" {
+				subjectRows = append(subjectRows, SAMLResponseInfoRow{Label: "NameID Format", Value: v})
+			}
+		}
+		if subConf := findChildElement(subject, "SubjectConfirmation"); subConf != nil {
+			if subConfData := findChildElement(subConf, "SubjectConfirmationData"); subConfData != nil {
+				if v := subConfData.SelectAttrValue("Recipient", ""); v != "" {
+					subjectRows = append(subjectRows, SAMLResponseInfoRow{Label: "Recipient", Value: v})
+				}
+				if v := subConfData.SelectAttrValue("NotOnOrAfter", ""); v != "" {
+					subjectRows = append(subjectRows, SAMLResponseInfoRow{Label: "NotOnOrAfter", Value: FormatTimestamp(v)})
+				}
+			}
+		}
+	}
+	if len(subjectRows) > 0 {
+		info.Groups = append(info.Groups, SAMLResponseInfoGroup{Name: "Subject", Rows: subjectRows})
+	}
+
+	// Conditions group
+	var conditionsRows []SAMLResponseInfoRow
+	if conditions := findChildElement(assertion, "Conditions"); conditions != nil {
+		if v := conditions.SelectAttrValue("NotBefore", ""); v != "" {
+			conditionsRows = append(conditionsRows, SAMLResponseInfoRow{Label: "NotBefore", Value: FormatTimestamp(v)})
+		}
+		if v := conditions.SelectAttrValue("NotOnOrAfter", ""); v != "" {
+			conditionsRows = append(conditionsRows, SAMLResponseInfoRow{Label: "NotOnOrAfter", Value: FormatTimestamp(v)})
+		}
+		if ar := findChildElement(conditions, "AudienceRestriction"); ar != nil {
+			if audience := findChildElement(ar, "Audience"); audience != nil {
+				conditionsRows = append(conditionsRows, SAMLResponseInfoRow{Label: "Audience", Value: audience.Text()})
+			}
+		}
+	}
+	if len(conditionsRows) > 0 {
+		info.Groups = append(info.Groups, SAMLResponseInfoGroup{Name: "Conditions", Rows: conditionsRows})
+	}
+
+	// AuthnStatement group
+	var authnRows []SAMLResponseInfoRow
+	if authnStmt := findChildElement(assertion, "AuthnStatement"); authnStmt != nil {
+		if v := authnStmt.SelectAttrValue("AuthnInstant", ""); v != "" {
+			authnRows = append(authnRows, SAMLResponseInfoRow{Label: "AuthnInstant", Value: FormatTimestamp(v)})
+		}
+		if v := authnStmt.SelectAttrValue("SessionIndex", ""); v != "" {
+			authnRows = append(authnRows, SAMLResponseInfoRow{Label: "SessionIndex", Value: v})
+		}
+		if authnCtx := findChildElement(authnStmt, "AuthnContext"); authnCtx != nil {
+			if classRef := findChildElement(authnCtx, "AuthnContextClassRef"); classRef != nil {
+				authnRows = append(authnRows, SAMLResponseInfoRow{Label: "AuthnContextClassRef", Value: classRef.Text()})
+			}
+		}
+	}
+	if len(authnRows) > 0 {
+		info.Groups = append(info.Groups, SAMLResponseInfoGroup{Name: "AuthnStatement", Rows: authnRows})
+	}
+
+	return info
 }

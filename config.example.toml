@@ -4,6 +4,8 @@
 listen_addr = ":3000"
 insecure_skip_verify = true
 log_level = "debug"
+# theme = "dark"                       # light, dark, or auto (default: auto)
+# timezone = "Asia/Tokyo"              # IANA timezone for display (default: UTC)
 
 # OIDC RP definitions (multiple allowed)
 [[oidc]]

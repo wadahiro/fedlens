@@ -35,8 +35,9 @@ type Handler struct {
 		UserinfoEndpoint   string
 		JwksURI            string
 	}
-	topPageURL string
-	navTabs    []templates.NavTab
+	topPageURL   string
+	navTabs      []templates.NavTab
+	defaultTheme string
 }
 
 // NewHandler creates and initializes an OIDC handler for the given config.
@@ -117,6 +118,11 @@ func (h *Handler) SetNavTabs(tabs []templates.NavTab) {
 	h.navTabs = tabs
 }
 
+// SetDefaultTheme sets the default theme for this handler.
+func (h *Handler) SetDefaultTheme(theme string) {
+	h.defaultTheme = theme
+}
+
 // RegisterRoutes registers OIDC handlers on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
@@ -124,6 +130,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(h.Config.CallbackPath, h.handleCallback)
 	mux.HandleFunc("/logout", h.handleLogout)
 	mux.HandleFunc("/refresh", h.handleRefresh)
+}
+
+// activeTab returns the NavTab that is currently active.
+func (h *Handler) activeTab() templates.NavTab {
+	for _, tab := range h.navTabs {
+		if tab.Active {
+			return tab
+		}
+	}
+	return templates.NavTab{}
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +151,19 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	session := h.sessions.Get(r)
 	if session == nil {
 		discoveryJSON := protocol.PrettyJSON(h.discoveryRaw)
-		templates.OIDCIndex(h.navTabs, h.Config.Name, discoveryJSON).Render(r.Context(), w)
+		page := templates.PageInfo{
+			Tabs:         h.navTabs,
+			ActiveTab:    h.activeTab(),
+			Status:       "disconnected",
+			StatusLabel:  "Not Authenticated",
+			LoginURL:     "/login",
+			DefaultTheme: h.defaultTheme,
+			Sections: []templates.Section{
+				{ID: "sec-flow", Label: "Flow Diagram"},
+				{ID: "sec-config", Label: "Configuration"},
+			},
+		}
+		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath).Render(r.Context(), w)
 		return
 	}
 
@@ -149,6 +177,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		JWKSJSON:          protocol.PrettyJSON(session.JWKSResponse),
 		DiscoveryJSON:     protocol.PrettyJSON(h.discoveryRaw),
 		HasRefreshToken:   session.RefreshTokenRaw != "",
+		CallbackPath:      h.Config.CallbackPath,
 	}
 
 	// ID Token Claims
@@ -205,7 +234,37 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		data.AccessTokenDisplay = session.AccessTokenRaw
 	}
 
-	templates.OIDCDebug(h.navTabs, data).Render(r.Context(), w)
+	// Determine if all signatures are verified
+	sigVerifiedAll := true
+	if session.IDTokenSigInfo != nil && !session.IDTokenSigInfo.Verified {
+		sigVerifiedAll = false
+	}
+	if session.AccessTokenSigInfo != nil && !session.AccessTokenSigInfo.Verified {
+		sigVerifiedAll = false
+	}
+	data.SigVerifiedAll = sigVerifiedAll
+
+	page := templates.PageInfo{
+		Tabs:         h.navTabs,
+		ActiveTab:    h.activeTab(),
+		Status:       "connected",
+		StatusLabel:  "Authenticated",
+		LogoutURL:    "/logout",
+		DefaultTheme: h.defaultTheme,
+		Sections: []templates.Section{
+			{ID: "sec-claims", Label: "Claims"},
+			{ID: "sec-sigs", Label: "Signatures"},
+			{ID: "sec-protocol", Label: "Protocol"},
+			{ID: "sec-tokens", Label: "Tokens"},
+			{ID: "sec-flow", Label: "Flow Diagram"},
+			{ID: "sec-provider", Label: "Provider"},
+		},
+	}
+	if data.HasRefreshToken {
+		page.RefreshURL = "/refresh"
+	}
+
+	templates.OIDCDebug(page, data).Render(r.Context(), w)
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {

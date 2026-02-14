@@ -2,17 +2,15 @@ package templates
 
 import "github.com/wadahiro/fedlens/internal/ui/templates/components"
 
-templ SAMLIndex(tabs []NavTab, name string, idpMetadataXML string) {
-	@Layout("SAML - " + name) {
-		@Nav(tabs)
-		<hgroup>
-			<h1>Not logged in</h1>
-			<p>SAML SP: { name }</p>
-		</hgroup>
-		<a href="/login" role="button">Login</a>
-		@components.SAMLSequence()
+templ SAMLIndex(page PageInfo, name string, idpMetadataXML string, acsPath string) {
+	@Layout("SAML - " + name, page) {
+		@components.Collapsible("sec-flow", "Flow Diagram", false) {
+			@components.SAMLSequence(acsPath)
+		}
 		if idpMetadataXML != "" {
-			@components.XMLCodeBlock("IdP Metadata", idpMetadataXML)
+			@components.Collapsible("sec-config", "IdP Metadata", false) {
+				@components.XMLCodeBlock("", idpMetadataXML)
+			}
 		}
 	}
 }

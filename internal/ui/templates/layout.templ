@@ -1,8 +1,35 @@
 package templates
 
-templ Layout(title string) {
+// NavTab represents a single navigation tab.
+type NavTab struct {
+	Label    string
+	BaseURL  string
+	Active   bool
+	Protocol string // "oidc" or "saml"
+}
+
+// Section represents a collapsible section for sidebar navigation.
+type Section struct {
+	ID    string
+	Label string
+}
+
+// PageInfo holds layout metadata for every page.
+type PageInfo struct {
+	Tabs         []NavTab
+	ActiveTab    NavTab
+	Status       string // "connected" or "disconnected"
+	StatusLabel  string // "Authenticated" or "Not Authenticated"
+	LoginURL     string
+	LogoutURL    string
+	RefreshURL   string
+	Sections     []Section
+	DefaultTheme string // "light", "dark", or "auto"
+}
+
+templ Layout(title string, page PageInfo) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang="en" data-default-theme={ page.DefaultTheme }>
 		<head>
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
@@ -12,24 +39,138 @@ templ Layout(title string) {
 			<link rel="stylesheet" href="/static/app.css"/>
 			<script src="/static/htmx.min.js"></script>
 			<script src="/static/prism.min.js"></script>
-		</head>
-		<body>
-			<main class="container">
-				{ children... }
-			</main>
 			<script>
-				// Theme toggle
+				// Apply theme immediately to prevent FOUC
 				(function() {
 					var stored = localStorage.getItem("fedlens-theme");
 					if (stored) {
 						document.documentElement.setAttribute("data-theme", stored);
+						return;
+					}
+					var defaultTheme = document.documentElement.getAttribute("data-default-theme") || "auto";
+					if (defaultTheme === "light" || defaultTheme === "dark") {
+						document.documentElement.setAttribute("data-theme", defaultTheme);
+					} else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+						document.documentElement.setAttribute("data-theme", "dark");
 					}
 				})();
+			</script>
+		</head>
+		<body>
+			<!-- Sticky Header -->
+			<header class="site-header">
+				<div class="header-content">
+					<strong class="brand">fedlens</strong>
+					<div class="header-status">
+						<span class={ "status-indicator", templ.KV("status-connected", page.Status == "connected"), templ.KV("status-disconnected", page.Status == "disconnected") }>
+							{ page.StatusLabel }
+						</span>
+						<span>
+							if page.ActiveTab.Protocol == "oidc" {
+								OIDC RP: { page.ActiveTab.Label }
+							} else {
+								SAML SP: { page.ActiveTab.Label }
+							}
+						</span>
+					</div>
+					<div class="header-actions">
+						if page.LoginURL != "" {
+							<a href={ templ.SafeURL(page.LoginURL) } role="button">Login</a>
+						}
+						if page.LogoutURL != "" {
+							<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline">Logout</a>
+						}
+						if page.RefreshURL != "" {
+							<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary">Refresh</a>
+						}
+						<a href="#" class="theme-toggle" onclick="toggleTheme(); return false;">
+							<span class="theme-toggle-icon">&#9790;</span>
+						</a>
+					</div>
+				</div>
+			</header>
+			<div class="app-layout">
+				<!-- Sidebar (PC only) -->
+				<aside class="sidebar">
+					<nav>
+						<p class="sidebar-heading">SP / RP</p>
+						<ul>
+							for _, tab := range page.Tabs {
+								<li>
+									if tab.Active {
+										<a href={ templ.SafeURL(tab.BaseURL + "/") } aria-current="page">
+											if tab.Protocol == "oidc" {
+												<kbd class="protocol-oidc">OIDC</kbd>
+											} else {
+												<kbd class="protocol-saml">SAML</kbd>
+											}
+											{ tab.Label }
+										</a>
+									} else {
+										<a href={ templ.SafeURL(tab.BaseURL + "/") }>
+											if tab.Protocol == "oidc" {
+												<kbd class="protocol-oidc">OIDC</kbd>
+											} else {
+												<kbd class="protocol-saml">SAML</kbd>
+											}
+											{ tab.Label }
+										</a>
+									}
+								</li>
+							}
+						</ul>
+						if len(page.Sections) > 0 {
+							<p class="sidebar-heading">Sections</p>
+							<ul>
+								for _, sec := range page.Sections {
+									<li><a href={ templ.SafeURL("#" + sec.ID) }>{ sec.Label }</a></li>
+								}
+							</ul>
+						}
+					</nav>
+				</aside>
+				<!-- Main Content -->
+				<main class="main-content">
+					<!-- Mobile tabs (hidden on PC) -->
+					<div class="mobile-tabs">
+						for _, tab := range page.Tabs {
+							if tab.Active {
+								<a href={ templ.SafeURL(tab.BaseURL + "/") } aria-current="page">
+									if tab.Protocol == "oidc" {
+										<kbd class="protocol-oidc">OIDC</kbd>
+									} else {
+										<kbd class="protocol-saml">SAML</kbd>
+									}
+									{ tab.Label }
+								</a>
+							} else {
+								<a href={ templ.SafeURL(tab.BaseURL + "/") }>
+									if tab.Protocol == "oidc" {
+										<kbd class="protocol-oidc">OIDC</kbd>
+									} else {
+										<kbd class="protocol-saml">SAML</kbd>
+									}
+									{ tab.Label }
+								</a>
+							}
+						}
+					</div>
+					{ children... }
+				</main>
+			</div>
+			<script>
 				function toggleTheme() {
 					var current = document.documentElement.getAttribute("data-theme");
 					var next = (current === "dark") ? "light" : "dark";
 					document.documentElement.setAttribute("data-theme", next);
 					localStorage.setItem("fedlens-theme", next);
+					updateThemeIcon();
+				}
+				function updateThemeIcon() {
+					var el = document.querySelector(".theme-toggle-icon");
+					if (!el) return;
+					var current = document.documentElement.getAttribute("data-theme");
+					el.textContent = (current === "dark") ? "\u2600" : "\u263E";
 				}
 				// Copy button
 				function copyToClipboard(btn) {
@@ -39,6 +180,19 @@ templ Layout(title string) {
 						btn.textContent = "Copied!";
 						setTimeout(function() { btn.textContent = "Copy"; }, 2000);
 					}
+				}
+				// Copy claims as JSON
+				function copyClaimsAsJSON(tableId) {
+					var table = document.getElementById(tableId);
+					if (!table) return;
+					var obj = {};
+					table.querySelectorAll("tbody tr").forEach(function(row) {
+						var cells = row.querySelectorAll("td");
+						if (cells.length === 2) obj[cells[0].textContent.trim()] = cells[1].textContent.trim();
+					});
+					navigator.clipboard.writeText(JSON.stringify(obj, null, 2));
+					var btn = table.closest(".section-group, details").querySelector(".copy-json-btn");
+					if (btn) { btn.textContent = "Copied!"; setTimeout(function() { btn.textContent = "Copy as JSON"; }, 2000); }
 				}
 				// Collapsible state persistence
 				document.addEventListener("DOMContentLoaded", function() {
@@ -53,6 +207,8 @@ templ Layout(title string) {
 					});
 					// Syntax highlighting
 					Prism.highlightAll();
+					// Theme icon
+					updateThemeIcon();
 				});
 			</script>
 		</body>

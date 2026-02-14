@@ -29,6 +29,7 @@ type Handler struct {
 	idpMetadataRaw string
 	rootURLStr     string
 	navTabs        []templates.NavTab
+	defaultTheme   string
 }
 
 // NewHandler creates and initializes a SAML handler for the given config.
@@ -114,6 +115,11 @@ func (h *Handler) SetNavTabs(tabs []templates.NavTab) {
 	h.navTabs = tabs
 }
 
+// SetDefaultTheme sets the default theme for this handler.
+func (h *Handler) SetDefaultTheme(theme string) {
+	h.defaultTheme = theme
+}
+
 // RegisterRoutes registers SAML handlers on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
@@ -122,6 +128,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle(h.Config.MetadataPath, h.sp)
 	mux.HandleFunc(h.Config.SLOPath, h.handleSLO)
 	mux.HandleFunc("/logout", h.handleLogout)
+}
+
+// activeTab returns the NavTab that is currently active.
+func (h *Handler) activeTab() templates.NavTab {
+	for _, tab := range h.navTabs {
+		if tab.Active {
+			return tab
+		}
+	}
+	return templates.NavTab{}
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
@@ -133,7 +149,19 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	session, err := h.sp.Session.GetSession(r)
 	if err != nil || session == nil {
 		idpMetadataXML := protocol.FormatXML(h.idpMetadataRaw)
-		templates.SAMLIndex(h.navTabs, h.Config.Name, idpMetadataXML).Render(r.Context(), w)
+		page := templates.PageInfo{
+			Tabs:         h.navTabs,
+			ActiveTab:    h.activeTab(),
+			Status:       "disconnected",
+			StatusLabel:  "Not Authenticated",
+			LoginURL:     "/login",
+			DefaultTheme: h.defaultTheme,
+			Sections: []templates.Section{
+				{ID: "sec-flow", Label: "Flow Diagram"},
+				{ID: "sec-config", Label: "Configuration"},
+			},
+		}
+		templates.SAMLIndex(page, h.Config.Name, idpMetadataXML, h.Config.ACSPath).Render(r.Context(), w)
 		return
 	}
 
@@ -149,6 +177,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	data := templates.SAMLDebugData{
 		Name:           h.Config.Name,
 		IDPMetadataXML: protocol.FormatXML(h.idpMetadataRaw),
+		ACSPath:        h.Config.ACSPath,
 	}
 
 	// Attributes
@@ -161,11 +190,14 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Signature info
+	sigVerifiedAll := true
 	if debugSession != nil && len(debugSession.SignatureInfos) > 0 {
 		for _, sigInfo := range debugSession.SignatureInfos {
 			verifiedStr := "false"
 			if sigInfo.Verified {
 				verifiedStr = "true"
+			} else {
+				sigVerifiedAll = false
 			}
 			var rows []components.SignatureRow
 			pairs := []struct{ label, value string }{
@@ -192,13 +224,44 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 	}
+	data.SigVerifiedAll = sigVerifiedAll
 
 	if debugSession != nil {
 		data.AuthnRequestXML = protocol.FormatXML(debugSession.AuthnRequestXML)
 		data.SAMLResponseXML = protocol.FormatXML(debugSession.SAMLResponseXML)
+
+		// Extract SAML Response details
+		if debugSession.ResponseInfo != nil {
+			for _, group := range debugSession.ResponseInfo.Groups {
+				var rows []components.GroupedRow
+				for _, row := range group.Rows {
+					rows = append(rows, components.GroupedRow{Label: row.Label, Value: row.Value})
+				}
+				data.ResponseGroups = append(data.ResponseGroups, components.RowGroup{
+					Name: group.Name,
+					Rows: rows,
+				})
+			}
+		}
 	}
 
-	templates.SAMLDebug(h.navTabs, data).Render(r.Context(), w)
+	page := templates.PageInfo{
+		Tabs:         h.navTabs,
+		ActiveTab:    h.activeTab(),
+		Status:       "connected",
+		StatusLabel:  "Authenticated",
+		LogoutURL:    "/logout",
+		DefaultTheme: h.defaultTheme,
+		Sections: []templates.Section{
+			{ID: "sec-attrs", Label: "Attributes"},
+			{ID: "sec-response", Label: "Response Details"},
+			{ID: "sec-sigs", Label: "Signatures"},
+			{ID: "sec-protocol", Label: "Protocol"},
+			{ID: "sec-flow", Label: "Flow Diagram"},
+		},
+	}
+
+	templates.SAMLDebug(page, data).Render(r.Context(), w)
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -296,6 +359,7 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 		if samlResponseXMLBytes, err := base64.StdEncoding.DecodeString(samlResponseB64); err == nil {
 			samlResponseXML := string(samlResponseXMLBytes)
 			signatureInfos := protocol.ExtractSAMLSignatureInfos(samlResponseXML)
+			responseInfo := protocol.ExtractSAMLResponseInfo(samlResponseXML)
 
 			c, cookieErr := r.Cookie("saml_debug_id")
 			if cookieErr == nil {
@@ -303,6 +367,7 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 				if ds := h.debugSessions.GetByID(c.Value); ds != nil {
 					ds.SAMLResponseXML = samlResponseXML
 					ds.SignatureInfos = signatureInfos
+					ds.ResponseInfo = responseInfo
 				}
 			} else {
 				// IdP-initiated: no existing debug session, create one
@@ -311,6 +376,7 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 					h.debugSessions.Set(debugID, &DebugSession{
 						SAMLResponseXML: samlResponseXML,
 						SignatureInfos:  signatureInfos,
+						ResponseInfo:    responseInfo,
 					})
 					http.SetCookie(w, &http.Cookie{
 						Name:     "saml_debug_id",

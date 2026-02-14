@@ -2,17 +2,15 @@ package templates
 
 import "github.com/wadahiro/fedlens/internal/ui/templates/components"
 
-templ OIDCIndex(tabs []NavTab, name string, discoveryJSON string) {
-	@Layout("OIDC - " + name) {
-		@Nav(tabs)
-		<hgroup>
-			<h1>Not logged in</h1>
-			<p>OIDC RP: { name }</p>
-		</hgroup>
-		<a href="/login" role="button">Login</a>
-		@components.OIDCSequence()
+templ OIDCIndex(page PageInfo, name string, discoveryJSON string, callbackPath string) {
+	@Layout("OIDC - " + name, page) {
+		@components.Collapsible("sec-flow", "Flow Diagram", false) {
+			@components.OIDCSequence(callbackPath)
+		}
 		if discoveryJSON != "" {
-			@components.CodeBlock("OpenID Provider Configuration", discoveryJSON)
+			@components.Collapsible("sec-config", "OpenID Provider Configuration", false) {
+				@components.CodeBlock("", discoveryJSON)
+			}
 		}
 	}
 }

@@ -6,6 +6,18 @@ type SignatureRow struct {
 	Value string
 }
 
+// GroupedRow is a key-value row within a grouped table.
+type GroupedRow struct {
+	Label string
+	Value string
+}
+
+// RowGroup is a named group of rows for grouped table display.
+type RowGroup struct {
+	Name string
+	Rows []GroupedRow
+}
+
 templ SignatureTable(title string, rows []SignatureRow) {
 	<article>
 		<header>{ title }</header>
@@ -14,14 +26,46 @@ templ SignatureTable(title string, rows []SignatureRow) {
 				<tbody>
 					for _, row := range rows {
 						if row.Value != "" {
-							<tr>
-								<td>{ row.Label }</td>
-								<td>{ row.Value }</td>
-							</tr>
+							if row.Label == "Verified" && row.Value == "true" {
+								<tr class="verified-true">
+									<td>{ row.Label }</td>
+									<td>{ row.Value }</td>
+								</tr>
+							} else if row.Label == "Verified" && row.Value == "false" {
+								<tr class="verified-false">
+									<td>{ row.Label }</td>
+									<td>{ row.Value }</td>
+								</tr>
+							} else {
+								<tr>
+									<td>{ row.Label }</td>
+									<td>{ row.Value }</td>
+								</tr>
+							}
 						}
 					}
 				</tbody>
 			</table>
 		</div>
 	</article>
+}
+
+templ GroupedTable(groups []RowGroup) {
+	<div class="overflow-auto">
+		<table class="grouped-table">
+			<tbody>
+				for _, group := range groups {
+					<tr class="group-header">
+						<td colspan="2">{ group.Name }</td>
+					</tr>
+					for _, row := range group.Rows {
+						<tr>
+							<td>{ row.Label }</td>
+							<td>{ row.Value }</td>
+						</tr>
+					}
+				}
+			</tbody>
+		</table>
+	</div>
 }

@@ -1,21 +1,29 @@
 package components
 
 templ CodeBlock(title string, content string) {
-	<article>
-		<header>
-			{ title }
-			<button class="copy-btn outline secondary" onclick="copyToClipboard(this)">Copy</button>
-		</header>
-		<pre><code class="language-json">{ content }</code></pre>
-	</article>
+	if content != "" {
+		<article>
+			if title != "" {
+				<header>
+					{ title }
+					<button class="copy-btn outline secondary" onclick="copyToClipboard(this)">Copy</button>
+				</header>
+			}
+			<pre><code class="language-json">{ content }</code></pre>
+		</article>
+	}
 }
 
 templ XMLCodeBlock(title string, content string) {
-	<article>
-		<header>
-			{ title }
-			<button class="copy-btn outline secondary" onclick="copyToClipboard(this)">Copy</button>
-		</header>
-		<pre><code class="language-markup">{ content }</code></pre>
-	</article>
+	if content != "" {
+		<article>
+			if title != "" {
+				<header>
+					{ title }
+					<button class="copy-btn outline secondary" onclick="copyToClipboard(this)">Copy</button>
+				</header>
+			}
+			<pre><code class="language-markup">{ content }</code></pre>
+		</article>
+	}
 }

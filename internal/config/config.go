@@ -12,6 +12,8 @@ type Config struct {
 	ListenAddr         string       `toml:"listen_addr"`
 	InsecureSkipVerify bool         `toml:"insecure_skip_verify"`
 	LogLevel           string       `toml:"log_level"`
+	Theme              string       `toml:"theme"`
+	Timezone           string       `toml:"timezone"`
 	OIDC               []OIDCConfig `toml:"oidc"`
 	SAML               []SAMLConfig `toml:"saml"`
 }
@@ -69,6 +71,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
+	}
+	if cfg.Theme == "" {
+		cfg.Theme = "auto"
+	}
+	if cfg.Timezone == "" {
+		cfg.Timezone = "UTC"
 	}
 
 	for i := range cfg.OIDC {

@@ -9,4 +9,5 @@ type DebugSession struct {
 	AuthnRequestXML string
 	SAMLResponseXML string
 	SignatureInfos  []protocol.SAMLSignatureInfo
+	ResponseInfo    *protocol.SAMLResponseInfo
 }
