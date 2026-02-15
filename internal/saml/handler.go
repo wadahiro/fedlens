@@ -273,13 +273,15 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// If no results from debug session but we have session attrs, build one from current session
 	if len(results) == 0 {
 		// Fallback: build a synthetic login entry from current session data
+		now := time.Now()
 		entryData := templates.SAMLResultEntryData{
-			ID:          "result-0",
-			Type:        "Login",
-			Timestamp:   formatTimestamp(time.Now()),
-			Subject:     subject,
-			SidebarLabel: "Login",
-			SidebarDot:  "login",
+			ID:               "result-0",
+			Type:             "Login",
+			Timestamp:        formatTimestamp(now),
+			SidebarTimestamp: formatSidebarTimestamp(now),
+			Subject:          subject,
+			SidebarLabel:     "Login",
+			SidebarDot:       "login",
 		}
 		attrKeys := protocol.SortedKeys(toStringMap(attrs))
 		for _, k := range attrKeys {
@@ -330,10 +332,11 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// Build Sections from result entries
 	for _, re := range results {
 		page.Sections = append(page.Sections, templates.Section{
-			ID:       re.ID,
-			Label:    re.SidebarLabel,
-			Dot:      re.SidebarDot,
-			Children: re.Children,
+			ID:        re.ID,
+			Label:     re.SidebarLabel,
+			Timestamp: re.SidebarTimestamp,
+			Dot:       re.SidebarDot,
+			Children:  re.Children,
 		})
 	}
 
@@ -343,13 +346,13 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 // buildSAMLResultEntryData converts a SAMLResultEntry to template display data.
 func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLResultEntryData {
 	id := fmt.Sprintf("result-%d", index)
-	timestamp := formatTimestamp(entry.Timestamp)
 
 	data := templates.SAMLResultEntryData{
-		ID:        id,
-		Type:      entry.Type,
-		Timestamp: timestamp,
-		Subject:   entry.Subject,
+		ID:               id,
+		Type:             entry.Type,
+		Timestamp:        formatTimestamp(entry.Timestamp),
+		SidebarTimestamp: formatSidebarTimestamp(entry.Timestamp),
+		Subject:          entry.Subject,
 	}
 
 	// Error entry
@@ -358,7 +361,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 		data.ErrorDetail = entry.ErrorDetail
 		data.AuthnRequestXML = protocol.FormatXML(entry.AuthnRequestXML)
 		data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
-		data.SidebarLabel = "Error (" + timestamp + ")"
+		data.SidebarLabel = "Error"
 		data.SidebarDot = "error"
 		return data
 	}
@@ -433,10 +436,10 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	// Sidebar label and dot
 	switch {
 	case entry.Type == "Login":
-		data.SidebarLabel = "Login (" + timestamp + ")"
+		data.SidebarLabel = "Login"
 		data.SidebarDot = "login"
 	default: // Re-auth: *
-		data.SidebarLabel = entry.Type + " (" + timestamp + ")"
+		data.SidebarLabel = entry.Type
 		data.SidebarDot = "reauth"
 	}
 
@@ -658,9 +661,14 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 						ds.Results = ds.Results[1:]
 					}
 					// Prepend the completed result entry
+					// Extract Subject and Attributes from SAML Response XML
+					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
+
 					entry := SAMLResultEntry{
 						Type:            resultType,
 						Timestamp:       time.Now(),
+						Subject:         subject,
+						Attributes:      attributes,
 						AuthnRequestXML: authnRequestXML,
 						SAMLResponseXML: samlResponseXML,
 						SignatureInfos:  signatureInfos,
@@ -672,9 +680,13 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 				// IdP-initiated: no existing debug session, create one
 				debugID, err := protocol.RandomHex(16)
 				if err == nil {
+					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
+
 					entry := SAMLResultEntry{
 						Type:            resultType,
 						Timestamp:       time.Now(),
+						Subject:         subject,
+						Attributes:      attributes,
 						SAMLResponseXML: samlResponseXML,
 						SignatureInfos:  signatureInfos,
 						ResponseInfo:    responseInfo,
@@ -762,5 +774,12 @@ func formatTimestamp(t time.Time) string {
 	if protocol.DisplayLocation != nil {
 		t = t.In(protocol.DisplayLocation)
 	}
-	return t.Format("15:04:05 MST")
+	return t.Format("2006/01/02 15:04:05 MST")
+}
+
+func formatSidebarTimestamp(t time.Time) string {
+	if protocol.DisplayLocation != nil {
+		t = t.In(protocol.DisplayLocation)
+	}
+	return t.Format("01/02 15:04:05")
 }

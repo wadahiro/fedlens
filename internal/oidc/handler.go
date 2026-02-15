@@ -247,10 +247,11 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			// Add error entries to sidebar sections
 			for _, e := range errorEntries {
 				page.Sections = append(page.Sections, templates.Section{
-					ID:       e.ID,
-					Label:    e.SidebarLabel,
-					Dot:      e.SidebarDot,
-					Children: e.Children,
+					ID:        e.ID,
+					Label:     e.SidebarLabel,
+					Timestamp: e.SidebarTimestamp,
+					Dot:       e.SidebarDot,
+					Children:  e.Children,
 				})
 			}
 		}
@@ -317,10 +318,11 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	// Build Sections from result entries
 	for _, re := range results {
 		page.Sections = append(page.Sections, templates.Section{
-			ID:       re.ID,
-			Label:    re.SidebarLabel,
-			Dot:      re.SidebarDot,
-			Children: re.Children,
+			ID:        re.ID,
+			Label:     re.SidebarLabel,
+			Timestamp: re.SidebarTimestamp,
+			Dot:       re.SidebarDot,
+			Children:  re.Children,
 		})
 	}
 
@@ -330,12 +332,12 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 // buildResultEntryData converts a ResultEntry to template display data.
 func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.OIDCResultEntryData {
 	id := fmt.Sprintf("result-%d", index)
-	timestamp := formatTimestamp(entry.Timestamp)
 
 	data := templates.OIDCResultEntryData{
-		ID:        id,
-		Type:      entry.Type,
-		Timestamp: timestamp,
+		ID:               id,
+		Type:             entry.Type,
+		Timestamp:        formatTimestamp(entry.Timestamp),
+		SidebarTimestamp: formatSidebarTimestamp(entry.Timestamp),
 	}
 
 	// Error entry
@@ -352,7 +354,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 			data.AuthResponseRaw = entry.AuthResponseRaw
 			data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
 		}
-		data.SidebarLabel = "Error (" + timestamp + ")"
+		data.SidebarLabel = "Error"
 		data.SidebarDot = "error"
 		return data
 	}
@@ -437,13 +439,13 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	// Sidebar label and dot color
 	switch {
 	case entry.Type == "Login":
-		data.SidebarLabel = "Login (" + timestamp + ")"
+		data.SidebarLabel = "Login"
 		data.SidebarDot = "login"
 	case entry.Type == "Refresh":
-		data.SidebarLabel = "Refresh (" + timestamp + ")"
+		data.SidebarLabel = "Refresh"
 		data.SidebarDot = "refresh"
 	default: // Re-auth: *
-		data.SidebarLabel = entry.Type + " (" + timestamp + ")"
+		data.SidebarLabel = entry.Type
 		data.SidebarDot = "reauth"
 	}
 
@@ -1032,5 +1034,12 @@ func formatTimestamp(t time.Time) string {
 	if protocol.DisplayLocation != nil {
 		t = t.In(protocol.DisplayLocation)
 	}
-	return t.Format("15:04:05 MST")
+	return t.Format("2006/01/02 15:04:05 MST")
+}
+
+func formatSidebarTimestamp(t time.Time) string {
+	if protocol.DisplayLocation != nil {
+		t = t.In(protocol.DisplayLocation)
+	}
+	return t.Format("01/02 15:04:05")
 }

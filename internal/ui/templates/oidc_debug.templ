@@ -14,7 +14,8 @@ type JWKSKeyData struct {
 type OIDCResultEntryData struct {
 	ID                 string // "result-0", "result-1", ...
 	Type               string // "Login", "Refresh", "Re-auth: <name>", "Error"
-	Timestamp          string
+	Timestamp          string // Full format: "2006/01/02 15:04:05 MST"
+	SidebarTimestamp   string // Short format: "01/02 15:04:05"
 	Subject            string
 	IDTokenClaims      []components.ClaimRow
 	IDTokenSigRows     []components.SignatureRow
@@ -141,10 +142,7 @@ templ OIDCResultEntry(index int, entry OIDCResultEntryData) {
 				if entry.Type == "Error" && entry.ErrorCode != "" {
 					{ entry.ErrorCode }
 				}
-				if entry.Subject != "" {
-					{ entry.Subject }
-				}
-				<span class="result-timestamp">({ entry.Timestamp })</span>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
 			</summary>
 			@resultEntryContent(entry)
 		</details>
@@ -155,10 +153,7 @@ templ OIDCResultEntry(index int, entry OIDCResultEntryData) {
 				if entry.Type == "Error" && entry.ErrorCode != "" {
 					{ entry.ErrorCode }
 				}
-				if entry.Subject != "" {
-					{ entry.Subject }
-				}
-				<span class="result-timestamp">({ entry.Timestamp })</span>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
 			</summary>
 			@resultEntryContent(entry)
 		</details>

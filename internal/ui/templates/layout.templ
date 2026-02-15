@@ -10,10 +10,11 @@ type NavTab struct {
 
 // Section represents a collapsible section for sidebar navigation.
 type Section struct {
-	ID       string
-	Label    string
-	Dot      string    // "login", "refresh", "reauth", "error", "" (no dot)
-	Children []Section // Sub-sections (e.g. Identity & Claims, Signature, etc.)
+	ID        string
+	Label     string
+	Timestamp string    // Timestamp display (e.g. "15:04:05 JST")
+	Dot       string    // "login", "refresh", "reauth", "error", "" (no dot)
+	Children  []Section // Sub-sections (e.g. Identity & Claims, Signature, etc.)
 }
 
 // ReauthItem represents a re-authenticate dropdown menu entry.
@@ -132,7 +133,12 @@ templ Layout(title string, page PageInfo) {
 								for _, sec := range page.Sections {
 									<li>
 										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
-											{ sec.Label }
+											<span class="sidebar-result-label">
+												<span>{ sec.Label }</span>
+												if sec.Timestamp != "" {
+													<small>{ sec.Timestamp }</small>
+												}
+											</span>
 										</a>
 										if len(sec.Children) > 0 {
 											<ul class="sidebar-subsection-list">

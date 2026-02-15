@@ -327,3 +327,63 @@ func ExtractSAMLResponseInfo(xmlStr string) *SAMLResponseInfo {
 
 	return info
 }
+
+// ExtractSAMLSubjectAndAttributes parses a SAML Response XML and extracts
+// the NameID (Subject) and Attributes from the first Assertion.
+func ExtractSAMLSubjectAndAttributes(xmlStr string) (subject string, attributes map[string][]string) {
+	if xmlStr == "" {
+		return "", nil
+	}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xmlStr); err != nil {
+		return "", nil
+	}
+	root := doc.Root()
+	if root == nil {
+		return "", nil
+	}
+
+	// Find Assertion (with or without namespace prefix)
+	assertion := findChildElement(root, "Assertion")
+	if assertion == nil {
+		for _, child := range root.ChildElements() {
+			if child.Tag == "Assertion" {
+				assertion = child
+				break
+			}
+		}
+	}
+	if assertion == nil {
+		return "", nil
+	}
+
+	// Extract NameID from Subject
+	if subjectElem := findChildElement(assertion, "Subject"); subjectElem != nil {
+		if nameID := findChildElement(subjectElem, "NameID"); nameID != nil {
+			subject = nameID.Text()
+		}
+	}
+
+	// Extract Attributes from AttributeStatement
+	if attrStmt := findChildElement(assertion, "AttributeStatement"); attrStmt != nil {
+		attributes = make(map[string][]string)
+		for _, attr := range attrStmt.ChildElements() {
+			if attr.Tag != "Attribute" {
+				continue
+			}
+			name := attr.SelectAttrValue("Name", "")
+			if name == "" {
+				continue
+			}
+			var values []string
+			for _, attrVal := range attr.ChildElements() {
+				if attrVal.Tag == "AttributeValue" {
+					values = append(values, attrVal.Text())
+				}
+			}
+			attributes[name] = values
+		}
+	}
+
+	return subject, attributes
+}
