@@ -133,12 +133,10 @@ templ Layout(title string, page PageInfo) {
 								for _, sec := range page.Sections {
 									<li>
 										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
-											<span class="sidebar-result-label">
-												<span>{ sec.Label }</span>
-												if sec.Timestamp != "" {
-													<small>{ sec.Timestamp }</small>
-												}
-											</span>
+											{ sec.Label }
+											if sec.Timestamp != "" {
+												<small>({ sec.Timestamp })</small>
+											}
 										</a>
 										if len(sec.Children) > 0 {
 											<ul class="sidebar-subsection-list">
@@ -258,34 +256,61 @@ templ Layout(title string, page PageInfo) {
 				});
 				// Scroll spy: observe all details[id] on page
 				var scrollSpyObserver = null;
+				var visibleSections = new Set();
+				var scrollSpyPaused = false;
+				function updateScrollSpyHighlight() {
+					if (scrollSpyPaused) return;
+					document.querySelectorAll(".sidebar-section-list a[aria-current]").forEach(function(a) {
+						a.removeAttribute("aria-current");
+					});
+					if (visibleSections.size === 0) return;
+					// Among visible sections, prefer subsections over parents
+					var subsections = [];
+					var others = [];
+					visibleSections.forEach(function(el) {
+						if (el.classList.contains("result-subsection")) {
+							subsections.push(el);
+						} else {
+							others.push(el);
+						}
+					});
+					var candidates = subsections.length > 0 ? subsections : others;
+					// Pick the one closest to the top of the viewport
+					var best = null;
+					var bestTop = Infinity;
+					candidates.forEach(function(el) {
+						var top = el.getBoundingClientRect().top;
+						if (top < bestTop) {
+							bestTop = top;
+							best = el;
+						}
+					});
+					if (best) {
+						var link = document.querySelector('.sidebar-section-list a[href="#' + best.getAttribute("id") + '"]');
+						if (link) {
+							link.setAttribute("aria-current", "true");
+						}
+					}
+				}
 				function setupScrollSpy() {
 					if (scrollSpyObserver) {
 						scrollSpyObserver.disconnect();
 					}
+					visibleSections.clear();
 					document.querySelectorAll(".sidebar-section-list a[aria-current]").forEach(function(a) {
 						a.removeAttribute("aria-current");
 					});
 					var sectionEls = document.querySelectorAll("details[id]");
 					if (sectionEls.length === 0) return;
 					scrollSpyObserver = new IntersectionObserver(function(entries) {
-						var topEntry = null;
 						entries.forEach(function(entry) {
 							if (entry.isIntersecting) {
-								if (!topEntry || entry.boundingClientRect.top < topEntry.boundingClientRect.top) {
-									topEntry = entry;
-								}
+								visibleSections.add(entry.target);
+							} else {
+								visibleSections.delete(entry.target);
 							}
 						});
-						if (topEntry) {
-							var id = topEntry.target.getAttribute("id");
-							document.querySelectorAll(".sidebar-section-list a[aria-current]").forEach(function(a) {
-								a.removeAttribute("aria-current");
-							});
-							var link = document.querySelector('.sidebar-section-list a[href="#' + id + '"]');
-							if (link) {
-								link.setAttribute("aria-current", "true");
-							}
-						}
+						updateScrollSpyHighlight();
 					}, {
 						rootMargin: "-80px 0px -40% 0px",
 						threshold: 0
@@ -295,15 +320,25 @@ templ Layout(title string, page PageInfo) {
 					});
 				}
 				// Section nav + scroll spy
+				var scrollSpyPauseTimer = null;
 				document.addEventListener("DOMContentLoaded", function() {
-					// Sidebar section links: auto-expand closed details on click
-					document.querySelectorAll(".sidebar a[href^='#']").forEach(function(link) {
+					// Sidebar section links: auto-expand closed details on click + immediate highlight
+					document.querySelectorAll(".sidebar-section-list a[href^='#']").forEach(function(link) {
 						link.addEventListener("click", function() {
 							var id = this.getAttribute("href").substring(1);
 							var target = document.getElementById(id);
 							if (target && target.tagName === "DETAILS" && !target.open) {
 								target.open = true;
 							}
+							// Pause scroll spy to prevent immediate override
+							scrollSpyPaused = true;
+							if (scrollSpyPauseTimer) clearTimeout(scrollSpyPauseTimer);
+							scrollSpyPauseTimer = setTimeout(function() { scrollSpyPaused = false; }, 500);
+							// Immediately highlight the clicked link
+							document.querySelectorAll(".sidebar-section-list a[aria-current]").forEach(function(a) {
+								a.removeAttribute("aria-current");
+							});
+							this.setAttribute("aria-current", "true");
 						});
 					});
 					// Setup scroll spy
