@@ -164,22 +164,22 @@ templ OIDCResultEntry(index int, entry OIDCResultEntryData) {
 	if index == 0 {
 		<details id={ entry.ID } class={ "result-entry", resultBadgeClass(entry.Type) } open>
 			<summary>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
 				<kbd class={ resultBadgeClass(entry.Type) }>{ resultBadgeLabel(entry.Type) }</kbd>
 				if entry.Type == "Error" && entry.ErrorCode != "" {
 					{ entry.ErrorCode }
 				}
-				<span class="result-timestamp">{ entry.Timestamp }</span>
 			</summary>
 			@resultEntryContent(entry)
 		</details>
 	} else {
 		<details id={ entry.ID } class={ "result-entry", resultBadgeClass(entry.Type) }>
 			<summary>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
 				<kbd class={ resultBadgeClass(entry.Type) }>{ resultBadgeLabel(entry.Type) }</kbd>
 				if entry.Type == "Error" && entry.ErrorCode != "" {
 					{ entry.ErrorCode }
 				}
-				<span class="result-timestamp">{ entry.Timestamp }</span>
 			</summary>
 			@resultEntryContent(entry)
 		</details>

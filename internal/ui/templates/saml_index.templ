@@ -147,22 +147,22 @@ templ SAMLResultEntry(index int, entry SAMLResultEntryData) {
 	if index == 0 {
 		<details id={ entry.ID } class={ "result-entry", samlResultBadgeClass(entry.Type) } open>
 			<summary>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
 				<kbd class={ samlResultBadgeClass(entry.Type) }>{ samlResultBadgeLabel(entry.Type) }</kbd>
 				if entry.Type == "Error" && entry.ErrorCode != "" {
 					{ entry.ErrorCode }
 				}
-				<span class="result-timestamp">{ entry.Timestamp }</span>
 			</summary>
 			@samlResultEntryContent(entry)
 		</details>
 	} else {
 		<details id={ entry.ID } class={ "result-entry", samlResultBadgeClass(entry.Type) }>
 			<summary>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
 				<kbd class={ samlResultBadgeClass(entry.Type) }>{ samlResultBadgeLabel(entry.Type) }</kbd>
 				if entry.Type == "Error" && entry.ErrorCode != "" {
 					{ entry.ErrorCode }
 				}
-				<span class="result-timestamp">{ entry.Timestamp }</span>
 			</summary>
 			@samlResultEntryContent(entry)
 		</details>

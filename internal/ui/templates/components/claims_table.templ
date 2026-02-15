@@ -10,9 +10,16 @@ func copyClaimsOnClick(id string) string {
 	return "copyClaimsAsJSON('" + id + "')"
 }
 
+func copySubjectOnClick(value string) string {
+	return "copySubjectValue(this, '" + value + "')"
+}
+
 templ SubjectTable(label string, value string) {
 	<article>
-		<header>{ label }</header>
+		<header>
+			{ label }
+			<button class="copy-btn outline secondary" onclick={ templ.ComponentScript{Call: copySubjectOnClick(value)} }>Copy</button>
+		</header>
 		<div class="overflow-auto">
 			<table>
 				<tbody>

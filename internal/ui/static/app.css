@@ -30,8 +30,8 @@ small { font-size: 0.75rem; }
   font-size: 1.2rem;
   color: var(--pico-primary);
   white-space: nowrap;
-  width: 250px;
-  min-width: 250px;
+  width: 300px;
+  min-width: 300px;
 }
 .header-status {
   display: flex;
@@ -66,8 +66,8 @@ small { font-size: 0.75rem; }
 .sidebar {
   position: sticky;
   top: 60px;
-  width: 250px;
-  min-width: 250px;
+  width: 300px;
+  min-width: 300px;
   height: calc(100vh - 60px);
   overflow-y: auto;
   border-right: 1px solid var(--pico-muted-border-color);
@@ -92,17 +92,20 @@ small { font-size: 0.75rem; }
 }
 .clear-btn {
   font-size: 0.6875rem;
-  color: var(--pico-muted-color);
+  color: var(--pico-del-color);
   text-decoration: none;
   padding: 0.125rem 0.375rem;
   border-radius: 3px;
-  border: 1px solid var(--pico-muted-border-color);
+  border: 1px solid var(--pico-del-color);
   line-height: 1;
   cursor: pointer;
+  opacity: 0.75;
 }
 .clear-btn:hover {
-  color: var(--pico-color);
-  border-color: var(--pico-color);
+  color: var(--pico-del-color);
+  border-color: var(--pico-del-color);
+  opacity: 1;
+  background-color: color-mix(in srgb, var(--pico-del-color) 10%, transparent);
 }
 .sidebar ul {
   list-style: none;
@@ -480,6 +483,27 @@ details:target > summary {
   max-height: 12rem;
 }
 
+/* === Sidebar result timestamp === */
+.sidebar-timestamp {
+  font-family: var(--pico-font-family-monospace);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: 0.375rem;
+}
+
+/* === Sidebar result badge (smaller version of timeline badges) === */
+kbd.sidebar-badge {
+  font-size: 0.5625rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+  font-weight: 700;
+  white-space: nowrap;
+  letter-spacing: 0.025em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
 /* === Sidebar subsection list === */
 .sidebar ul.sidebar-subsection-list {
   list-style: none;
@@ -676,6 +700,11 @@ details:target > summary {
 .result-entry > summary::-webkit-details-marker {
   display: none;
 }
+.result-entry > summary::after {
+  float: none;
+  margin-left: auto;
+  flex-shrink: 0;
+}
 
 /* Open state */
 .result-entry[open] > summary {
@@ -686,16 +715,15 @@ details:target > summary {
 }
 
 .result-timestamp {
-  color: var(--pico-muted-color);
-  font-size: 0.8125rem;
-  font-weight: 400;
-  margin-left: 0;
+  color: var(--pico-color);
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-family: var(--pico-font-family-monospace);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .result-timestamp::before {
-  content: "\00b7";
-  margin-right: 0.5rem;
-  color: var(--pico-muted-border-color);
+  display: none;
 }
 
 /* === Result type badges (kbd) === */

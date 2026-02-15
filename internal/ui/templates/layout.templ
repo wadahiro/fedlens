@@ -38,6 +38,40 @@ type PageInfo struct {
 	DefaultTheme string    // "light", "dark", or "auto"
 }
 
+func sidebarBadgeClass(dot string) string {
+	switch dot {
+	case "login":
+		return "result-login"
+	case "refresh":
+		return "result-refresh"
+	case "reauth":
+		return "result-reauth"
+	case "logout":
+		return "result-logout"
+	case "error":
+		return "result-error"
+	default:
+		return ""
+	}
+}
+
+func sidebarBadgeLabel(dot string) string {
+	switch dot {
+	case "login":
+		return "Login"
+	case "refresh":
+		return "Refresh"
+	case "reauth":
+		return "Re-auth"
+	case "logout":
+		return "Logout"
+	case "error":
+		return "Error"
+	default:
+		return ""
+	}
+}
+
 templ Layout(title string, page PageInfo) {
 	<!DOCTYPE html>
 	<html lang="en" data-default-theme={ page.DefaultTheme }>
@@ -130,9 +164,13 @@ templ Layout(title string, page PageInfo) {
 								for _, sec := range page.Sections {
 									<li>
 										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
-											{ sec.Label }
 											if sec.Timestamp != "" {
-												<small>({ sec.Timestamp })</small>
+												<small class="sidebar-timestamp">{ sec.Timestamp }</small>
+											}
+											if sec.Dot != "" {
+												<kbd class={ "sidebar-badge", sidebarBadgeClass(sec.Dot) }>{ sidebarBadgeLabel(sec.Dot) }</kbd>
+											} else {
+												{ sec.Label }
 											}
 										</a>
 										if len(sec.Children) > 0 {
@@ -234,6 +272,12 @@ templ Layout(title string, page PageInfo) {
 							setTimeout(function() { btn.textContent = "Copy"; }, 2000);
 						}
 					}
+				}
+				// Copy subject value
+				function copySubjectValue(btn, value) {
+					writeToClipboard(value);
+					btn.textContent = "Copied!";
+					setTimeout(function() { btn.textContent = "Copy"; }, 2000);
 				}
 				// Copy claims table as JSON
 				function copyClaimsAsJSON(tableId) {

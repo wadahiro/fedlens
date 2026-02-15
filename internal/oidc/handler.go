@@ -286,7 +286,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		ID:               id,
 		Type:             entry.Type,
 		Timestamp:        formatTimestamp(entry.Timestamp),
-		SidebarTimestamp: formatSidebarTimestamp(entry.Timestamp),
+		SidebarTimestamp: formatTimestamp(entry.Timestamp),
 	}
 
 	// Error entry

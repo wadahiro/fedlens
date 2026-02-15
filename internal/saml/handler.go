@@ -285,7 +285,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 				ID:               "result-0",
 				Type:             "Login",
 				Timestamp:        formatTimestamp(now),
-				SidebarTimestamp: formatSidebarTimestamp(now),
+				SidebarTimestamp: formatTimestamp(now),
 				Subject:          subject,
 				SidebarLabel:     "Login",
 				SidebarDot:       "login",
@@ -366,7 +366,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 		ID:               id,
 		Type:             entry.Type,
 		Timestamp:        formatTimestamp(entry.Timestamp),
-		SidebarTimestamp: formatSidebarTimestamp(entry.Timestamp),
+		SidebarTimestamp: formatTimestamp(entry.Timestamp),
 		Subject:          entry.Subject,
 	}
 
