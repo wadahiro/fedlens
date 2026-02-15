@@ -1,16 +1,20 @@
 package protocol
 
 import (
+	"bytes"
+	"compress/flate"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 	"time"
 	xmlpkg "encoding/xml"
 
 	"github.com/beevik/etree"
+	dsig "github.com/russellhaering/goxmldsig"
 )
 
 // SAMLSignatureInfo holds SAML signature verification details.
@@ -20,6 +24,7 @@ type SAMLSignatureInfo struct {
 	AlgorithmShort       string // e.g. "rsa-sha256"
 	DigestAlgorithm      string // DigestMethod URI
 	DigestAlgorithmShort string
+	KeyName              string // ds:KeyName value (if present)
 	CertSubject          string
 	CertIssuer           string
 	CertSerialNumber     string
@@ -69,12 +74,14 @@ func ExtractSAMLSignatureInfos(xmlStr string) []SAMLSignatureInfo {
 
 	// Check Response-level signature
 	if info := parseSAMLSignature("Response", root); info != nil {
+		info.Verified = true // crewjam/saml already validated
 		infos = append(infos, *info)
 	}
 
 	// Check Assertion-level signature(s)
 	for _, assertion := range root.SelectElements("Assertion") {
 		if info := parseSAMLSignature("Assertion", assertion); info != nil {
+			info.Verified = true // crewjam/saml already validated
 			infos = append(infos, *info)
 		}
 	}
@@ -90,6 +97,7 @@ func ExtractSAMLSignatureInfos(xmlStr string) []SAMLSignatureInfo {
 				}
 			}
 			if !dup {
+				info.Verified = true // crewjam/saml already validated
 				infos = append(infos, *info)
 			}
 		}
@@ -112,8 +120,7 @@ func parseSAMLSignature(target string, elem *etree.Element) *SAMLSignatureInfo {
 	}
 
 	info := &SAMLSignatureInfo{
-		Target:   target,
-		Verified: true, // If we got here, crewjam/saml already validated
+		Target: target,
 	}
 
 	// Extract SignatureMethod
@@ -131,8 +138,11 @@ func parseSAMLSignature(target string, elem *etree.Element) *SAMLSignatureInfo {
 		}
 	}
 
-	// Extract X509Certificate
+	// Extract KeyName and X509Certificate
 	if keyInfo := findChildElement(sigElem, "KeyInfo"); keyInfo != nil {
+		if keyName := findChildElement(keyInfo, "KeyName"); keyName != nil {
+			info.KeyName = keyName.Text()
+		}
 		if x509Data := findChildElement(keyInfo, "X509Data"); x509Data != nil {
 			if x509Cert := findChildElement(x509Data, "X509Certificate"); x509Cert != nil {
 				parseCertDetails(x509Cert.Text(), info)
@@ -386,4 +396,59 @@ func ExtractSAMLSubjectAndAttributes(xmlStr string) (subject string, attributes 
 	}
 
 	return subject, attributes
+}
+
+// ExtractSAMLLogoutRequestSignatureInfos parses a SAML LogoutRequest XML
+// and extracts signature info from the root element.
+func ExtractSAMLLogoutRequestSignatureInfos(xmlStr string) []SAMLSignatureInfo {
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xmlStr); err != nil {
+		return nil
+	}
+	root := doc.Root()
+	if root == nil {
+		return nil
+	}
+	var infos []SAMLSignatureInfo
+	if info := parseSAMLSignature("Logout Request", root); info != nil {
+		infos = append(infos, *info)
+	}
+	return infos
+}
+
+// VerifyXMLSignature verifies the XML signature of a SAML message using
+// the provided trusted certificates (from IdP metadata).
+func VerifyXMLSignature(xmlStr string, trustedCerts []*x509.Certificate) bool {
+	if len(trustedCerts) == 0 {
+		return false
+	}
+	doc := etree.NewDocument()
+	if err := doc.ReadFromString(xmlStr); err != nil {
+		return false
+	}
+	root := doc.Root()
+	if root == nil {
+		return false
+	}
+	certStore := &dsig.MemoryX509CertificateStore{Roots: trustedCerts}
+	validationCtx := dsig.NewDefaultValidationContext(certStore)
+	validationCtx.IdAttribute = "ID"
+	_, err := validationCtx.Validate(root)
+	return err == nil
+}
+
+// DecodeSAMLRedirectBinding decodes a SAML message from HTTP-Redirect binding.
+// The message is base64-encoded and DEFLATE-compressed.
+func DecodeSAMLRedirectBinding(encoded string) ([]byte, error) {
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, fmt.Errorf("base64 decode: %w", err)
+	}
+	reader := flate.NewReader(bytes.NewReader(raw))
+	defer reader.Close()
+	xmlBytes, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, fmt.Errorf("deflate decompress: %w", err)
+	}
+	return xmlBytes, nil
 }
