@@ -226,6 +226,18 @@ templ Layout(title string, page PageInfo) {
 						setTimeout(function() { btn.textContent = "Copy"; }, 2000);
 					}
 				}
+				// Copy token part (next sibling pre's code content)
+				function copyTokenPart(btn) {
+					var pre = btn.closest(".token-part-header").nextElementSibling;
+					if (pre) {
+						var code = pre.querySelector("code");
+						if (code) {
+							writeToClipboard(code.textContent);
+							btn.textContent = "Copied!";
+							setTimeout(function() { btn.textContent = "Copy"; }, 2000);
+						}
+					}
+				}
 				// Copy claims table as JSON
 				function copyClaimsAsJSON(tableId) {
 					var table = document.getElementById(tableId);

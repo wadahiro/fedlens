@@ -477,21 +477,25 @@ details:target > summary {
   background-color: #1e293b;
 }
 
-/* === Token part label (Header / Payload / Signature inside Raw Tokens) === */
-.token-part-label {
-  display: block;
-  font-weight: 600;
-  color: var(--pico-muted-color);
+/* === Token part header (flex row: label + copy button) === */
+.token-part-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin: 0.5rem 0 0.25rem;
 }
-.token-part-label:first-of-type {
+.token-part-header:first-of-type {
   margin-top: 0;
+}
+/* === Token part label (Header / Payload / Signature inside Raw Tokens) === */
+.token-part-label {
+  font-weight: 600;
+  color: var(--pico-muted-color);
 }
 .token-signature code {
   word-break: break-all;
   white-space: pre-wrap;
 }
-
 /* === Action Bar === */
 .action-bar {
   display: flex;

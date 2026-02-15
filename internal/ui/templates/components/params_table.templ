@@ -24,11 +24,6 @@ templ ParamsTable(title string, rows []ClaimRow, rawValue string) {
 				</tbody>
 			</table>
 		</div>
-		if rawValue != "" {
-			<details>
-				<summary>Raw</summary>
-				<pre><code class="language-json">{ rawValue }</code></pre>
-			</details>
-		}
+		@RawBlock(rawValue)
 	</article>
 }

@@ -417,9 +417,11 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 
 	// Raw Tokens
 	if entry.IDTokenRaw != "" {
+		data.IDTokenRaw = entry.IDTokenRaw
 		data.IDTokenHeader, data.IDTokenPayload, data.IDTokenSignature = protocol.DecodeJWT(entry.IDTokenRaw)
 	}
 	if protocol.IsJWT(entry.AccessTokenRaw) {
+		data.AccessTokenJWT = entry.AccessTokenRaw
 		data.AccessTokenHeader, data.AccessTokenPayload, data.AccessTokenSignature = protocol.DecodeJWT(entry.AccessTokenRaw)
 	} else if entry.AccessTokenRaw != "" {
 		data.AccessTokenRaw = entry.AccessTokenRaw
@@ -461,7 +463,6 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	if entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-tokens", Label: "Raw Tokens"})
 	}
-
 	return data
 }
 

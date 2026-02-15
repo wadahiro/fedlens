@@ -14,17 +14,39 @@ templ CodeBlock(title string, content string) {
 	}
 }
 
-templ TokenBlock(title, header, payload, signature string) {
+templ RawBlock(content string) {
+	if content != "" {
+		<div class="token-part-header">
+			<small class="token-part-label">Raw</small>
+			<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+		</div>
+		<pre><code>{ content }</code></pre>
+	}
+}
+
+templ TokenBlock(title, header, payload, signature, raw string) {
 	<article>
-		<header>{ title }</header>
-		<small class="token-part-label">Header</small>
+		<header>
+			{ title }
+		</header>
+		<div class="token-part-header">
+			<small class="token-part-label">Header</small>
+			<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+		</div>
 		<pre><code class="language-json">{ header }</code></pre>
-		<small class="token-part-label">Payload</small>
+		<div class="token-part-header">
+			<small class="token-part-label">Payload</small>
+			<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+		</div>
 		<pre><code class="language-json">{ payload }</code></pre>
 		if signature != "" {
-			<small class="token-part-label">Signature</small>
+			<div class="token-part-header">
+				<small class="token-part-label">Signature</small>
+				<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+			</div>
 			<pre class="token-signature"><code>{ signature }</code></pre>
 		}
+		@RawBlock(raw)
 	</article>
 }
 

@@ -27,9 +27,11 @@ type OIDCResultEntryData struct {
 	AuthResponseRaw    string
 	AuthResponseParams []components.ClaimRow
 	TokenResponseJSON  string
+	IDTokenRaw           string
 	IDTokenHeader        string
 	IDTokenPayload       string
 	IDTokenSignature     string
+	AccessTokenJWT       string
 	AccessTokenHeader    string
 	AccessTokenPayload   string
 	AccessTokenSignature string
@@ -282,10 +284,10 @@ templ normalEntryContent(entry OIDCResultEntryData) {
 		<details id={ entry.ID + "-tokens" } class="result-subsection">
 			<summary>Raw Tokens</summary>
 			if entry.IDTokenHeader != "" {
-				@components.TokenBlock("ID Token", entry.IDTokenHeader, entry.IDTokenPayload, entry.IDTokenSignature)
+				@components.TokenBlock("ID Token", entry.IDTokenHeader, entry.IDTokenPayload, entry.IDTokenSignature, entry.IDTokenRaw)
 			}
 			if entry.AccessTokenHeader != "" {
-				@components.TokenBlock("Access Token", entry.AccessTokenHeader, entry.AccessTokenPayload, entry.AccessTokenSignature)
+				@components.TokenBlock("Access Token", entry.AccessTokenHeader, entry.AccessTokenPayload, entry.AccessTokenSignature, entry.AccessTokenJWT)
 			} else if entry.AccessTokenRaw != "" {
 				@components.CodeBlock("Access Token (Opaque)", entry.AccessTokenRaw)
 			}
