@@ -16,7 +16,7 @@ templ OIDCSequence(callbackPath string) {
 			<line x1="100" y1="34" x2="100" y2="400" stroke="currentColor" stroke-dasharray="4"/>
 			<text x="350" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">RP (fedlens)</text>
 			<line x1="350" y1="34" x2="350" y2="400" stroke="currentColor" stroke-dasharray="4"/>
-			<text x="600" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">IdP</text>
+			<text x="600" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">OpenID Provider</text>
 			<line x1="600" y1="34" x2="600" y2="400" stroke="currentColor" stroke-dasharray="4"/>
 			<!-- 1. Authorization Request -->
 			<line x1="100" y1="68" x2="345" y2="68" stroke="currentColor" marker-end="url(#arrow)"/>
@@ -26,8 +26,8 @@ templ OIDCSequence(callbackPath string) {
 			<text x="222" y="100" text-anchor="middle" font-size="13" fill="currentColor">2. 302 Redirect</text>
 			<line x1="100" y1="144" x2="595" y2="144" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="350" y="138" text-anchor="middle" font-size="13" fill="currentColor">3. Authorization Request</text>
-			<!-- 4. User authenticates -->
-			<line x1="600" y1="182" x2="105" y2="182" stroke="currentColor" marker-end="url(#arrow)"/>
+			<!-- 4. User authenticates (bidirectional) -->
+			<line x1="600" y1="182" x2="105" y2="182" stroke="currentColor" marker-start="url(#arrow-rev)" marker-end="url(#arrow)"/>
 			<text x="350" y="176" text-anchor="middle" font-size="13" fill="currentColor">4. Login Form / Authentication</text>
 			<!-- 5. Authorization Response -->
 			<line x1="600" y1="220" x2="105" y2="220" stroke="currentColor" marker-end="url(#arrow)"/>
@@ -43,10 +43,13 @@ templ OIDCSequence(callbackPath string) {
 			<!-- 9. Display -->
 			<line x1="350" y1="372" x2="105" y2="372" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="222" y="366" text-anchor="middle" font-size="13" fill="currentColor">9. Display Claims</text>
-			<!-- Arrow marker -->
+			<!-- Arrow markers -->
 			<defs>
 				<marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
 					<path d="M0,0 L8,3 L0,6 Z" fill="currentColor"/>
+				</marker>
+				<marker id="arrow-rev" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+					<path d="M8,0 L0,3 L8,6 Z" fill="currentColor"/>
 				</marker>
 			</defs>
 		</svg>
@@ -61,7 +64,7 @@ templ SAMLSequence(acsPath, requestBinding, responseBinding string) {
 			<line x1="100" y1="34" x2="100" y2="400" stroke="currentColor" stroke-dasharray="4"/>
 			<text x="350" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">SP (fedlens)</text>
 			<line x1="350" y1="34" x2="350" y2="400" stroke="currentColor" stroke-dasharray="4"/>
-			<text x="600" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">IdP</text>
+			<text x="600" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">Identity Provider</text>
 			<line x1="600" y1="34" x2="600" y2="400" stroke="currentColor" stroke-dasharray="4"/>
 			<!-- 1. Login -->
 			<line x1="100" y1="68" x2="345" y2="68" stroke="currentColor" marker-end="url(#arrow2)"/>
@@ -80,8 +83,8 @@ templ SAMLSequence(acsPath, requestBinding, responseBinding string) {
 			} else {
 				<text x="350" y="154" text-anchor="middle" font-size="13" fill="currentColor">3. POST SSO URL (AuthnRequest)</text>
 			}
-			<!-- 4. Authentication -->
-			<line x1="600" y1="206" x2="105" y2="206" stroke="currentColor" marker-end="url(#arrow2)"/>
+			<!-- 4. Authentication (bidirectional) -->
+			<line x1="600" y1="206" x2="105" y2="206" stroke="currentColor" marker-start="url(#arrow2-rev)" marker-end="url(#arrow2)"/>
 			<text x="350" y="200" text-anchor="middle" font-size="13" fill="currentColor">4. Login Form / Authentication</text>
 			<!-- 5. SAML Response: IdP → Browser -->
 			<line x1="600" y1="252" x2="105" y2="252" stroke="currentColor" marker-end="url(#arrow2)"/>
@@ -96,10 +99,13 @@ templ SAMLSequence(acsPath, requestBinding, responseBinding string) {
 			<!-- 7. Display -->
 			<line x1="350" y1="344" x2="105" y2="344" stroke="currentColor" marker-end="url(#arrow2)"/>
 			<text x="222" y="338" text-anchor="middle" font-size="13" fill="currentColor">7. Display Attributes</text>
-			<!-- Arrow marker -->
+			<!-- Arrow markers -->
 			<defs>
 				<marker id="arrow2" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
 					<path d="M0,0 L8,3 L0,6 Z" fill="currentColor"/>
+				</marker>
+				<marker id="arrow2-rev" markerWidth="8" markerHeight="6" refX="0" refY="3" orient="auto">
+					<path d="M8,0 L0,3 L8,6 Z" fill="currentColor"/>
 				</marker>
 			</defs>
 		</svg>
