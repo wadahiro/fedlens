@@ -732,7 +732,7 @@ kbd.result-refresh,
 kbd.result-reauth,
 kbd.result-logout,
 kbd.result-error {
-  font-size: 0.6875rem;
+  font-size: 0.8125rem;
   padding: 0.1875rem 0.5rem;
   border-radius: 4px;
   font-weight: 700;
