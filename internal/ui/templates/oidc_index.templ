@@ -1,16 +1,31 @@
 package templates
 
-import "github.com/wadahiro/fedlens/internal/ui/templates/components"
+import (
+	"fmt"
+	"github.com/wadahiro/fedlens/internal/ui/templates/components"
+)
 
-templ OIDCIndex(page PageInfo, name string, discoveryJSON string, callbackPath string) {
+templ OIDCIndex(page PageInfo, name string, discoveryJSON string, callbackPath string, endpointRows []components.ClaimRow, jwksJSON string, jwksKeys []JWKSKeyData) {
 	@Layout("OIDC - " + name, page) {
 		<div class="view-group" data-view="reference">
-			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+			@components.Collapsible("sec-flow", "Flow Diagram", true) {
 				@components.OIDCSequence(callbackPath)
 			}
-			if discoveryJSON != "" {
-				@components.Collapsible("sec-config", "OpenID Provider Configuration", false) {
-					@components.CodeBlock("", discoveryJSON)
+			@components.Collapsible("sec-provider", "OpenID Provider", true) {
+				if len(endpointRows) > 0 {
+					@components.KeyValueTable("op-endpoints", "Endpoints", "Name", "URL", endpointRows)
+				}
+				for i, key := range jwksKeys {
+					@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
+				}
+				@components.CodeBlock("JWKS (Raw)", jwksJSON)
+				if discoveryJSON != "" {
+					@components.CodeBlock("Discovery Metadata", discoveryJSON)
+				} else {
+					<article>
+						<header>Discovery Metadata</header>
+						<p class="not-configured">Not configured</p>
+					</article>
 				}
 			}
 		</div>

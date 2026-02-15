@@ -1,16 +1,30 @@
 package templates
 
-import "github.com/wadahiro/fedlens/internal/ui/templates/components"
+import (
+	"fmt"
+	"github.com/wadahiro/fedlens/internal/ui/templates/components"
+)
 
-templ SAMLIndex(page PageInfo, name string, idpMetadataXML string, acsPath string, requestBinding string, responseBinding string) {
+templ SAMLIndex(page PageInfo, name string, idpMetadataXML string, acsPath string, requestBinding string, responseBinding string, endpointRows []components.ClaimRow, idpCertificates []SAMLCertificateData) {
 	@Layout("SAML - " + name, page) {
 		<div class="view-group" data-view="reference">
-			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+			@components.Collapsible("sec-flow", "Flow Diagram", true) {
 				@components.SAMLSequence(acsPath, requestBinding, responseBinding)
 			}
-			if idpMetadataXML != "" {
-				@components.Collapsible("sec-config", "IdP Metadata", false) {
-					@components.XMLCodeBlock("", idpMetadataXML)
+			@components.Collapsible("sec-idp", "Identity Provider", true) {
+				if len(endpointRows) > 0 {
+					@components.KeyValueTable("idp-endpoints", "Endpoints", "Name", "URL", endpointRows)
+				}
+				for i, cert := range idpCertificates {
+					@components.SignatureTableWithPEM(fmt.Sprintf("IdP Certificate #%d", i+1), cert.Rows, cert.PEM)
+				}
+				if idpMetadataXML != "" {
+					@components.XMLCodeBlock("IdP Metadata", idpMetadataXML)
+				} else {
+					<article>
+						<header>IdP Metadata</header>
+						<p class="not-configured">Not configured</p>
+					</article>
 				}
 			}
 		</div>

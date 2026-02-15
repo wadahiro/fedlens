@@ -38,6 +38,9 @@ type Handler struct {
 	topPageURL   string
 	navTabs      []templates.NavTab
 	defaultTheme string
+	endpointRows []components.ClaimRow
+	jwksRaw      json.RawMessage
+	jwksKeys     []templates.JWKSKeyData
 }
 
 // NewHandler creates and initializes an OIDC handler for the given config.
@@ -110,7 +113,57 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 	}
 	h.topPageURL = redirectParsed.Scheme + "://" + redirectParsed.Host + "/"
 
+	// Build endpoint rows from discovery
+	h.endpointRows = buildEndpointRows(oauth2Config, h.providerInfo)
+
+	// Pre-fetch JWKS for display (available even before login)
+	if h.providerInfo.JwksURI != "" {
+		h.jwksRaw = fetchJWKS(httpClient, h.providerInfo.JwksURI)
+		h.jwksKeys = buildJWKSKeyRows(protocol.ParseJWKSKeys(h.jwksRaw))
+	}
+
 	return h, nil
+}
+
+func buildJWKSKeyRows(keys []protocol.JWKSKeyInfo) []templates.JWKSKeyData {
+	var result []templates.JWKSKeyData
+	for _, k := range keys {
+		var rows []components.SignatureRow
+		pairs := []struct{ label, value string }{
+			{"Key ID (kid)", k.Kid},
+			{"Key Type (kty)", k.Kty},
+			{"Algorithm (alg)", k.Alg},
+			{"Use (use)", k.Use},
+		}
+		for _, p := range pairs {
+			if p.value != "" {
+				rows = append(rows, components.SignatureRow{Label: p.label, Value: p.value})
+			}
+		}
+		result = append(result, templates.JWKSKeyData{Rows: rows})
+	}
+	return result
+}
+
+func buildEndpointRows(oauth2Config *oauth2.Config, providerInfo struct {
+	EndSessionEndpoint string
+	UserinfoEndpoint   string
+	JwksURI            string
+}) []components.ClaimRow {
+	var rows []components.ClaimRow
+	endpoints := []struct{ key, value string }{
+		{"authorization_endpoint", oauth2Config.Endpoint.AuthURL},
+		{"token_endpoint", oauth2Config.Endpoint.TokenURL},
+		{"userinfo_endpoint", providerInfo.UserinfoEndpoint},
+		{"jwks_uri", providerInfo.JwksURI},
+		{"end_session_endpoint", providerInfo.EndSessionEndpoint},
+	}
+	for _, ep := range endpoints {
+		if ep.value != "" {
+			rows = append(rows, components.ClaimRow{Key: ep.key, Value: ep.value})
+		}
+	}
+	return rows
 }
 
 // SetNavTabs sets the navigation tabs for this handler.
@@ -151,6 +204,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	session := h.sessions.Get(r)
 	if session == nil {
 		discoveryJSON := protocol.PrettyJSON(h.discoveryRaw)
+		jwksJSON := protocol.PrettyJSON(h.jwksRaw)
 		page := templates.PageInfo{
 			Tabs:         h.navTabs,
 			ActiveTab:    h.activeTab(),
@@ -160,10 +214,10 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			DefaultTheme: h.defaultTheme,
 			References: []templates.Section{
 				{ID: "sec-flow", Label: "Flow Diagram"},
-				{ID: "sec-config", Label: "OpenID Provider Configuration"},
+				{ID: "sec-provider", Label: "OpenID Provider"},
 			},
 		}
-		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath).Render(r.Context(), w)
+		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath, h.endpointRows, jwksJSON, h.jwksKeys).Render(r.Context(), w)
 		return
 	}
 
@@ -185,12 +239,14 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		AuthRequestParams:  authRequestParams,
 		AuthResponseRaw:    session.AuthResponseRaw,
 		AuthResponseParams: authResponseParams,
-		TokenResponseJSON: protocol.PrettyJSON(session.TokenResponse),
-		UserInfoJSON:      protocol.PrettyJSON(session.UserInfoResponse),
-		JWKSJSON:          protocol.PrettyJSON(session.JWKSResponse),
-		DiscoveryJSON:     protocol.PrettyJSON(h.discoveryRaw),
-		HasRefreshToken:   session.RefreshTokenRaw != "",
-		CallbackPath:      h.Config.CallbackPath,
+		TokenResponseJSON:  protocol.PrettyJSON(session.TokenResponse),
+		UserInfoJSON:       protocol.PrettyJSON(session.UserInfoResponse),
+		JWKSJSON:           protocol.PrettyJSON(session.JWKSResponse),
+		DiscoveryJSON:      protocol.PrettyJSON(h.discoveryRaw),
+		HasRefreshToken:    session.RefreshTokenRaw != "",
+		CallbackPath:       h.Config.CallbackPath,
+		EndpointRows:       h.endpointRows,
+		JWKSKeys:           h.jwksKeys,
 	}
 
 	// ID Token Claims

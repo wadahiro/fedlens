@@ -391,6 +391,32 @@ details:target > summary {
   color: var(--pico-primary);
   border-bottom: 2px solid var(--pico-primary);
 }
+/* === Not configured message === */
+.not-configured {
+  color: var(--pico-muted-color);
+  font-style: italic;
+}
+
+/* === PEM block inside article === */
+.pem-block {
+  border-top: 1px solid var(--pico-muted-border-color);
+  padding-top: 0.5rem;
+}
+.pem-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 0.75rem 0.25rem;
+}
+.pem-header small {
+  font-weight: 600;
+  color: var(--pico-muted-color);
+}
+.pem-block pre {
+  margin: 0;
+  max-height: 12rem;
+}
+
 /* === Scroll spy active indicator === */
 .sidebar-section-list li a[aria-current="true"] {
   border-left: 3px solid var(--pico-primary);

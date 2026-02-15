@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -9,6 +11,33 @@ import (
 	"strings"
 	"time"
 )
+
+// CertificateInfo holds structured metadata for an X.509 certificate.
+type CertificateInfo struct {
+	Subject      string
+	Issuer       string
+	SerialNumber string
+	NotBefore    string
+	NotAfter     string
+	Fingerprint  string // SHA-256 colon-separated hex
+}
+
+// ParseCertificateInfo extracts structured metadata from an X.509 certificate.
+func ParseCertificateInfo(cert *x509.Certificate) CertificateInfo {
+	fingerprint := sha256.Sum256(cert.Raw)
+	parts := make([]string, len(fingerprint))
+	for i, b := range fingerprint {
+		parts[i] = fmt.Sprintf("%02X", b)
+	}
+	return CertificateInfo{
+		Subject:      cert.Subject.String(),
+		Issuer:       cert.Issuer.String(),
+		SerialNumber: cert.SerialNumber.String(),
+		NotBefore:    FormatTimestamp(cert.NotBefore.UTC().Format(time.RFC3339)),
+		NotAfter:     FormatTimestamp(cert.NotAfter.UTC().Format(time.RFC3339)),
+		Fingerprint:  strings.Join(parts, ":"),
+	}
+}
 
 // RandomHex generates a hex-encoded random string of n bytes.
 func RandomHex(n int) (string, error) {

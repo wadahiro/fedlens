@@ -26,6 +26,10 @@ templ SubjectTable(label string, value string) {
 }
 
 templ ClaimsTable(id string, title string, rows []ClaimRow) {
+	@KeyValueTable(id, title, "Claim", "Value", rows)
+}
+
+templ KeyValueTable(id string, title string, keyHeader string, valueHeader string, rows []ClaimRow) {
 	<article>
 		<header>
 			{ title }
@@ -35,8 +39,8 @@ templ ClaimsTable(id string, title string, rows []ClaimRow) {
 			<table id={ id } class="striped">
 				<thead>
 					<tr>
-						<th>Claim</th>
-						<th>Value</th>
+						<th>{ keyHeader }</th>
+						<th>{ valueHeader }</th>
 					</tr>
 				</thead>
 				<tbody>

@@ -1,6 +1,14 @@
 package templates
 
-import "github.com/wadahiro/fedlens/internal/ui/templates/components"
+import (
+	"fmt"
+	"github.com/wadahiro/fedlens/internal/ui/templates/components"
+)
+
+// JWKSKeyData holds structured display data for a single JWKS key.
+type JWKSKeyData struct {
+	Rows []components.SignatureRow
+}
 
 // OIDCDebugData holds all data for the OIDC post-login page.
 type OIDCDebugData struct {
@@ -26,6 +34,8 @@ type OIDCDebugData struct {
 	CallbackPath       string
 	SigVerifiedAll     bool
 	RefreshResult      *OIDCRefreshResultData
+	EndpointRows       []components.ClaimRow
+	JWKSKeys           []JWKSKeyData
 }
 
 // OIDCRefreshResultData holds data from a token refresh for template display.
@@ -47,13 +57,26 @@ templ OIDCDebug(page PageInfo, data OIDCDebugData) {
 		<!-- REFERENCE view (default) -->
 		<div class="view-group" data-view="reference">
 			<!-- Flow Diagram -->
-			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+			@components.Collapsible("sec-flow", "Flow Diagram", true) {
 				@components.OIDCSequence(data.CallbackPath)
 			}
 			<!-- OpenID Provider -->
-			@components.Collapsible("sec-provider", "OpenID Provider", false) {
-				@components.CodeBlock("JWKS Response", data.JWKSJSON)
-				@components.CodeBlock("OpenID Provider Configuration", data.DiscoveryJSON)
+			@components.Collapsible("sec-provider", "OpenID Provider", true) {
+				if len(data.EndpointRows) > 0 {
+					@components.KeyValueTable("op-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
+				}
+				for i, key := range data.JWKSKeys {
+					@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
+				}
+				@components.CodeBlock("JWKS (Raw)", data.JWKSJSON)
+				if data.DiscoveryJSON != "" {
+					@components.CodeBlock("Discovery Metadata", data.DiscoveryJSON)
+				} else {
+					<article>
+						<header>Discovery Metadata</header>
+						<p class="not-configured">Not configured</p>
+					</article>
+				}
 			}
 		</div>
 		<!-- RESULTS view -->

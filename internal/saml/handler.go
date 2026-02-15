@@ -2,7 +2,9 @@ package saml
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"fmt"
 	"io"
 	"log"
@@ -22,16 +24,18 @@ import (
 
 // Handler is a per-SP SAML handler set.
 type Handler struct {
-	Config          config.SAMLConfig
-	debugSessions   *DebugSessionStore
-	sp              *samlsp.Middleware
-	httpClient      *http.Client
-	idpMetadataRaw  string
-	rootURLStr      string
-	navTabs         []templates.NavTab
-	defaultTheme    string
-	requestBinding  string // "redirect" or "post"
-	responseBinding string // "redirect" or "post"
+	Config             config.SAMLConfig
+	debugSessions      *DebugSessionStore
+	sp                 *samlsp.Middleware
+	httpClient         *http.Client
+	idpMetadataRaw     string
+	rootURLStr         string
+	navTabs            []templates.NavTab
+	defaultTheme       string
+	requestBinding     string // "redirect" or "post"
+	responseBinding    string // "redirect" or "post"
+	endpointRows    []components.ClaimRow
+	idpCertificates []templates.SAMLCertificateData
 }
 
 // NewHandler creates and initializes a SAML handler for the given config.
@@ -108,7 +112,7 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		reqBinding = "post"
 	}
 
-	return &Handler{
+	h := &Handler{
 		Config:          cfg,
 		debugSessions:   NewDebugSessionStore(),
 		sp:              sp,
@@ -117,7 +121,73 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		rootURLStr:      cfg.RootURL,
 		requestBinding:  reqBinding,
 		responseBinding: "post", // SAML Response is always HTTP-POST binding
-	}, nil
+	}
+
+	// Build endpoint rows from IdP metadata
+	h.endpointRows = buildSAMLEndpointRows(&sp.ServiceProvider)
+
+	// Extract IdP certificates with metadata
+	h.idpCertificates = extractIdPCertificateInfos(idpMetadata)
+
+	return h, nil
+}
+
+func buildSAMLEndpointRows(sp *samlpkg.ServiceProvider) []components.ClaimRow {
+	var rows []components.ClaimRow
+	endpoints := []struct{ key, value string }{
+		{"SSO URL (Redirect)", sp.GetSSOBindingLocation(samlpkg.HTTPRedirectBinding)},
+		{"SSO URL (POST)", sp.GetSSOBindingLocation(samlpkg.HTTPPostBinding)},
+		{"SLO URL (Redirect)", sp.GetSLOBindingLocation(samlpkg.HTTPRedirectBinding)},
+		{"SLO URL (POST)", sp.GetSLOBindingLocation(samlpkg.HTTPPostBinding)},
+	}
+	for _, ep := range endpoints {
+		if ep.value != "" {
+			rows = append(rows, components.ClaimRow{Key: ep.key, Value: ep.value})
+		}
+	}
+	return rows
+}
+
+func extractIdPCertificateInfos(metadata *samlpkg.EntityDescriptor) []templates.SAMLCertificateData {
+	var certs []templates.SAMLCertificateData
+	for _, idpDesc := range metadata.IDPSSODescriptors {
+		for _, kd := range idpDesc.KeyDescriptors {
+			for _, certData := range kd.KeyInfo.X509Data.X509Certificates {
+				derBytes, err := base64.StdEncoding.DecodeString(certData.Data)
+				if err != nil {
+					continue
+				}
+				cert, err := x509.ParseCertificate(derBytes)
+				if err != nil {
+					continue
+				}
+				pemBlock := pem.EncodeToMemory(&pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: cert.Raw,
+				})
+				certInfo := protocol.ParseCertificateInfo(cert)
+				var rows []components.SignatureRow
+				pairs := []struct{ label, value string }{
+					{"Subject", certInfo.Subject},
+					{"Issuer", certInfo.Issuer},
+					{"Serial Number", certInfo.SerialNumber},
+					{"Not Before", certInfo.NotBefore},
+					{"Not After", certInfo.NotAfter},
+					{"Fingerprint (SHA-256)", certInfo.Fingerprint},
+				}
+				for _, p := range pairs {
+					if p.value != "" {
+						rows = append(rows, components.SignatureRow{Label: p.label, Value: p.value})
+					}
+				}
+				certs = append(certs, templates.SAMLCertificateData{
+					Rows: rows,
+					PEM:  string(pemBlock),
+				})
+			}
+		}
+	}
+	return certs
 }
 
 // SetNavTabs sets the navigation tabs for this handler.
@@ -168,10 +238,10 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			DefaultTheme: h.defaultTheme,
 			References: []templates.Section{
 				{ID: "sec-flow", Label: "Flow Diagram"},
-				{ID: "sec-config", Label: "IdP Metadata"},
+				{ID: "sec-idp", Label: "Identity Provider"},
 			},
 		}
-		templates.SAMLIndex(page, h.Config.Name, idpMetadataXML, h.Config.ACSPath, h.requestBinding, h.responseBinding).Render(r.Context(), w)
+		templates.SAMLIndex(page, h.Config.Name, idpMetadataXML, h.Config.ACSPath, h.requestBinding, h.responseBinding, h.endpointRows, h.idpCertificates).Render(r.Context(), w)
 		return
 	}
 
@@ -191,12 +261,14 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	// Build template data
 	data := templates.SAMLDebugData{
-		Name:            h.Config.Name,
-		Subject:         subject,
-		IDPMetadataXML:  protocol.FormatXML(h.idpMetadataRaw),
-		ACSPath:         h.Config.ACSPath,
-		RequestBinding:  h.requestBinding,
-		ResponseBinding: h.responseBinding,
+		Name:               h.Config.Name,
+		Subject:            subject,
+		IDPMetadataXML:     protocol.FormatXML(h.idpMetadataRaw),
+		ACSPath:            h.Config.ACSPath,
+		RequestBinding:     h.requestBinding,
+		ResponseBinding:    h.responseBinding,
+		EndpointRows:    h.endpointRows,
+		IDPCertificates: h.idpCertificates,
 	}
 
 	// Attributes
@@ -273,7 +345,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		DefaultTheme: h.defaultTheme,
 		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
-			{ID: "sec-idp", Label: "IdP Info"},
+			{ID: "sec-idp", Label: "Identity Provider"},
 		},
 		Sections: []templates.Section{
 			{ID: "sec-claims", Label: "Identity & Claims"},

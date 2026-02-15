@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"fmt"
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
 )
 
@@ -10,20 +11,28 @@ type SAMLSignatureData struct {
 	Rows  []components.SignatureRow
 }
 
+// SAMLCertificateData holds structured display data for a single IdP certificate.
+type SAMLCertificateData struct {
+	Rows []components.SignatureRow
+	PEM  string
+}
+
 // SAMLDebugData holds all data for the SAML post-login page.
 type SAMLDebugData struct {
-	Name             string
-	Subject          string
-	Attributes       []components.ClaimRow
-	Signatures       []SAMLSignatureData
-	AuthnRequestXML  string
-	SAMLResponseXML  string
-	IDPMetadataXML   string
-	ResponseGroups   []components.RowGroup
-	ACSPath          string
-	SigVerifiedAll   bool
-	RequestBinding   string // "redirect" or "post"
-	ResponseBinding  string // "redirect" or "post"
+	Name            string
+	Subject         string
+	Attributes      []components.ClaimRow
+	Signatures      []SAMLSignatureData
+	AuthnRequestXML string
+	SAMLResponseXML string
+	IDPMetadataXML  string
+	ResponseGroups  []components.RowGroup
+	ACSPath         string
+	SigVerifiedAll  bool
+	RequestBinding  string // "redirect" or "post"
+	ResponseBinding string // "redirect" or "post"
+	EndpointRows    []components.ClaimRow
+	IDPCertificates []SAMLCertificateData
 }
 
 templ SAMLDebug(page PageInfo, data SAMLDebugData) {
@@ -31,12 +40,25 @@ templ SAMLDebug(page PageInfo, data SAMLDebugData) {
 		<!-- REFERENCE view (default) -->
 		<div class="view-group" data-view="reference">
 			<!-- Flow Diagram -->
-			@components.Collapsible("sec-flow", "Flow Diagram", false) {
+			@components.Collapsible("sec-flow", "Flow Diagram", true) {
 				@components.SAMLSequence(data.ACSPath, data.RequestBinding, data.ResponseBinding)
 			}
-			<!-- IdP Info -->
-			@components.Collapsible("sec-idp", "IdP Info", false) {
-				@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
+			<!-- Identity Provider -->
+			@components.Collapsible("sec-idp", "Identity Provider", true) {
+				if len(data.EndpointRows) > 0 {
+					@components.KeyValueTable("idp-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
+				}
+				for i, cert := range data.IDPCertificates {
+					@components.SignatureTableWithPEM(fmt.Sprintf("IdP Certificate #%d", i+1), cert.Rows, cert.PEM)
+				}
+				if data.IDPMetadataXML != "" {
+					@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
+				} else {
+					<article>
+						<header>IdP Metadata</header>
+						<p class="not-configured">Not configured</p>
+					</article>
+				}
 			}
 		</div>
 		<!-- RESULTS view -->

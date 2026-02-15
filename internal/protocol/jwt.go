@@ -94,6 +94,42 @@ func BuildJWTSignatureInfo(jwtRaw string, jwksRaw json.RawMessage, verified bool
 	return info
 }
 
+// JWKSKeyInfo holds structured metadata for a single JWKS key.
+type JWKSKeyInfo struct {
+	Kid string
+	Kty string
+	Alg string
+	Use string
+}
+
+// ParseJWKSKeys extracts key metadata from raw JWKS JSON.
+func ParseJWKSKeys(jwksRaw json.RawMessage) []JWKSKeyInfo {
+	if len(jwksRaw) == 0 {
+		return nil
+	}
+	var jwks struct {
+		Keys []struct {
+			Kid string `json:"kid"`
+			Kty string `json:"kty"`
+			Use string `json:"use"`
+			Alg string `json:"alg"`
+		} `json:"keys"`
+	}
+	if json.Unmarshal(jwksRaw, &jwks) != nil {
+		return nil
+	}
+	var result []JWKSKeyInfo
+	for _, k := range jwks.Keys {
+		result = append(result, JWKSKeyInfo{
+			Kid: k.Kid,
+			Kty: k.Kty,
+			Alg: k.Alg,
+			Use: k.Use,
+		})
+	}
+	return result
+}
+
 // MarshalTokenFields builds a JSON representation of relevant token fields.
 func MarshalTokenFields(fields map[string]any) json.RawMessage {
 	b, _ := json.Marshal(fields)
