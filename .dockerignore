@@ -1,0 +1,7 @@
+.git
+.github
+e2e
+keycloak
+*.md
+docker-compose.yml
+config.example.toml
