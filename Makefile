@@ -1,4 +1,4 @@
-.PHONY: build dev test e2e generate clean
+.PHONY: build dev test e2e e2e-capture generate clean
 
 BINARY := fedlens
 
@@ -18,10 +18,16 @@ dev: generate
 test:
 	go test ./...
 
-# Run E2E tests (Playwright)
+# Run E2E tests (Playwright, retain artifacts on failure only)
 e2e:
 	docker compose up -d --build --wait
 	cd e2e && npx playwright test
+	docker compose down
+
+# Run E2E tests in capture mode (always save video/trace/screenshot)
+e2e-capture:
+	docker compose up -d --build --wait
+	cd e2e && CAPTURE=1 npx playwright test
 	docker compose down
 
 # Clean build artifacts

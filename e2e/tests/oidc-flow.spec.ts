@@ -1,14 +1,5 @@
-import { test, expect, Page } from "@playwright/test";
-
-const OIDC_URL = "http://oidc.example.com:3000";
-const KC_USERNAME = "testuser";
-const KC_PASSWORD = "password";
-
-async function keycloakLogin(page: Page) {
-  await page.fill("#username", KC_USERNAME);
-  await page.fill("#password", KC_PASSWORD);
-  await page.click("#kc-login");
-}
+import { test, expect } from "@playwright/test";
+import { OIDC_URL, keycloakLogin } from "./helpers";
 
 test.describe("OIDC Flow", () => {
   test("shows pre-login page with discovery metadata", async ({ page }) => {

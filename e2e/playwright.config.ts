@@ -1,5 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const captureMode = process.env.CAPTURE === "1";
+
 export default defineConfig({
   testDir: "./tests",
   timeout: 60_000,
@@ -9,8 +11,9 @@ export default defineConfig({
   reporter: "html",
   use: {
     baseURL: "http://oidc.example.com:3000",
-    trace: "on-first-retry",
-    screenshot: "only-on-failure",
+    trace: captureMode ? "on" : "retain-on-failure",
+    video: captureMode ? "on" : "retain-on-failure",
+    screenshot: captureMode ? "on" : "only-on-failure",
   },
   projects: [
     {

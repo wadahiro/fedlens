@@ -1,7 +1,5 @@
 import { test, expect } from "@playwright/test";
-
-const OIDC_URL = "http://oidc.example.com:3000";
-const SAML_URL = "http://saml.example.com:3000";
+import { OIDC_URL, SAML_URL } from "./helpers";
 
 test.describe("UI Features", () => {
   test("tab navigation between OIDC and SAML", async ({ page }) => {
