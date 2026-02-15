@@ -14,15 +14,14 @@ test.describe("OIDC Flow", () => {
   test("shows pre-login page with discovery metadata", async ({ page }) => {
     await page.goto(OIDC_URL);
 
-    // Should show "Not logged in"
-    await expect(page.locator("h1")).toHaveText("Not logged in");
-    await expect(page.locator("p")).toContainText("OIDC RP:");
+    // Should show "No Session"
+    await expect(page.locator(".status-indicator")).toHaveText("No Session");
 
     // Login button should be visible
     await expect(page.locator('a[role="button"]', { hasText: "Login" })).toBeVisible();
 
-    // Should show OpenID Provider Configuration
-    await expect(page.locator("text=OpenID Provider Configuration")).toBeVisible();
+    // Should show OpenID Provider
+    await expect(page.locator("text=OpenID Provider")).toBeVisible();
   });
 
   test("login → claims display → logout", async ({ page }) => {
@@ -38,7 +37,7 @@ test.describe("OIDC Flow", () => {
     await keycloakLogin(page);
 
     // Should be redirected back to fedlens with claims
-    await expect(page.locator("h1")).toHaveText("Logged in");
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
     await expect(page.locator("text=ID Token Claims")).toBeVisible();
 
     // Should show signature verification
@@ -52,7 +51,7 @@ test.describe("OIDC Flow", () => {
     await page.click('a[role="button"]:has-text("Logout")');
 
     // Should return to pre-login page
-    await expect(page.locator("h1")).toHaveText("Not logged in");
+    await expect(page.locator(".status-indicator")).toHaveText("No Session");
   });
 
   test("token refresh flow", async ({ page }) => {
@@ -62,7 +61,7 @@ test.describe("OIDC Flow", () => {
     await page.click('a[role="button"]:has-text("Login")');
     await expect(page.locator("#kc-login")).toBeVisible();
     await keycloakLogin(page);
-    await expect(page.locator("h1")).toHaveText("Logged in");
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
 
     // Check if Refresh Token button exists
     const refreshButton = page.locator('a[role="button"]:has-text("Refresh Token")');
@@ -70,7 +69,7 @@ test.describe("OIDC Flow", () => {
       await refreshButton.click();
 
       // Should still show logged in page after refresh
-      await expect(page.locator("h1")).toHaveText("Logged in");
+      await expect(page.locator(".status-indicator")).toHaveText("Active Session");
       await expect(page.locator("text=ID Token Claims")).toBeVisible();
     }
 

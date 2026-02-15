@@ -7,20 +7,20 @@ test.describe("UI Features", () => {
   test("tab navigation between OIDC and SAML", async ({ page }) => {
     // Start on OIDC page
     await page.goto(OIDC_URL);
-    await expect(page.locator("p")).toContainText("OIDC RP:");
+    await expect(page.locator(".header-protocol-label")).toContainText("OIDC RP:");
 
     // Click SAML tab
     const samlTab = page.locator('nav a:has-text("SAML")');
     if (await samlTab.isVisible()) {
       await samlTab.click();
-      await expect(page.locator("p")).toContainText("SAML SP:");
+      await expect(page.locator(".header-protocol-label")).toContainText("SAML SP:");
     }
 
     // Click OIDC tab to go back
     const oidcTab = page.locator('nav a:has-text("OIDC")');
     if (await oidcTab.isVisible()) {
       await oidcTab.click();
-      await expect(page.locator("p")).toContainText("OIDC RP:");
+      await expect(page.locator(".header-protocol-label")).toContainText("OIDC RP:");
     }
   });
 
@@ -28,7 +28,7 @@ test.describe("UI Features", () => {
     await page.goto(OIDC_URL);
 
     // Click theme toggle button
-    const themeButton = page.locator('a[role="button"]:has-text("Theme")');
+    const themeButton = page.locator(".theme-toggle");
     await expect(themeButton).toBeVisible();
 
     // Get initial theme

@@ -17,18 +17,32 @@ type SAMLCertificateData struct {
 	PEM  string
 }
 
-// SAMLDebugData holds all data for the SAML post-login page.
-type SAMLDebugData struct {
-	Name            string
+// SAMLResultEntryData holds display data for a single SAML result entry.
+type SAMLResultEntryData struct {
+	ID              string // "result-0", "result-1", ...
+	Type            string // "Login", "Re-auth: <name>", "Error"
+	Timestamp       string
 	Subject         string
 	Attributes      []components.ClaimRow
 	Signatures      []SAMLSignatureData
+	ResponseGroups  []components.RowGroup
 	AuthnRequestXML string
 	SAMLResponseXML string
-	IDPMetadataXML  string
-	ResponseGroups  []components.RowGroup
-	ACSPath         string
 	SigVerifiedAll  bool
+	SidebarLabel    string
+	SidebarDot      string // "login", "reauth", "error"
+	Children        []Section // sidebar sub-sections
+	// Error fields
+	ErrorCode   string
+	ErrorDetail string
+}
+
+// SAMLDebugData holds all data for the SAML post-login page.
+type SAMLDebugData struct {
+	Name            string
+	Results         []SAMLResultEntryData // Reverse chronological
+	IDPMetadataXML  string
+	ACSPath         string
 	RequestBinding  string // "redirect" or "post"
 	ResponseBinding string // "redirect" or "post"
 	EndpointRows    []components.ClaimRow
@@ -37,56 +51,193 @@ type SAMLDebugData struct {
 
 templ SAMLDebug(page PageInfo, data SAMLDebugData) {
 	@Layout("SAML - " + data.Name, page) {
-		<!-- REFERENCE view (default) -->
-		<div class="view-group" data-view="reference">
-			<!-- Flow Diagram -->
-			@components.Collapsible("sec-flow", "Flow Diagram", true) {
-				@components.SAMLSequence(data.ACSPath, data.RequestBinding, data.ResponseBinding)
-			}
-			<!-- Identity Provider -->
-			@components.Collapsible("sec-idp", "Identity Provider", true) {
-				if len(data.EndpointRows) > 0 {
-					@components.KeyValueTable("idp-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
-				}
-				for i, cert := range data.IDPCertificates {
-					@components.SignatureTableWithPEM(fmt.Sprintf("IdP Certificate #%d", i+1), cert.Rows, cert.PEM)
-				}
-				if data.IDPMetadataXML != "" {
-					@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
+		<!-- Action Bar -->
+		if len(page.ReauthItems) > 0 {
+			<div class="action-bar">
+				if len(page.ReauthItems) == 1 {
+					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn">{ page.ReauthItems[0].Label }</a>
 				} else {
-					<article>
-						<header>IdP Metadata</header>
-						<p class="not-configured">Not configured</p>
-					</article>
+					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn">{ page.ReauthItems[0].Label }</a>
+					<div class="dropdown">
+						<button class="secondary outline action-btn" onclick="toggleDropdown(this)">
+							More &#9662;
+						</button>
+						<div class="dropdown-menu">
+							for _, item := range page.ReauthItems[1:] {
+								<a href={ templ.SafeURL(item.URL) } class="dropdown-item">{ item.Label }</a>
+							}
+						</div>
+					</div>
 				}
+			</div>
+		}
+		<!-- Results Timeline -->
+		if len(data.Results) > 0 {
+			<div class="results-timeline">
+				for i, entry := range data.Results {
+					@SAMLResultEntry(i, entry)
+				}
+			</div>
+		}
+		<!-- REFERENCE -->
+		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			@components.SAMLSequence(data.ACSPath, data.RequestBinding, data.ResponseBinding)
+		}
+		@components.Collapsible("sec-idp", "Identity Provider", true) {
+			if len(data.EndpointRows) > 0 {
+				@components.KeyValueTable("idp-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
 			}
+			for i, cert := range data.IDPCertificates {
+				@components.SignatureTableWithPEM(fmt.Sprintf("IdP Certificate #%d", i+1), cert.Rows, cert.PEM)
+			}
+			if data.IDPMetadataXML != "" {
+				@components.XMLCodeBlock("IdP Metadata", data.IDPMetadataXML)
+			} else {
+				<article>
+					<header>IdP Metadata</header>
+					<p class="not-configured">Not configured</p>
+				</article>
+			}
+		}
+	}
+}
+
+func samlResultBadgeClass(entryType string) string {
+	switch {
+	case entryType == "Login":
+		return "result-login"
+	case entryType == "Error":
+		return "result-error"
+	default: // Re-auth: *
+		return "result-reauth"
+	}
+}
+
+func samlResultBadgeLabel(entryType string) string {
+	if entryType == "Error" {
+		return "Error"
+	}
+	return entryType
+}
+
+templ SAMLResultEntry(index int, entry SAMLResultEntryData) {
+	if index == 0 {
+		<details id={ entry.ID } class={ "result-entry", samlResultBadgeClass(entry.Type) } open>
+			<summary>
+				<kbd class={ samlResultBadgeClass(entry.Type) }>{ samlResultBadgeLabel(entry.Type) }</kbd>
+				if entry.Type == "Error" && entry.ErrorCode != "" {
+					{ entry.ErrorCode }
+				}
+				if entry.Subject != "" {
+					{ entry.Subject }
+				}
+				<span class="result-timestamp">({ entry.Timestamp })</span>
+			</summary>
+			@samlResultEntryContent(entry)
+		</details>
+	} else {
+		<details id={ entry.ID } class={ "result-entry", samlResultBadgeClass(entry.Type) }>
+			<summary>
+				<kbd class={ samlResultBadgeClass(entry.Type) }>{ samlResultBadgeLabel(entry.Type) }</kbd>
+				if entry.Type == "Error" && entry.ErrorCode != "" {
+					{ entry.ErrorCode }
+				}
+				if entry.Subject != "" {
+					{ entry.Subject }
+				}
+				<span class="result-timestamp">({ entry.Timestamp })</span>
+			</summary>
+			@samlResultEntryContent(entry)
+		</details>
+	}
+}
+
+templ samlResultEntryContent(entry SAMLResultEntryData) {
+	if entry.Type == "Error" {
+		@samlErrorEntryContent(entry)
+	} else {
+		@samlNormalEntryContent(entry)
+	}
+}
+
+templ samlErrorEntryContent(entry SAMLResultEntryData) {
+	<!-- Error Details -->
+	<article class="result-subsection">
+		<header>Error Details</header>
+		<div class="overflow-auto">
+			<table class="striped">
+				<tbody>
+					if entry.ErrorCode != "" {
+						<tr class="verified-false">
+							<td>StatusCode</td>
+							<td>{ entry.ErrorCode }</td>
+						</tr>
+					}
+					if entry.ErrorDetail != "" {
+						<tr>
+							<td>Detail</td>
+							<td>{ entry.ErrorDetail }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
 		</div>
-		<!-- RESULTS view -->
-		<div class="view-group" data-view="results" style="display:none">
-			<!-- Identity & Claims -->
-			@components.Collapsible("sec-claims", "Identity & Claims", true) {
-				if data.Subject != "" {
-					@components.SubjectTable("Subject (NameID)", data.Subject)
+	</article>
+	if entry.AuthnRequestXML != "" {
+		<details class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@components.XMLCodeBlock("AuthnRequest", entry.AuthnRequestXML)
+			if entry.SAMLResponseXML != "" {
+				@components.XMLCodeBlock("SAML Response", entry.SAMLResponseXML)
+			}
+		</details>
+	}
+}
+
+templ samlNormalEntryContent(entry SAMLResultEntryData) {
+	<!-- Identity & Claims -->
+	if len(entry.Attributes) > 0 || entry.Subject != "" {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Identity & Claims</summary>
+			if entry.Subject != "" {
+				@components.SubjectTable("Subject (NameID)", entry.Subject)
+			}
+			@components.ClaimsTable(entry.ID + "-attributes", "SAML Attributes", entry.Attributes)
+		</details>
+	}
+	<!-- SAML Response Details -->
+	if len(entry.ResponseGroups) > 0 {
+		<details id={ entry.ID + "-response" } class="result-subsection" open>
+			<summary>SAML Response Details</summary>
+			@components.GroupedTable(entry.ResponseGroups)
+		</details>
+	}
+	<!-- Signature Verification -->
+	if len(entry.Signatures) > 0 {
+		<details id={ entry.ID + "-sigs" } class="result-subsection">
+			<summary>
+				Signature Verification
+				if entry.SigVerifiedAll {
+					<span class="verification-badge verified">Verified</span>
+				} else {
+					<span class="verification-badge not-verified">Unverified</span>
 				}
-				@components.ClaimsTable("saml-attributes", "SAML Attributes", data.Attributes)
+			</summary>
+			for _, sig := range entry.Signatures {
+				@components.SignatureTable(sig.Title, sig.Rows)
 			}
-			<!-- SAML Response Details -->
-			if len(data.ResponseGroups) > 0 {
-				@components.Collapsible("sec-response", "SAML Response Details", true) {
-					@components.GroupedTable(data.ResponseGroups)
-				}
+		</details>
+	}
+	<!-- Protocol Messages -->
+	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			if entry.AuthnRequestXML != "" {
+				@components.XMLCodeBlock("AuthnRequest", entry.AuthnRequestXML)
 			}
-			<!-- Signature Verification -->
-			@components.CollapsibleWithStatus("sec-sigs", "Signature Verification", data.SigVerifiedAll, false) {
-				for _, sig := range data.Signatures {
-					@components.SignatureTable(sig.Title, sig.Rows)
-				}
+			if entry.SAMLResponseXML != "" {
+				@components.XMLCodeBlock("SAML Response", entry.SAMLResponseXML)
 			}
-			<!-- Protocol Messages -->
-			@components.Collapsible("sec-protocol", "Protocol Messages", false) {
-				@components.XMLCodeBlock("AuthnRequest", data.AuthnRequestXML)
-				@components.XMLCodeBlock("SAML Response", data.SAMLResponseXML)
-			}
-		</div>
+		</details>
 	}
 }

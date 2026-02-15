@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/beevik/etree"
@@ -24,16 +25,16 @@ import (
 
 // Handler is a per-SP SAML handler set.
 type Handler struct {
-	Config             config.SAMLConfig
-	debugSessions      *DebugSessionStore
-	sp                 *samlsp.Middleware
-	httpClient         *http.Client
-	idpMetadataRaw     string
-	rootURLStr         string
-	navTabs            []templates.NavTab
-	defaultTheme       string
-	requestBinding     string // "redirect" or "post"
-	responseBinding    string // "redirect" or "post"
+	Config          config.SAMLConfig
+	debugSessions   *DebugSessionStore
+	sp              *samlsp.Middleware
+	httpClient      *http.Client
+	idpMetadataRaw  string
+	rootURLStr      string
+	navTabs         []templates.NavTab
+	defaultTheme    string
+	requestBinding  string // "redirect" or "post"
+	responseBinding string // "redirect" or "post"
 	endpointRows    []components.ClaimRow
 	idpCertificates []templates.SAMLCertificateData
 }
@@ -208,6 +209,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle(h.Config.MetadataPath, h.sp)
 	mux.HandleFunc(h.Config.SLOPath, h.handleSLO)
 	mux.HandleFunc("/logout", h.handleLogout)
+	mux.HandleFunc("/reauth", h.handleReauth)
 }
 
 // activeTab returns the NavTab that is currently active.
@@ -259,81 +261,45 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		subject = claims.Subject
 	}
 
-	// Build template data
-	data := templates.SAMLDebugData{
-		Name:               h.Config.Name,
-		Subject:            subject,
-		IDPMetadataXML:     protocol.FormatXML(h.idpMetadataRaw),
-		ACSPath:            h.Config.ACSPath,
-		RequestBinding:     h.requestBinding,
-		ResponseBinding:    h.responseBinding,
-		EndpointRows:    h.endpointRows,
-		IDPCertificates: h.idpCertificates,
+	// Build timeline result entries
+	var results []templates.SAMLResultEntryData
+	if debugSession != nil {
+		for i, entry := range debugSession.Results {
+			entryData := buildSAMLResultEntryData(i, entry)
+			results = append(results, entryData)
+		}
 	}
 
-	// Attributes
-	attrKeys := protocol.SortedKeys(toStringMap(attrs))
-	for _, k := range attrKeys {
-		data.Attributes = append(data.Attributes, components.ClaimRow{
-			Key:   k,
-			Value: attrs.Get(k),
-		})
-	}
-
-	// Signature info
-	sigVerifiedAll := true
-	if debugSession != nil && len(debugSession.SignatureInfos) > 0 {
-		for _, sigInfo := range debugSession.SignatureInfos {
-			verifiedStr := "false"
-			if sigInfo.Verified {
-				verifiedStr = "true"
-			} else {
-				sigVerifiedAll = false
-			}
-			var rows []components.SignatureRow
-			pairs := []struct{ label, value string }{
-				{"Signature Algorithm", sigInfo.Algorithm},
-				{"Signature Algorithm (short)", sigInfo.AlgorithmShort},
-				{"Digest Algorithm", sigInfo.DigestAlgorithm},
-				{"Digest Algorithm (short)", sigInfo.DigestAlgorithmShort},
-				{"Certificate Subject", sigInfo.CertSubject},
-				{"Certificate Issuer", sigInfo.CertIssuer},
-				{"Certificate Serial Number", sigInfo.CertSerialNumber},
-				{"Certificate Not Before", sigInfo.CertNotBefore},
-				{"Certificate Not After", sigInfo.CertNotAfter},
-				{"Certificate Fingerprint (SHA-256)", sigInfo.CertFingerprint},
-				{"Verified", verifiedStr},
-			}
-			for _, p := range pairs {
-				if p.value != "" {
-					rows = append(rows, components.SignatureRow{Label: p.label, Value: p.value})
-				}
-			}
-			data.Signatures = append(data.Signatures, templates.SAMLSignatureData{
-				Title: sigInfo.Target + " Signature Verification",
-				Rows:  rows,
+	// If no results from debug session but we have session attrs, build one from current session
+	if len(results) == 0 {
+		// Fallback: build a synthetic login entry from current session data
+		entryData := templates.SAMLResultEntryData{
+			ID:          "result-0",
+			Type:        "Login",
+			Timestamp:   formatTimestamp(time.Now()),
+			Subject:     subject,
+			SidebarLabel: "Login",
+			SidebarDot:  "login",
+		}
+		attrKeys := protocol.SortedKeys(toStringMap(attrs))
+		for _, k := range attrKeys {
+			entryData.Attributes = append(entryData.Attributes, components.ClaimRow{
+				Key:   k,
+				Value: attrs.Get(k),
 			})
 		}
+		results = []templates.SAMLResultEntryData{entryData}
 	}
-	data.SigVerifiedAll = sigVerifiedAll
 
-	if debugSession != nil {
-		data.AuthnRequestXML = protocol.FormatXML(debugSession.AuthnRequestXML)
-		data.SAMLResponseXML = protocol.FormatXML(debugSession.SAMLResponseXML)
-
-		// Extract SAML Response details
-		if debugSession.ResponseInfo != nil {
-			for _, group := range debugSession.ResponseInfo.Groups {
-				var rows []components.GroupedRow
-				for _, row := range group.Rows {
-					rows = append(rows, components.GroupedRow{Label: row.Label, Value: row.Value})
-				}
-				data.ResponseGroups = append(data.ResponseGroups, components.RowGroup{
-					Name: group.Name,
-					Rows: rows,
-				})
-			}
-		}
+	data := templates.SAMLDebugData{
+		Name:            h.Config.Name,
+		Results:         results,
+		IDPMetadataXML:  protocol.FormatXML(h.idpMetadataRaw),
+		ACSPath:         h.Config.ACSPath,
+		RequestBinding:  h.requestBinding,
+		ResponseBinding: h.responseBinding,
+		EndpointRows:    h.endpointRows,
+		IDPCertificates: h.idpCertificates,
 	}
 
 	page := templates.PageInfo{
@@ -347,25 +313,186 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			{ID: "sec-flow", Label: "Flow Diagram"},
 			{ID: "sec-idp", Label: "Identity Provider"},
 		},
-		Sections: []templates.Section{
-			{ID: "sec-claims", Label: "Identity & Claims"},
-			{ID: "sec-response", Label: "SAML Response Details"},
-			{ID: "sec-sigs", Label: "Signature Verification"},
-			{ID: "sec-protocol", Label: "Protocol Messages"},
-		},
+	}
+
+	// Build ReauthItems: always include default re-authenticate action
+	page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
+		Label: "Re-authenticate",
+		URL:   "/reauth?step=-1",
+	})
+	for i, rc := range h.Config.Reauth {
+		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
+			Label: rc.Name,
+			URL:   "/reauth?step=" + strconv.Itoa(i),
+		})
+	}
+
+	// Build Sections from result entries
+	for _, re := range results {
+		page.Sections = append(page.Sections, templates.Section{
+			ID:       re.ID,
+			Label:    re.SidebarLabel,
+			Dot:      re.SidebarDot,
+			Children: re.Children,
+		})
 	}
 
 	templates.SAMLDebug(page, data).Render(r.Context(), w)
 }
 
+// buildSAMLResultEntryData converts a SAMLResultEntry to template display data.
+func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLResultEntryData {
+	id := fmt.Sprintf("result-%d", index)
+	timestamp := formatTimestamp(entry.Timestamp)
+
+	data := templates.SAMLResultEntryData{
+		ID:        id,
+		Type:      entry.Type,
+		Timestamp: timestamp,
+		Subject:   entry.Subject,
+	}
+
+	// Error entry
+	if entry.Type == "Error" {
+		data.ErrorCode = entry.ErrorCode
+		data.ErrorDetail = entry.ErrorDetail
+		data.AuthnRequestXML = protocol.FormatXML(entry.AuthnRequestXML)
+		data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
+		data.SidebarLabel = "Error (" + timestamp + ")"
+		data.SidebarDot = "error"
+		return data
+	}
+
+	// Attributes
+	if entry.Attributes != nil {
+		attrKeys := protocol.SortedKeys(toStringMapFromSlice(entry.Attributes))
+		for _, k := range attrKeys {
+			vals := entry.Attributes[k]
+			if len(vals) > 0 {
+				data.Attributes = append(data.Attributes, components.ClaimRow{
+					Key:   k,
+					Value: vals[0],
+				})
+			}
+		}
+	}
+
+	// Signatures
+	sigVerifiedAll := true
+	for _, sigInfo := range entry.SignatureInfos {
+		verifiedStr := "false"
+		if sigInfo.Verified {
+			verifiedStr = "true"
+		} else {
+			sigVerifiedAll = false
+		}
+		var rows []components.SignatureRow
+		pairs := []struct{ label, value string }{
+			{"Signature Algorithm", sigInfo.Algorithm},
+			{"Signature Algorithm (short)", sigInfo.AlgorithmShort},
+			{"Digest Algorithm", sigInfo.DigestAlgorithm},
+			{"Digest Algorithm (short)", sigInfo.DigestAlgorithmShort},
+			{"Certificate Subject", sigInfo.CertSubject},
+			{"Certificate Issuer", sigInfo.CertIssuer},
+			{"Certificate Serial Number", sigInfo.CertSerialNumber},
+			{"Certificate Not Before", sigInfo.CertNotBefore},
+			{"Certificate Not After", sigInfo.CertNotAfter},
+			{"Certificate Fingerprint (SHA-256)", sigInfo.CertFingerprint},
+			{"Verified", verifiedStr},
+		}
+		for _, p := range pairs {
+			if p.value != "" {
+				rows = append(rows, components.SignatureRow{Label: p.label, Value: p.value})
+			}
+		}
+		data.Signatures = append(data.Signatures, templates.SAMLSignatureData{
+			Title: sigInfo.Target + " Signature Verification",
+			Rows:  rows,
+		})
+	}
+	data.SigVerifiedAll = sigVerifiedAll
+
+	// Response details
+	if entry.ResponseInfo != nil {
+		for _, group := range entry.ResponseInfo.Groups {
+			var rows []components.GroupedRow
+			for _, row := range group.Rows {
+				rows = append(rows, components.GroupedRow{Label: row.Label, Value: row.Value})
+			}
+			data.ResponseGroups = append(data.ResponseGroups, components.RowGroup{
+				Name: group.Name,
+				Rows: rows,
+			})
+		}
+	}
+
+	// Protocol messages
+	data.AuthnRequestXML = protocol.FormatXML(entry.AuthnRequestXML)
+	data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
+
+	// Sidebar label and dot
+	switch {
+	case entry.Type == "Login":
+		data.SidebarLabel = "Login (" + timestamp + ")"
+		data.SidebarDot = "login"
+	default: // Re-auth: *
+		data.SidebarLabel = entry.Type + " (" + timestamp + ")"
+		data.SidebarDot = "reauth"
+	}
+
+	// Build sidebar children (sub-sections)
+	if len(entry.Attributes) > 0 || entry.Subject != "" {
+		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
+	}
+	if entry.ResponseInfo != nil && len(entry.ResponseInfo.Groups) > 0 {
+		data.Children = append(data.Children, templates.Section{ID: id + "-response", Label: "Response Details"})
+	}
+	if len(entry.SignatureInfos) > 0 {
+		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature"})
+	}
+	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
+	}
+
+	return data
+}
+
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	debugID, err := protocol.RandomHex(16)
-	if err != nil {
-		log.Printf("Failed to generate debug ID: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	h.startAuthFlow(w, r, "", "", false)
+}
+
+func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
+	// Verify session exists
+	session, err := h.sp.Session.GetSession(r)
+	if err != nil || session == nil {
+		http.Error(w, "No session", http.StatusBadRequest)
 		return
 	}
 
+	stepStr := r.URL.Query().Get("step")
+	step, err := strconv.Atoi(stepStr)
+	if err != nil {
+		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
+		return
+	}
+
+	// step=-1 is the default re-authenticate (no extra params)
+	if step == -1 {
+		h.startAuthFlow(w, r, "__default__", "", false)
+		return
+	}
+
+	if step < 0 || step >= len(h.Config.Reauth) {
+		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
+		return
+	}
+
+	rc := h.Config.Reauth[step]
+	h.startAuthFlow(w, r, rc.Name, rc.AuthnContextClassRef, rc.ForceAuthn)
+}
+
+// startAuthFlow initiates a SAML AuthnRequest with optional RequestedAuthnContext and ForceAuthn.
+func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthName string, authnContextClassRef string, forceAuthn bool) {
 	// Determine binding
 	binding := samlpkg.HTTPRedirectBinding
 	bindingLocation := h.sp.ServiceProvider.GetSSOBindingLocation(binding)
@@ -384,6 +511,32 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Apply RequestedAuthnContext if specified
+	if authnContextClassRef != "" {
+		authReq.RequestedAuthnContext = &samlpkg.RequestedAuthnContext{
+			Comparison:           "exact",
+			AuthnContextClassRef: authnContextClassRef,
+		}
+	}
+
+	// Apply ForceAuthn if specified
+	if forceAuthn {
+		forceAuthnVal := true
+		authReq.ForceAuthn = &forceAuthnVal
+	}
+
+	// Store reauth name in cookie
+	if reauthName != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "saml_reauth_name",
+			Value:    reauthName,
+			Path:     "/",
+			MaxAge:   600,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
 	// Serialize AuthnRequest to XML for debug display
 	xmlDoc := etree.NewDocument()
 	xmlDoc.SetRoot(authReq.Element())
@@ -394,18 +547,41 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.debugSessions.Set(debugID, &DebugSession{
+	pendingEntry := SAMLResultEntry{
+		Type:            "pending",
+		Timestamp:       time.Now(),
 		AuthnRequestXML: string(xmlBytes),
-	})
+	}
 
-	http.SetCookie(w, &http.Cookie{
-		Name:     "saml_debug_id",
-		Value:    debugID,
-		Path:     "/",
-		MaxAge:   600,
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	// Reuse existing debug session if available (preserves timeline on re-auth)
+	var debugID string
+	if c, err := r.Cookie("saml_debug_id"); err == nil {
+		if existing := h.debugSessions.GetByID(c.Value); existing != nil {
+			existing.Results = append([]SAMLResultEntry{pendingEntry}, existing.Results...)
+			debugID = c.Value
+		}
+	}
+
+	// Create new debug session if none exists
+	if debugID == "" {
+		debugID, err = protocol.RandomHex(16)
+		if err != nil {
+			log.Printf("Failed to generate debug ID: %v", err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		h.debugSessions.Set(debugID, &DebugSession{
+			Results: []SAMLResultEntry{pendingEntry},
+		})
+		http.SetCookie(w, &http.Cookie{
+			Name:     "saml_debug_id",
+			Value:    debugID,
+			Path:     "/",
+			MaxAge:   600,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 
 	// Track request
 	r2 := r.Clone(r.Context())
@@ -455,22 +631,56 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 			signatureInfos := protocol.ExtractSAMLSignatureInfos(samlResponseXML)
 			responseInfo := protocol.ExtractSAMLResponseInfo(samlResponseXML)
 
+			// Retrieve reauth name from cookie
+			var reauthName string
+			if c, err := r.Cookie("saml_reauth_name"); err == nil {
+				reauthName = c.Value
+				http.SetCookie(w, &http.Cookie{
+					Name: "saml_reauth_name", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+				})
+			}
+
+			resultType := "Login"
+			if reauthName == "__default__" {
+				resultType = "Re-auth"
+			} else if reauthName != "" {
+				resultType = "Re-auth: " + reauthName
+			}
+
 			c, cookieErr := r.Cookie("saml_debug_id")
 			if cookieErr == nil {
-				// SP-initiated: update existing debug session
 				if ds := h.debugSessions.GetByID(c.Value); ds != nil {
-					ds.SAMLResponseXML = samlResponseXML
-					ds.SignatureInfos = signatureInfos
-					ds.ResponseInfo = responseInfo
+					// Retrieve the AuthnRequest XML from the pending entry
+					var authnRequestXML string
+					if len(ds.Results) > 0 && ds.Results[0].Type == "pending" {
+						authnRequestXML = ds.Results[0].AuthnRequestXML
+						// Remove the pending entry
+						ds.Results = ds.Results[1:]
+					}
+					// Prepend the completed result entry
+					entry := SAMLResultEntry{
+						Type:            resultType,
+						Timestamp:       time.Now(),
+						AuthnRequestXML: authnRequestXML,
+						SAMLResponseXML: samlResponseXML,
+						SignatureInfos:  signatureInfos,
+						ResponseInfo:    responseInfo,
+					}
+					ds.Results = append([]SAMLResultEntry{entry}, ds.Results...)
 				}
 			} else {
 				// IdP-initiated: no existing debug session, create one
 				debugID, err := protocol.RandomHex(16)
 				if err == nil {
-					h.debugSessions.Set(debugID, &DebugSession{
+					entry := SAMLResultEntry{
+						Type:            resultType,
+						Timestamp:       time.Now(),
 						SAMLResponseXML: samlResponseXML,
 						SignatureInfos:  signatureInfos,
 						ResponseInfo:    responseInfo,
+					}
+					h.debugSessions.Set(debugID, &DebugSession{
+						Results: []SAMLResultEntry{entry},
 					})
 					http.SetCookie(w, &http.Cookie{
 						Name:     "saml_debug_id",
@@ -536,4 +746,21 @@ func toStringMap(attrs samlsp.Attributes) map[string]string {
 		}
 	}
 	return m
+}
+
+func toStringMapFromSlice(attrs map[string][]string) map[string]string {
+	m := make(map[string]string, len(attrs))
+	for k, v := range attrs {
+		if len(v) > 0 {
+			m[k] = v[0]
+		}
+	}
+	return m
+}
+
+func formatTimestamp(t time.Time) string {
+	if protocol.DisplayLocation != nil {
+		t = t.In(protocol.DisplayLocation)
+	}
+	return t.Format("15:04:05 MST")
 }

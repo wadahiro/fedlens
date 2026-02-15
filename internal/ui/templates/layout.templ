@@ -10,8 +10,16 @@ type NavTab struct {
 
 // Section represents a collapsible section for sidebar navigation.
 type Section struct {
-	ID    string
+	ID       string
+	Label    string
+	Dot      string    // "login", "refresh", "reauth", "error", "" (no dot)
+	Children []Section // Sub-sections (e.g. Identity & Claims, Signature, etc.)
+}
+
+// ReauthItem represents a re-authenticate dropdown menu entry.
+type ReauthItem struct {
 	Label string
+	URL   string
 }
 
 // PageInfo holds layout metadata for every page.
@@ -23,6 +31,7 @@ type PageInfo struct {
 	LoginURL     string
 	LogoutURL    string
 	RefreshURL   string
+	ReauthItems  []ReauthItem
 	Sections     []Section // debug results (RESULTS)
 	References   []Section // reference info (REFERENCE)
 	DefaultTheme string    // "light", "dark", or "auto"
@@ -62,11 +71,7 @@ templ Layout(title string, page PageInfo) {
 			<header class="site-header">
 				<div class="header-content">
 					<strong class="brand">fedlens</strong>
-					<div class="header-spacer"></div>
 					<div class="header-status">
-						<span class={ "status-indicator", templ.KV("status-connected", page.Status == "connected"), templ.KV("status-disconnected", page.Status == "disconnected") }>
-							{ page.StatusLabel }
-						</span>
 						<span class="header-protocol-label">
 							if page.ActiveTab.Protocol == "oidc" {
 								OIDC RP: { page.ActiveTab.Label }
@@ -76,14 +81,14 @@ templ Layout(title string, page PageInfo) {
 						</span>
 					</div>
 					<div class="header-actions">
+						<span class={ "status-indicator", templ.KV("status-connected", page.Status == "connected"), templ.KV("status-disconnected", page.Status == "disconnected") }>
+							{ page.StatusLabel }
+						</span>
 						if page.LoginURL != "" {
 							<a href={ templ.SafeURL(page.LoginURL) } role="button">Login</a>
 						}
 						if page.LogoutURL != "" {
 							<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline">Logout</a>
-						}
-						if page.RefreshURL != "" {
-							<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary">Refresh</a>
 						}
 						<a href="#" class="theme-toggle" onclick="toggleTheme(); return false;">
 							<span class="theme-toggle-icon">&#9790;</span>
@@ -121,30 +126,26 @@ templ Layout(title string, page PageInfo) {
 								</li>
 							}
 						</ul>
-						if len(page.Sections) > 0 && len(page.References) > 0 {
-							<!-- Both views: show as clickable tabs -->
-							<p class="sidebar-heading sidebar-tab sidebar-tab-active" data-view="reference" onclick="switchView('reference')">REFERENCE</p>
-							<ul class="sidebar-section-list" data-view="reference">
-								for _, ref := range page.References {
-									<li><a href={ templ.SafeURL("#" + ref.ID) }>{ ref.Label }</a></li>
-								}
-							</ul>
-							<p class="sidebar-heading sidebar-tab" data-view="results" onclick="switchView('results')">RESULTS</p>
-							<ul class="sidebar-section-list" data-view="results">
-								for _, sec := range page.Sections {
-									<li><a href={ templ.SafeURL("#" + sec.ID) }>{ sec.Label }</a></li>
-								}
-							</ul>
-						} else if len(page.Sections) > 0 {
-							<!-- Only RESULTS -->
+						if len(page.Sections) > 0 {
 							<p class="sidebar-heading">RESULTS</p>
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
-									<li><a href={ templ.SafeURL("#" + sec.ID) }>{ sec.Label }</a></li>
+									<li>
+										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
+											{ sec.Label }
+										</a>
+										if len(sec.Children) > 0 {
+											<ul class="sidebar-subsection-list">
+												for _, child := range sec.Children {
+													<li><a href={ templ.SafeURL("#" + child.ID) }>{ child.Label }</a></li>
+												}
+											</ul>
+										}
+									</li>
 								}
 							</ul>
-						} else if len(page.References) > 0 {
-							<!-- Only REFERENCE (pre-login) -->
+						}
+						if len(page.References) > 0 {
 							<p class="sidebar-heading">REFERENCE</p>
 							<ul class="sidebar-section-list">
 								for _, ref := range page.References {
@@ -234,22 +235,33 @@ templ Layout(title string, page PageInfo) {
 					var btn = table.closest(".section-group, details, article").querySelector(".copy-json-btn");
 					if (btn) { btn.textContent = "Copied!"; setTimeout(function() { btn.textContent = "Copy as JSON"; }, 2000); }
 				}
-				// Scroll spy: observe only the visible view-group's sections
+				// Dropdown toggle
+				function toggleDropdown(btn) {
+					var menu = btn.nextElementSibling;
+					if (!menu) return;
+					var isOpen = menu.classList.contains("show");
+					// Close all dropdowns first
+					document.querySelectorAll(".dropdown-menu.show").forEach(function(m) { m.classList.remove("show"); });
+					if (!isOpen) menu.classList.add("show");
+				}
+				// Close dropdowns on outside click
+				document.addEventListener("click", function(e) {
+					if (!e.target.closest(".dropdown")) {
+						document.querySelectorAll(".dropdown-menu.show").forEach(function(m) { m.classList.remove("show"); });
+					}
+				});
+				// Scroll spy: observe all details[id] on page
 				var scrollSpyObserver = null;
-				function setupScrollSpy(viewName) {
+				function setupScrollSpy() {
 					if (scrollSpyObserver) {
 						scrollSpyObserver.disconnect();
 					}
-					// Reset all active states
 					document.querySelectorAll(".sidebar-section-list a[aria-current]").forEach(function(a) {
 						a.removeAttribute("aria-current");
 					});
-					var visibleGroup = document.querySelector('.view-group[data-view="' + viewName + '"]');
-					if (!visibleGroup) return;
-					var sectionEls = visibleGroup.querySelectorAll("details[id]");
+					var sectionEls = document.querySelectorAll("details[id]");
 					if (sectionEls.length === 0) return;
 					scrollSpyObserver = new IntersectionObserver(function(entries) {
-						// Find the topmost intersecting entry
 						var topEntry = null;
 						entries.forEach(function(entry) {
 							if (entry.isIntersecting) {
@@ -260,14 +272,11 @@ templ Layout(title string, page PageInfo) {
 						});
 						if (topEntry) {
 							var id = topEntry.target.getAttribute("id");
+							document.querySelectorAll(".sidebar-section-list a[aria-current]").forEach(function(a) {
+								a.removeAttribute("aria-current");
+							});
 							var link = document.querySelector('.sidebar-section-list a[href="#' + id + '"]');
 							if (link) {
-								var list = link.closest(".sidebar-section-list");
-								if (list) {
-									list.querySelectorAll("a[aria-current]").forEach(function(a) {
-										a.removeAttribute("aria-current");
-									});
-								}
 								link.setAttribute("aria-current", "true");
 							}
 						}
@@ -279,69 +288,20 @@ templ Layout(title string, page PageInfo) {
 						scrollSpyObserver.observe(el);
 					});
 				}
-				// View switching (RESULTS / REFERENCE)
-				function switchView(view) {
-					// Toggle content view-groups
-					document.querySelectorAll(".view-group[data-view]").forEach(function(el) {
-						if (el.getAttribute("data-view") === view) {
-							el.style.display = "";
-							el.classList.remove("view-hidden");
-						} else {
-							el.style.display = "none";
-							el.classList.add("view-hidden");
-						}
-					});
-					// Toggle sidebar tabs
-					document.querySelectorAll(".sidebar-tab[data-view]").forEach(function(tab) {
-						if (tab.getAttribute("data-view") === view) {
-							tab.classList.add("sidebar-tab-active");
-						} else {
-							tab.classList.remove("sidebar-tab-active");
-						}
-					});
-					// Persist choice
-					localStorage.setItem("fedlens-view", view);
-					// Scroll to top of main content
-					window.scrollTo(0, 0);
-					// Re-setup scroll spy for the new view
-					setTimeout(function() { setupScrollSpy(view); }, 50);
-				}
 				// Section nav + scroll spy
 				document.addEventListener("DOMContentLoaded", function() {
-					// Sidebar section links: auto-expand closed details and switch view on click
+					// Sidebar section links: auto-expand closed details on click
 					document.querySelectorAll(".sidebar a[href^='#']").forEach(function(link) {
 						link.addEventListener("click", function() {
 							var id = this.getAttribute("href").substring(1);
 							var target = document.getElementById(id);
-							if (target) {
-								// Find the view-group containing this target
-								var viewGroup = target.closest(".view-group[data-view]");
-								if (viewGroup) {
-									var targetView = viewGroup.getAttribute("data-view");
-									// Switch to the correct view if needed
-									var currentTab = document.querySelector(".sidebar-tab-active");
-									if (currentTab && currentTab.getAttribute("data-view") !== targetView) {
-										switchView(targetView);
-									}
-								}
-								if (target.tagName === "DETAILS" && !target.open) {
-									target.open = true;
-								}
+							if (target && target.tagName === "DETAILS" && !target.open) {
+								target.open = true;
 							}
 						});
 					});
-					// Restore saved view preference (default is now "reference")
-					var hasBothViews = document.querySelector(".sidebar-tab[data-view]") !== null;
-					var initialView = "reference";
-					if (hasBothViews) {
-						var savedView = localStorage.getItem("fedlens-view");
-						if (savedView === "results") {
-							switchView("results");
-							initialView = "results";
-						}
-					}
-					// Setup scroll spy for the initial view
-					setupScrollSpy(initialView);
+					// Setup scroll spy
+					setupScrollSpy();
 					// Syntax highlighting
 					Prism.highlightAll();
 					// Theme icon

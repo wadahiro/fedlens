@@ -30,18 +30,19 @@ small { font-size: 0.75rem; }
   font-size: 1.2rem;
   color: var(--pico-primary);
   white-space: nowrap;
-}
-.header-spacer {
-  flex: 1;
+  width: 220px;
+  min-width: 220px;
 }
 .header-status {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  flex: 1;
 }
 .header-protocol-label {
-  color: var(--pico-muted-color);
-  font-size: 0.875rem;
+  color: var(--pico-color);
+  font-size: 1rem;
+  font-weight: 500;
 }
 .header-actions {
   display: flex;
@@ -113,6 +114,44 @@ small { font-size: 0.75rem; }
   background-color: #1e293b;
 }
 
+/* === Sidebar dot indicators for results === */
+.sidebar-dot-login::before,
+.sidebar-dot-refresh::before,
+.sidebar-dot-reauth::before,
+.sidebar-dot-error::before {
+  content: "\25CF";
+  font-size: 0.625rem;
+  flex-shrink: 0;
+}
+[data-theme="light"] .sidebar-dot-login::before,
+:root:not([data-theme="dark"]) .sidebar-dot-login::before {
+  color: #1565c0;
+}
+[data-theme="dark"] .sidebar-dot-login::before {
+  color: #64b5f6;
+}
+[data-theme="light"] .sidebar-dot-refresh::before,
+:root:not([data-theme="dark"]) .sidebar-dot-refresh::before {
+  color: #2e7d32;
+}
+[data-theme="dark"] .sidebar-dot-refresh::before {
+  color: #81c784;
+}
+[data-theme="light"] .sidebar-dot-reauth::before,
+:root:not([data-theme="dark"]) .sidebar-dot-reauth::before {
+  color: #e65100;
+}
+[data-theme="dark"] .sidebar-dot-reauth::before {
+  color: #ffb74d;
+}
+[data-theme="light"] .sidebar-dot-error::before,
+:root:not([data-theme="dark"]) .sidebar-dot-error::before {
+  color: #c62828;
+}
+[data-theme="dark"] .sidebar-dot-error::before {
+  color: #ef9a9a;
+}
+
 /* === Main Content === */
 .main-content {
   flex: 1;
@@ -145,6 +184,10 @@ small { font-size: 0.75rem; }
 @media (max-width: 991px) {
   .sidebar {
     display: none;
+  }
+  .brand {
+    width: auto;
+    min-width: auto;
   }
   .mobile-tabs {
     display: flex;
@@ -192,6 +235,7 @@ kbd.protocol-saml {
   align-items: center;
   gap: 0.5rem;
   font-weight: 500;
+  font-size: 0.8125rem;
 }
 .status-indicator::before {
   content: "\25CF";
@@ -332,8 +376,6 @@ tr.verified-false td:last-child {
   margin-bottom: 2rem;
 }
 
-
-
 /* === Claims pair grid (wide screens) === */
 .claims-pair {
   display: grid;
@@ -378,19 +420,6 @@ details:target > summary {
   background-color: color-mix(in srgb, var(--pico-del-color) 15%, transparent);
 }
 
-/* === View switching (RESULTS / REFERENCE) === */
-.view-group.view-hidden { display: none; }
-.sidebar-tab {
-  cursor: pointer;
-  user-select: none;
-  padding-bottom: 0.25rem;
-  border-bottom: 2px solid transparent;
-}
-.sidebar-tab:hover { color: var(--pico-primary); }
-.sidebar-tab-active {
-  color: var(--pico-primary);
-  border-bottom: 2px solid var(--pico-primary);
-}
 /* === Not configured message === */
 .not-configured {
   color: var(--pico-muted-color);
@@ -417,6 +446,18 @@ details:target > summary {
   max-height: 12rem;
 }
 
+/* === Sidebar subsection list === */
+.sidebar-subsection-list {
+  list-style: none;
+  padding: 0 0 0 1.25rem;
+  margin: 0;
+}
+.sidebar-subsection-list li a {
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--pico-muted-color);
+}
+
 /* === Scroll spy active indicator === */
 .sidebar-section-list li a[aria-current="true"] {
   border-left: 3px solid var(--pico-primary);
@@ -428,4 +469,219 @@ details:target > summary {
 }
 [data-theme="dark"] .sidebar-section-list li a[aria-current="true"] {
   background-color: #1e293b;
+}
+
+/* === Action Bar === */
+.action-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.75rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--pico-muted-border-color);
+}
+.action-btn {
+  padding: 0.25rem 0.75rem !important;
+  font-size: 0.8125rem !important;
+  margin: 0 !important;
+}
+
+/* === Dropdown === */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+.dropdown-menu {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 50;
+  min-width: 200px;
+  padding: 0.25rem 0;
+  margin-top: 0.25rem;
+  border-radius: var(--pico-border-radius);
+  border: 1px solid var(--pico-muted-border-color);
+  background-color: var(--pico-background-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+.dropdown-menu.show {
+  display: block;
+}
+.dropdown-item {
+  display: block;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  font-size: 0.875rem;
+  color: var(--pico-color);
+  white-space: nowrap;
+}
+.dropdown-item:hover {
+  background-color: var(--pico-card-sectioning-background-color);
+}
+
+/* === Results Timeline === */
+.results-timeline {
+  position: relative;
+  padding-left: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.results-timeline::before {
+  content: "";
+  position: absolute;
+  left: 0.5rem;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px dashed var(--pico-muted-border-color);
+}
+
+/* === Result Entry === */
+.result-entry {
+  position: relative;
+  margin-bottom: 0.75rem;
+}
+.result-entry::before {
+  content: "\25CF";
+  position: absolute;
+  left: -1rem;
+  top: 0.85rem;
+  font-size: 0.75rem;
+  width: 1rem;
+  text-align: center;
+  z-index: 1;
+}
+/* Latest entry (first child) uses filled dot, rest use outline */
+.result-entry:not(:first-child)::before {
+  content: "\25CB";
+}
+
+/* Result entry dot colors */
+[data-theme="light"] .result-entry.result-login::before,
+:root:not([data-theme="dark"]) .result-entry.result-login::before {
+  color: #1565c0;
+}
+[data-theme="dark"] .result-entry.result-login::before {
+  color: #64b5f6;
+}
+[data-theme="light"] .result-entry.result-refresh::before,
+:root:not([data-theme="dark"]) .result-entry.result-refresh::before {
+  color: #2e7d32;
+}
+[data-theme="dark"] .result-entry.result-refresh::before {
+  color: #81c784;
+}
+[data-theme="light"] .result-entry.result-reauth::before,
+:root:not([data-theme="dark"]) .result-entry.result-reauth::before {
+  color: #e65100;
+}
+[data-theme="dark"] .result-entry.result-reauth::before {
+  color: #ffb74d;
+}
+[data-theme="light"] .result-entry.result-error::before,
+:root:not([data-theme="dark"]) .result-entry.result-error::before {
+  color: #c62828;
+}
+[data-theme="dark"] .result-entry.result-error::before {
+  color: #ef9a9a;
+}
+
+/* Result entry summary */
+.result-entry > summary {
+  font-size: 0.95rem;
+  padding: 0.625rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.result-timestamp {
+  color: var(--pico-muted-color);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  margin-left: auto;
+}
+
+/* === Result type badges (kbd) === */
+kbd.result-login,
+kbd.result-refresh,
+kbd.result-reauth,
+kbd.result-error {
+  font-size: 0.6875rem;
+  padding: 0.125rem 0.375rem;
+  border-radius: 3px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Login badge (blue) */
+[data-theme="light"] kbd.result-login,
+:root:not([data-theme="dark"]) kbd.result-login {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+[data-theme="dark"] kbd.result-login {
+  background-color: #1a3a5c;
+  color: #64b5f6;
+}
+/* Refresh badge (green) */
+[data-theme="light"] kbd.result-refresh,
+:root:not([data-theme="dark"]) kbd.result-refresh {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+[data-theme="dark"] kbd.result-refresh {
+  background-color: #1b3a2a;
+  color: #81c784;
+}
+/* Re-auth badge (orange) */
+[data-theme="light"] kbd.result-reauth,
+:root:not([data-theme="dark"]) kbd.result-reauth {
+  background-color: #fff3e0;
+  color: #e65100;
+}
+[data-theme="dark"] kbd.result-reauth {
+  background-color: #3c2a1a;
+  color: #ffb74d;
+}
+/* Error badge (red) */
+[data-theme="light"] kbd.result-error,
+:root:not([data-theme="dark"]) kbd.result-error {
+  background-color: #fce4ec;
+  color: #c62828;
+}
+[data-theme="dark"] kbd.result-error {
+  background-color: #3c1a1a;
+  color: #ef9a9a;
+}
+
+/* === Result subsections (nested inside result entry) === */
+.result-subsection {
+  margin-left: 0.75rem;
+}
+.result-subsection > summary {
+  font-size: 0.925rem;
+  padding: 0.5rem 0.75rem;
+}
+.result-entry[open] > .result-subsection {
+  border-left-color: var(--pico-muted-border-color);
+}
+
+/* Remove border-left for items inside result-entry (avoid excessive vertical lines) */
+.result-entry details[open] > article,
+.result-entry details[open] > table,
+.result-entry details[open] > details,
+.result-entry details[open] > .claims-pair {
+  border-left: none;
+}
+
+/* Reduce nesting indent for items inside result-subsection */
+.result-subsection[open] > article,
+.result-subsection[open] > table,
+.result-subsection[open] > details {
+  margin-left: 0.75rem;
+  padding-left: 0.75rem;
+}
+.result-subsection[open] > .claims-pair {
+  margin-left: 0.75rem;
+  padding-left: 0;
 }

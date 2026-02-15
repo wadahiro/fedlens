@@ -5,29 +5,35 @@ import (
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
 )
 
-templ OIDCIndex(page PageInfo, name string, discoveryJSON string, callbackPath string, endpointRows []components.ClaimRow, jwksJSON string, jwksKeys []JWKSKeyData) {
+templ OIDCIndex(page PageInfo, name string, discoveryJSON string, callbackPath string, endpointRows []components.ClaimRow, jwksJSON string, jwksKeys []JWKSKeyData, errorEntries []OIDCResultEntryData) {
 	@Layout("OIDC - " + name, page) {
-		<div class="view-group" data-view="reference">
-			@components.Collapsible("sec-flow", "Flow Diagram", true) {
-				@components.OIDCSequence(callbackPath)
+		<!-- Error Entries (pre-login) -->
+		if len(errorEntries) > 0 {
+			<div class="results-timeline">
+				for i, entry := range errorEntries {
+					@OIDCResultEntry(i, entry)
+				}
+			</div>
+		}
+		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			@components.OIDCSequence(callbackPath)
+		}
+		@components.Collapsible("sec-provider", "OpenID Provider", true) {
+			if len(endpointRows) > 0 {
+				@components.KeyValueTable("op-endpoints", "Endpoints", "Name", "URL", endpointRows)
 			}
-			@components.Collapsible("sec-provider", "OpenID Provider", true) {
-				if len(endpointRows) > 0 {
-					@components.KeyValueTable("op-endpoints", "Endpoints", "Name", "URL", endpointRows)
-				}
-				for i, key := range jwksKeys {
-					@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
-				}
-				@components.CodeBlock("JWKS (Raw)", jwksJSON)
-				if discoveryJSON != "" {
-					@components.CodeBlock("Discovery Metadata", discoveryJSON)
-				} else {
-					<article>
-						<header>Discovery Metadata</header>
-						<p class="not-configured">Not configured</p>
-					</article>
-				}
+			for i, key := range jwksKeys {
+				@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
 			}
-		</div>
+			@components.CodeBlock("JWKS (Raw)", jwksJSON)
+			if discoveryJSON != "" {
+				@components.CodeBlock("Discovery Metadata", discoveryJSON)
+			} else {
+				<article>
+					<header>Discovery Metadata</header>
+					<p class="not-configured">Not configured</p>
+				</article>
+			}
+		}
 	}
 }

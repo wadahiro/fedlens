@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -23,14 +24,15 @@ import (
 
 // Handler is a per-SP OIDC handler set.
 type Handler struct {
-	Config       config.OIDCConfig
-	sessions     *SessionStore
-	oauth2Config *oauth2.Config
-	provider     *gooidc.Provider
-	verifier     *gooidc.IDTokenVerifier
-	httpClient   *http.Client
-	discoveryRaw json.RawMessage
-	providerInfo struct {
+	Config        config.OIDCConfig
+	sessions      *SessionStore
+	errorSessions *SessionStore
+	oauth2Config  *oauth2.Config
+	provider      *gooidc.Provider
+	verifier      *gooidc.IDTokenVerifier
+	httpClient    *http.Client
+	discoveryRaw  json.RawMessage
+	providerInfo  struct {
 		EndSessionEndpoint string
 		UserinfoEndpoint   string
 		JwksURI            string
@@ -84,13 +86,14 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 	verifier := provider.Verifier(&gooidc.Config{ClientID: cfg.ClientID})
 
 	h := &Handler{
-		Config:       cfg,
-		sessions:     NewSessionStore(),
-		oauth2Config: oauth2Config,
-		provider:     provider,
-		verifier:     verifier,
-		httpClient:   httpClient,
-		discoveryRaw: discoveryRaw,
+		Config:        cfg,
+		sessions:      NewSessionStore(),
+		errorSessions: NewSessionStore(),
+		oauth2Config:  oauth2Config,
+		provider:      provider,
+		verifier:      verifier,
+		httpClient:    httpClient,
+		discoveryRaw:  discoveryRaw,
 	}
 
 	// Extract provider claims
@@ -183,6 +186,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(h.Config.CallbackPath, h.handleCallback)
 	mux.HandleFunc("/logout", h.handleLogout)
 	mux.HandleFunc("/refresh", h.handleRefresh)
+	mux.HandleFunc("/reauth", h.handleReauth)
 }
 
 // activeTab returns the NavTab that is currently active.
@@ -202,7 +206,22 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := h.sessions.Get(r)
+
+	// Check for error session (pre-login errors)
+	var errorSession *Session
+	if c, err := r.Cookie("oidc_error_session"); err == nil {
+		errorSession = h.errorSessions.GetByID(c.Value)
+		// Clear error session cookie after reading
+		http.SetCookie(w, &http.Cookie{
+			Name: "oidc_error_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		})
+		if errorSession != nil {
+			h.errorSessions.Delete(c.Value)
+		}
+	}
+
 	if session == nil {
+		// Pre-login page
 		discoveryJSON := protocol.PrettyJSON(h.discoveryRaw)
 		jwksJSON := protocol.PrettyJSON(h.jwksRaw)
 		page := templates.PageInfo{
@@ -217,154 +236,54 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 				{ID: "sec-provider", Label: "OpenID Provider"},
 			},
 		}
-		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath, h.endpointRows, jwksJSON, h.jwksKeys).Render(r.Context(), w)
+
+		// Build error entries for pre-login display
+		var errorEntries []templates.OIDCResultEntryData
+		if errorSession != nil {
+			for i, entry := range errorSession.Results {
+				entryData := h.buildResultEntryData(i, entry)
+				errorEntries = append(errorEntries, entryData)
+			}
+			// Add error entries to sidebar sections
+			for _, e := range errorEntries {
+				page.Sections = append(page.Sections, templates.Section{
+					ID:       e.ID,
+					Label:    e.SidebarLabel,
+					Dot:      e.SidebarDot,
+					Children: e.Children,
+				})
+			}
+		}
+
+		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath, h.endpointRows, jwksJSON, h.jwksKeys, errorEntries).Render(r.Context(), w)
 		return
 	}
 
-	// Parse URL params for display
-	authRequestParams := parseToClaimRows(protocol.ParseURLParams(session.AuthRequestURL))
-	authResponseParams := parseToClaimRows(protocol.ParseURLParams(session.AuthResponseRaw))
+	// Merge error entries into session if present
+	if errorSession != nil {
+		session.Results = append(errorSession.Results, session.Results...)
+		// Re-save session with merged results
+		if c, err := r.Cookie("session_id"); err == nil {
+			h.sessions.Set(c.Value, session)
+		}
+	}
 
-	// Build template data
-	// Extract subject from ID Token claims
-	var subject string
-	if sub, ok := session.Claims["sub"]; ok {
-		subject = protocol.FormatValue(sub)
+	// Post-login page: build timeline result entries
+	var results []templates.OIDCResultEntryData
+	for i, entry := range session.Results {
+		entryData := h.buildResultEntryData(i, entry)
+		results = append(results, entryData)
 	}
 
 	data := templates.OIDCDebugData{
-		Name:               h.Config.Name,
-		Subject:            subject,
-		AuthRequestURL:     session.AuthRequestURL,
-		AuthRequestParams:  authRequestParams,
-		AuthResponseRaw:    session.AuthResponseRaw,
-		AuthResponseParams: authResponseParams,
-		TokenResponseJSON:  protocol.PrettyJSON(session.TokenResponse),
-		UserInfoJSON:       protocol.PrettyJSON(session.UserInfoResponse),
-		JWKSJSON:           protocol.PrettyJSON(session.JWKSResponse),
-		DiscoveryJSON:      protocol.PrettyJSON(h.discoveryRaw),
-		HasRefreshToken:    session.RefreshTokenRaw != "",
-		CallbackPath:       h.Config.CallbackPath,
-		EndpointRows:       h.endpointRows,
-		JWKSKeys:           h.jwksKeys,
-	}
-
-	// ID Token Claims
-	for _, k := range protocol.SortedKeys(session.Claims) {
-		data.IDTokenClaims = append(data.IDTokenClaims, components.ClaimRow{
-			Key:   k,
-			Value: protocol.FormatClaimValue(k, session.Claims[k]),
-		})
-	}
-
-	// ID Token Signature
-	if session.IDTokenSigInfo != nil {
-		data.IDTokenSigRows = buildJWTSigRows(session.IDTokenSigInfo)
-	}
-
-	// Access Token Claims (JWT only)
-	if protocol.IsJWT(session.AccessTokenRaw) {
-		_, atPayloadRaw := protocol.DecodeJWTRaw(session.AccessTokenRaw)
-		var atClaims map[string]any
-		if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
-			for _, k := range protocol.SortedKeys(atClaims) {
-				data.AccessTokenClaims = append(data.AccessTokenClaims, components.ClaimRow{
-					Key:   k,
-					Value: protocol.FormatClaimValue(k, atClaims[k]),
-				})
-			}
-		}
-		if session.AccessTokenSigInfo != nil {
-			data.AccessTokenSigRows = buildJWTSigRows(session.AccessTokenSigInfo)
-		}
-	}
-
-	// UserInfo Claims
-	if len(session.UserInfoResponse) > 0 {
-		var userInfoClaims map[string]any
-		if json.Unmarshal(session.UserInfoResponse, &userInfoClaims) == nil {
-			for _, k := range protocol.SortedKeys(userInfoClaims) {
-				data.UserInfoClaims = append(data.UserInfoClaims, components.ClaimRow{
-					Key:   k,
-					Value: protocol.FormatClaimValue(k, userInfoClaims[k]),
-				})
-			}
-		}
-	}
-
-	// ID Token header/payload
-	data.IDTokenHeader, data.IDTokenPayload = protocol.DecodeJWT(session.IDTokenRaw)
-
-	// Access Token display
-	if protocol.IsJWT(session.AccessTokenRaw) {
-		atHeader, atPayload := protocol.DecodeJWT(session.AccessTokenRaw)
-		data.AccessTokenDisplay = "Header:\n" + atHeader + "\n\nPayload:\n" + atPayload
-	} else {
-		data.AccessTokenDisplay = session.AccessTokenRaw
-	}
-
-	// Determine if all signatures are verified
-	sigVerifiedAll := true
-	if session.IDTokenSigInfo != nil && !session.IDTokenSigInfo.Verified {
-		sigVerifiedAll = false
-	}
-	if session.AccessTokenSigInfo != nil && !session.AccessTokenSigInfo.Verified {
-		sigVerifiedAll = false
-	}
-	data.SigVerifiedAll = sigVerifiedAll
-
-	// Build RefreshResult display data
-	if session.RefreshResult != nil {
-		rr := session.RefreshResult
-		refreshData := &templates.OIDCRefreshResultData{
-			Timestamp:         formatRefreshTimestamp(rr.Timestamp),
-			TokenResponseJSON: protocol.PrettyJSON(rr.TokenResponse),
-		}
-
-		if len(rr.Claims) > 0 {
-			for _, k := range protocol.SortedKeys(rr.Claims) {
-				refreshData.IDTokenClaims = append(refreshData.IDTokenClaims, components.ClaimRow{
-					Key:   k,
-					Value: protocol.FormatClaimValue(k, rr.Claims[k]),
-				})
-			}
-		}
-		if rr.IDTokenSigInfo != nil {
-			refreshData.IDTokenSigRows = buildJWTSigRows(rr.IDTokenSigInfo)
-		}
-		if protocol.IsJWT(rr.AccessTokenRaw) {
-			_, atPayloadRaw := protocol.DecodeJWTRaw(rr.AccessTokenRaw)
-			var atClaims map[string]any
-			if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
-				for _, k := range protocol.SortedKeys(atClaims) {
-					refreshData.AccessTokenClaims = append(refreshData.AccessTokenClaims, components.ClaimRow{
-						Key:   k,
-						Value: protocol.FormatClaimValue(k, atClaims[k]),
-					})
-				}
-			}
-			if rr.AccessTokenSigInfo != nil {
-				refreshData.AccessTokenSigRows = buildJWTSigRows(rr.AccessTokenSigInfo)
-			}
-		}
-		if rr.IDTokenRaw != "" {
-			refreshData.IDTokenHeader, refreshData.IDTokenPayload = protocol.DecodeJWT(rr.IDTokenRaw)
-		}
-		if protocol.IsJWT(rr.AccessTokenRaw) {
-			atH, atP := protocol.DecodeJWT(rr.AccessTokenRaw)
-			refreshData.AccessTokenDisplay = "Header:\n" + atH + "\n\nPayload:\n" + atP
-		} else if rr.AccessTokenRaw != "" {
-			refreshData.AccessTokenDisplay = rr.AccessTokenRaw
-		}
-		refreshSigOK := true
-		if rr.IDTokenSigInfo != nil && !rr.IDTokenSigInfo.Verified {
-			refreshSigOK = false
-		}
-		if rr.AccessTokenSigInfo != nil && !rr.AccessTokenSigInfo.Verified {
-			refreshSigOK = false
-		}
-		refreshData.SigVerifiedAll = refreshSigOK
-		data.RefreshResult = refreshData
+		Name:            h.Config.Name,
+		Results:         results,
+		HasRefreshToken: session.RefreshTokenRaw != "",
+		CallbackPath:    h.Config.CallbackPath,
+		JWKSJSON:        protocol.PrettyJSON(h.jwksRaw),
+		DiscoveryJSON:   protocol.PrettyJSON(h.discoveryRaw),
+		EndpointRows:    h.endpointRows,
+		JWKSKeys:        h.jwksKeys,
 	}
 
 	page := templates.PageInfo{
@@ -382,21 +301,211 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	if data.HasRefreshToken {
 		page.RefreshURL = "/refresh"
 	}
-	// Build Sections: Refresh Result first (if present), then the rest
-	if data.RefreshResult != nil {
-		page.Sections = append(page.Sections, templates.Section{ID: "sec-refresh", Label: "Refresh Result"})
+
+	// Build ReauthItems: always include default re-authenticate action
+	page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
+		Label: "Re-authenticate",
+		URL:   "/reauth?step=-1",
+	})
+	for i, rc := range h.Config.Reauth {
+		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
+			Label: rc.Name,
+			URL:   "/reauth?step=" + strconv.Itoa(i),
+		})
 	}
-	page.Sections = append(page.Sections,
-		templates.Section{ID: "sec-claims", Label: "Identity & Claims"},
-		templates.Section{ID: "sec-sigs", Label: "Signature Verification"},
-		templates.Section{ID: "sec-protocol", Label: "Protocol Details"},
-		templates.Section{ID: "sec-tokens", Label: "Raw Tokens"},
-	)
+
+	// Build Sections from result entries
+	for _, re := range results {
+		page.Sections = append(page.Sections, templates.Section{
+			ID:       re.ID,
+			Label:    re.SidebarLabel,
+			Dot:      re.SidebarDot,
+			Children: re.Children,
+		})
+	}
 
 	templates.OIDCDebug(page, data).Render(r.Context(), w)
 }
 
+// buildResultEntryData converts a ResultEntry to template display data.
+func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.OIDCResultEntryData {
+	id := fmt.Sprintf("result-%d", index)
+	timestamp := formatTimestamp(entry.Timestamp)
+
+	data := templates.OIDCResultEntryData{
+		ID:        id,
+		Type:      entry.Type,
+		Timestamp: timestamp,
+	}
+
+	// Error entry
+	if entry.Type == "Error" {
+		data.ErrorCode = entry.ErrorCode
+		data.ErrorDescription = entry.ErrorDescription
+		data.ErrorURI = entry.ErrorURI
+		data.ErrorDetail = entry.ErrorDetail
+		data.AuthRequestURL = entry.AuthRequestURL
+		if entry.AuthRequestURL != "" {
+			data.AuthRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthRequestURL))
+		}
+		if entry.AuthResponseRaw != "" {
+			data.AuthResponseRaw = entry.AuthResponseRaw
+			data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
+		}
+		data.SidebarLabel = "Error (" + timestamp + ")"
+		data.SidebarDot = "error"
+		return data
+	}
+
+	// Subject
+	if sub, ok := entry.Claims["sub"]; ok {
+		data.Subject = protocol.FormatValue(sub)
+	}
+
+	// ID Token Claims
+	for _, k := range protocol.SortedKeys(entry.Claims) {
+		data.IDTokenClaims = append(data.IDTokenClaims, components.ClaimRow{
+			Key:   k,
+			Value: protocol.FormatClaimValue(k, entry.Claims[k]),
+		})
+	}
+
+	// ID Token Signature
+	if entry.IDTokenSigInfo != nil {
+		data.IDTokenSigRows = buildJWTSigRows(entry.IDTokenSigInfo)
+	}
+
+	// Access Token Claims (JWT only)
+	if protocol.IsJWT(entry.AccessTokenRaw) {
+		_, atPayloadRaw := protocol.DecodeJWTRaw(entry.AccessTokenRaw)
+		var atClaims map[string]any
+		if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
+			for _, k := range protocol.SortedKeys(atClaims) {
+				data.AccessTokenClaims = append(data.AccessTokenClaims, components.ClaimRow{
+					Key:   k,
+					Value: protocol.FormatClaimValue(k, atClaims[k]),
+				})
+			}
+		}
+		if entry.AccessTokenSigInfo != nil {
+			data.AccessTokenSigRows = buildJWTSigRows(entry.AccessTokenSigInfo)
+		}
+	}
+
+	// UserInfo Claims
+	if len(entry.UserInfoResponse) > 0 {
+		var userInfoClaims map[string]any
+		if json.Unmarshal(entry.UserInfoResponse, &userInfoClaims) == nil {
+			for _, k := range protocol.SortedKeys(userInfoClaims) {
+				data.UserInfoClaims = append(data.UserInfoClaims, components.ClaimRow{
+					Key:   k,
+					Value: protocol.FormatClaimValue(k, userInfoClaims[k]),
+				})
+			}
+		}
+	}
+
+	// Protocol Details
+	data.AuthRequestURL = entry.AuthRequestURL
+	data.AuthRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthRequestURL))
+	data.AuthResponseRaw = entry.AuthResponseRaw
+	data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
+	data.TokenResponseJSON = protocol.PrettyJSON(entry.TokenResponse)
+	data.UserInfoJSON = protocol.PrettyJSON(entry.UserInfoResponse)
+
+	// Raw Tokens
+	if entry.IDTokenRaw != "" {
+		data.IDTokenHeader, data.IDTokenPayload = protocol.DecodeJWT(entry.IDTokenRaw)
+	}
+	if protocol.IsJWT(entry.AccessTokenRaw) {
+		atH, atP := protocol.DecodeJWT(entry.AccessTokenRaw)
+		data.AccessTokenDisplay = "Header:\n" + atH + "\n\nPayload:\n" + atP
+	} else if entry.AccessTokenRaw != "" {
+		data.AccessTokenDisplay = entry.AccessTokenRaw
+	}
+
+	// Signature verification status
+	sigVerifiedAll := true
+	if entry.IDTokenSigInfo != nil && !entry.IDTokenSigInfo.Verified {
+		sigVerifiedAll = false
+	}
+	if entry.AccessTokenSigInfo != nil && !entry.AccessTokenSigInfo.Verified {
+		sigVerifiedAll = false
+	}
+	data.SigVerifiedAll = sigVerifiedAll
+
+	// Sidebar label and dot color
+	switch {
+	case entry.Type == "Login":
+		data.SidebarLabel = "Login (" + timestamp + ")"
+		data.SidebarDot = "login"
+	case entry.Type == "Refresh":
+		data.SidebarLabel = "Refresh (" + timestamp + ")"
+		data.SidebarDot = "refresh"
+	default: // Re-auth: *
+		data.SidebarLabel = entry.Type + " (" + timestamp + ")"
+		data.SidebarDot = "reauth"
+	}
+
+	// Build sidebar children (sub-sections)
+	if len(data.IDTokenClaims) > 0 {
+		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
+	}
+	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
+		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature"})
+	}
+	if entry.AuthRequestURL != "" || len(entry.TokenResponse) > 0 {
+		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Details"})
+	}
+	if entry.IDTokenRaw != "" || protocol.IsJWT(entry.AccessTokenRaw) {
+		data.Children = append(data.Children, templates.Section{ID: id + "-tokens", Label: "Raw Tokens"})
+	}
+
+	return data
+}
+
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	h.startAuthFlow(w, r, nil, "")
+}
+
+func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
+	// Verify session exists
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		http.Error(w, "No session", http.StatusBadRequest)
+		return
+	}
+	session := h.sessions.GetByID(cookie.Value)
+	if session == nil {
+		http.Error(w, "No session", http.StatusBadRequest)
+		return
+	}
+
+	stepStr := r.URL.Query().Get("step")
+	step, err := strconv.Atoi(stepStr)
+	if err != nil {
+		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
+		return
+	}
+
+	// step=-1 is the default re-authenticate (no extra params)
+	if step == -1 {
+		h.startAuthFlow(w, r, nil, "__default__")
+		return
+	}
+
+	if step < 0 || step >= len(h.Config.Reauth) {
+		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
+		return
+	}
+
+	rc := h.Config.Reauth[step]
+	h.startAuthFlow(w, r, rc.ExtraAuthParams, rc.Name)
+}
+
+// startAuthFlow initiates an OIDC authorization request. extraParams are merged on top
+// of the config's ExtraAuthParams. reauthName is non-empty for re-auth flows.
+func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraParams map[string]string, reauthName string) {
 	state, err := protocol.RandomHex(16)
 	if err != nil {
 		log.Printf("Failed to generate state: %v", err)
@@ -412,6 +521,18 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
+
+	// Store reauth name in cookie if this is a re-auth flow
+	if reauthName != "" {
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oidc_reauth_name",
+			Value:    reauthName,
+			Path:     "/",
+			MaxAge:   300,
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
 
 	// Build AuthCodeURL options
 	var opts []oauth2.AuthCodeOption
@@ -453,6 +574,11 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Extra auth params from config
 	for k, v := range h.Config.ExtraAuthParams {
+		opts = append(opts, oauth2.SetAuthURLParam(k, v))
+	}
+
+	// Extra auth params from reauth config (override config's)
+	for k, v := range extraParams {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
 
@@ -503,8 +629,46 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Name: "oidc_auth_request_url", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 	})
 
-	code := r.URL.Query().Get("code")
+	// Retrieve reauth name from cookie
+	var reauthName string
+	if c, err := r.Cookie("oidc_reauth_name"); err == nil {
+		reauthName = c.Value
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "oidc_reauth_name", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+	})
+
 	authResponseRaw := r.URL.RawQuery
+
+	// Determine result type
+	resultType := "Login"
+	if reauthName == "__default__" {
+		resultType = "Re-auth"
+	} else if reauthName != "" {
+		resultType = "Re-auth: " + reauthName
+	}
+
+	// Check for OP error response
+	if errCode := r.URL.Query().Get("error"); errCode != "" {
+		errDesc := r.URL.Query().Get("error_description")
+		errURI := r.URL.Query().Get("error_uri")
+
+		errorEntry := ResultEntry{
+			Type:             "Error",
+			Timestamp:        time.Now(),
+			AuthRequestURL:   authRequestURL,
+			AuthResponseRaw:  authResponseRaw,
+			ErrorCode:        errCode,
+			ErrorDescription: errDesc,
+			ErrorURI:         errURI,
+		}
+
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	code := r.URL.Query().Get("code")
 
 	// Build exchange options
 	var exchangeOpts []oauth2.AuthCodeOption
@@ -523,7 +687,16 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	token, err := h.oauth2Config.Exchange(tokenCtx, code, exchangeOpts...)
 	if err != nil {
 		log.Printf("Token exchange failed: %v", err)
-		http.Error(w, "Token exchange failed", http.StatusInternalServerError)
+		errorEntry := ResultEntry{
+			Type:            "Error",
+			Timestamp:       time.Now(),
+			AuthRequestURL:  authRequestURL,
+			AuthResponseRaw: authResponseRaw,
+			ErrorCode:       "token_exchange_failed",
+			ErrorDetail:     err.Error(),
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
@@ -532,14 +705,35 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	rawIDToken, ok := token.Extra("id_token").(string)
 	if !ok {
 		log.Println("No id_token in token response")
-		http.Error(w, "No id_token in token response", http.StatusInternalServerError)
+		errorEntry := ResultEntry{
+			Type:            "Error",
+			Timestamp:       time.Now(),
+			AuthRequestURL:  authRequestURL,
+			AuthResponseRaw: authResponseRaw,
+			TokenResponse:   tokenResponseJSON,
+			ErrorCode:       "missing_id_token",
+			ErrorDetail:     "No id_token in token response",
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
 	idToken, err := h.verifier.Verify(tokenCtx, rawIDToken)
 	if err != nil {
 		log.Printf("ID token verification failed: %v", err)
-		http.Error(w, "ID token verification failed", http.StatusInternalServerError)
+		errorEntry := ResultEntry{
+			Type:            "Error",
+			Timestamp:       time.Now(),
+			AuthRequestURL:  authRequestURL,
+			AuthResponseRaw: authResponseRaw,
+			TokenResponse:   tokenResponseJSON,
+			IDTokenRaw:      rawIDToken,
+			ErrorCode:       "id_token_verification_failed",
+			ErrorDetail:     err.Error(),
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
@@ -573,6 +767,37 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		refreshTokenRaw, _ = rt.(string)
 	}
 
+	entry := ResultEntry{
+		Type:               resultType,
+		Timestamp:          time.Now(),
+		Claims:             claims,
+		AuthRequestURL:     authRequestURL,
+		AuthResponseCode:   code,
+		AuthResponseRaw:    authResponseRaw,
+		TokenResponse:      tokenResponseJSON,
+		IDTokenRaw:         rawIDToken,
+		AccessTokenRaw:     token.AccessToken,
+		UserInfoResponse:   userInfoResponse,
+		IDTokenSigInfo:     idTokenSigInfo,
+		AccessTokenSigInfo: accessTokenSigInfo,
+		JWKSResponse:       jwksRaw,
+	}
+
+	// Check if we have an existing session (re-auth case)
+	if cookie, err := r.Cookie("session_id"); err == nil {
+		if existing := h.sessions.GetByID(cookie.Value); existing != nil {
+			// Prepend new entry to existing session
+			existing.Results = append([]ResultEntry{entry}, existing.Results...)
+			if refreshTokenRaw != "" {
+				existing.RefreshTokenRaw = refreshTokenRaw
+			}
+			h.sessions.Set(cookie.Value, existing)
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+	}
+
+	// New session
 	sessionID, err := protocol.RandomHex(32)
 	if err != nil {
 		log.Printf("Failed to generate session ID: %v", err)
@@ -581,18 +806,8 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sessions.Set(sessionID, &Session{
-		Claims:             claims,
-		AuthRequestURL:     authRequestURL,
-		AuthResponseCode:   code,
-		AuthResponseRaw:    authResponseRaw,
-		TokenResponse:      tokenResponseJSON,
-		IDTokenRaw:         rawIDToken,
-		AccessTokenRaw:     token.AccessToken,
-		RefreshTokenRaw:    refreshTokenRaw,
-		UserInfoResponse:   userInfoResponse,
-		IDTokenSigInfo:     idTokenSigInfo,
-		AccessTokenSigInfo: accessTokenSigInfo,
-		JWKSResponse:       jwksRaw,
+		Results:         []ResultEntry{entry},
+		RefreshTokenRaw: refreshTokenRaw,
 	})
 
 	http.SetCookie(w, &http.Cookie{
@@ -604,6 +819,33 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// saveErrorEntry saves an error result entry to the error session store.
+func (h *Handler) saveErrorEntry(w http.ResponseWriter, r *http.Request, entry ResultEntry) {
+	// Check if error session already exists
+	var errorSession *Session
+	var errorSessionID string
+	if c, err := r.Cookie("oidc_error_session"); err == nil {
+		errorSession = h.errorSessions.GetByID(c.Value)
+		errorSessionID = c.Value
+	}
+
+	if errorSession == nil {
+		errorSessionID, _ = protocol.RandomHex(32)
+		errorSession = &Session{}
+	}
+
+	errorSession.Results = append([]ResultEntry{entry}, errorSession.Results...)
+	h.errorSessions.Set(errorSessionID, errorSession)
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oidc_error_session",
+		Value:    errorSessionID,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -625,7 +867,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// handleRefresh performs a token refresh using the stored refresh token (Step 7).
+// handleRefresh performs a token refresh using the stored refresh token.
 func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
@@ -651,26 +893,26 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build RefreshResult (preserve original session data)
-	result := &RefreshResult{
+	entry := ResultEntry{
+		Type:           "Refresh",
 		Timestamp:      time.Now(),
 		TokenResponse:  marshalTokenResponse(newToken),
 		AccessTokenRaw: newToken.AccessToken,
 	}
 
 	if newIDToken, ok := newToken.Extra("id_token").(string); ok {
-		result.IDTokenRaw = newIDToken
+		entry.IDTokenRaw = newIDToken
 		if idToken, err := h.verifier.Verify(tokenCtx, newIDToken); err == nil {
 			var claims map[string]any
 			if err := idToken.Claims(&claims); err == nil {
-				result.Claims = claims
+				entry.Claims = claims
 			}
 		}
 		var jwksRaw json.RawMessage
 		if h.providerInfo.JwksURI != "" {
 			jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
 		}
-		result.IDTokenSigInfo = protocol.BuildJWTSignatureInfo(newIDToken, jwksRaw, true)
+		entry.IDTokenSigInfo = protocol.BuildJWTSignatureInfo(newIDToken, jwksRaw, true)
 	}
 
 	if protocol.IsJWT(newToken.AccessToken) {
@@ -678,10 +920,11 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		if h.providerInfo.JwksURI != "" {
 			jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
 		}
-		result.AccessTokenSigInfo = protocol.BuildJWTSignatureInfo(newToken.AccessToken, jwksRaw, true)
+		entry.AccessTokenSigInfo = protocol.BuildJWTSignatureInfo(newToken.AccessToken, jwksRaw, true)
 	}
 
-	session.RefreshResult = result
+	// Prepend new entry
+	session.Results = append([]ResultEntry{entry}, session.Results...)
 
 	// Update refresh token for subsequent refreshes
 	if newRT := newToken.Extra("refresh_token"); newRT != nil {
@@ -695,6 +938,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	// Redirect back to index to see updated data
 	http.Redirect(w, r, "/", http.StatusFound)
 }
+
 func buildJWTSigRows(info *protocol.JWTSignatureInfo) []components.SignatureRow {
 	verifiedStr := "false"
 	if info.Verified {
@@ -784,9 +1028,9 @@ func fetchJWKS(client *http.Client, jwksURL string) json.RawMessage {
 	return json.RawMessage(body)
 }
 
-func formatRefreshTimestamp(t time.Time) string {
+func formatTimestamp(t time.Time) string {
 	if protocol.DisplayLocation != nil {
 		t = t.In(protocol.DisplayLocation)
 	}
-	return t.Format("2006-01-02 15:04:05 MST")
+	return t.Format("15:04:05 MST")
 }

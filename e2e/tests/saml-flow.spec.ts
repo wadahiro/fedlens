@@ -14,9 +14,8 @@ test.describe("SAML Flow", () => {
   test("shows pre-login page with IdP metadata", async ({ page }) => {
     await page.goto(SAML_URL);
 
-    // Should show "Not logged in"
-    await expect(page.locator("h1")).toHaveText("Not logged in");
-    await expect(page.locator("p")).toContainText("SAML SP:");
+    // Should show "No Session"
+    await expect(page.locator(".status-indicator")).toHaveText("No Session");
 
     // Login button should be visible
     await expect(page.locator('a[role="button"]', { hasText: "Login" })).toBeVisible();
@@ -38,7 +37,7 @@ test.describe("SAML Flow", () => {
     await keycloakLogin(page);
 
     // Should be redirected back to fedlens with attributes
-    await expect(page.locator("h1")).toHaveText("Logged in");
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
     await expect(page.locator("text=Attributes")).toBeVisible();
 
     // Should show signature verification
@@ -54,7 +53,7 @@ test.describe("SAML Flow", () => {
     await page.click('a[role="button"]:has-text("Logout")');
 
     // Should return to pre-login page
-    await expect(page.locator("h1")).toHaveText("Not logged in");
+    await expect(page.locator(".status-indicator")).toHaveText("No Session");
   });
 
   test("navigation tabs are displayed", async ({ page }) => {

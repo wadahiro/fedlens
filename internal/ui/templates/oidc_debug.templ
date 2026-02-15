@@ -10,9 +10,11 @@ type JWKSKeyData struct {
 	Rows []components.SignatureRow
 }
 
-// OIDCDebugData holds all data for the OIDC post-login page.
-type OIDCDebugData struct {
-	Name               string
+// OIDCResultEntryData holds display data for a single result entry.
+type OIDCResultEntryData struct {
+	ID                 string // "result-0", "result-1", ...
+	Type               string // "Login", "Refresh", "Re-auth: <name>", "Error"
+	Timestamp          string
 	Subject            string
 	IDTokenClaims      []components.ClaimRow
 	IDTokenSigRows     []components.SignatureRow
@@ -28,135 +30,267 @@ type OIDCDebugData struct {
 	IDTokenPayload     string
 	AccessTokenDisplay string
 	UserInfoJSON       string
-	JWKSJSON           string
-	DiscoveryJSON      string
-	HasRefreshToken    bool
-	CallbackPath       string
 	SigVerifiedAll     bool
-	RefreshResult      *OIDCRefreshResultData
-	EndpointRows       []components.ClaimRow
-	JWKSKeys           []JWKSKeyData
+	SidebarLabel       string
+	SidebarDot         string // "login", "refresh", "reauth", "error"
+	Children           []Section // sidebar sub-sections
+	// Error fields
+	ErrorCode        string
+	ErrorDescription string
+	ErrorURI         string
+	ErrorDetail      string
 }
 
-// OIDCRefreshResultData holds data from a token refresh for template display.
-type OIDCRefreshResultData struct {
-	Timestamp          string
-	TokenResponseJSON  string
-	IDTokenClaims      []components.ClaimRow
-	IDTokenSigRows     []components.SignatureRow
-	AccessTokenClaims  []components.ClaimRow
-	AccessTokenSigRows []components.SignatureRow
-	IDTokenHeader      string
-	IDTokenPayload     string
-	AccessTokenDisplay string
-	SigVerifiedAll     bool
+// OIDCDebugData holds all data for the OIDC post-login page.
+type OIDCDebugData struct {
+	Name            string
+	Results         []OIDCResultEntryData // Reverse chronological
+	HasRefreshToken bool
+	CallbackPath    string
+	// REFERENCE
+	JWKSJSON      string
+	DiscoveryJSON string
+	EndpointRows  []components.ClaimRow
+	JWKSKeys      []JWKSKeyData
 }
 
 templ OIDCDebug(page PageInfo, data OIDCDebugData) {
 	@Layout("OIDC - " + data.Name, page) {
-		<!-- REFERENCE view (default) -->
-		<div class="view-group" data-view="reference">
-			<!-- Flow Diagram -->
-			@components.Collapsible("sec-flow", "Flow Diagram", true) {
-				@components.OIDCSequence(data.CallbackPath)
-			}
-			<!-- OpenID Provider -->
-			@components.Collapsible("sec-provider", "OpenID Provider", true) {
-				if len(data.EndpointRows) > 0 {
-					@components.KeyValueTable("op-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
+		<!-- Action Bar -->
+		if page.RefreshURL != "" || len(page.ReauthItems) > 0 {
+			<div class="action-bar">
+				if page.RefreshURL != "" {
+					<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn">Refresh Token</a>
 				}
-				for i, key := range data.JWKSKeys {
-					@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
-				}
-				@components.CodeBlock("JWKS (Raw)", data.JWKSJSON)
-				if data.DiscoveryJSON != "" {
-					@components.CodeBlock("Discovery Metadata", data.DiscoveryJSON)
-				} else {
-					<article>
-						<header>Discovery Metadata</header>
-						<p class="not-configured">Not configured</p>
-					</article>
-				}
-			}
-		</div>
-		<!-- RESULTS view -->
-		<div class="view-group" data-view="results" style="display:none">
-			<!-- Refresh Result (shown first when available) -->
-			if data.RefreshResult != nil {
-				@components.Collapsible("sec-refresh", "Refresh Result (" + data.RefreshResult.Timestamp + ")", true) {
-					if len(data.RefreshResult.IDTokenClaims) > 0 {
-						<div class="claims-pair">
-							@components.ClaimsTable("refresh-id-token-claims", "ID Token Claims", data.RefreshResult.IDTokenClaims)
-							if len(data.RefreshResult.AccessTokenClaims) > 0 {
-								@components.ClaimsTable("refresh-access-token-claims", "Access Token Claims", data.RefreshResult.AccessTokenClaims)
-							}
+				if len(page.ReauthItems) > 0 {
+					if len(page.ReauthItems) == 1 {
+						<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn">{ page.ReauthItems[0].Label }</a>
+					} else {
+						<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn">{ page.ReauthItems[0].Label }</a>
+						<div class="dropdown">
+							<button class="secondary outline action-btn" onclick="toggleDropdown(this)">
+								More &#9662;
+							</button>
+							<div class="dropdown-menu">
+								for _, item := range page.ReauthItems[1:] {
+									<a href={ templ.SafeURL(item.URL) } class="dropdown-item">{ item.Label }</a>
+								}
+							</div>
 						</div>
 					}
-					@components.CollapsibleWithStatus("sec-refresh-sigs", "Signature Verification", data.RefreshResult.SigVerifiedAll, false) {
-						if len(data.RefreshResult.IDTokenSigRows) > 0 {
-							@components.SignatureTable("ID Token Signature Verification", data.RefreshResult.IDTokenSigRows)
-						}
-						if len(data.RefreshResult.AccessTokenSigRows) > 0 {
-							@components.SignatureTable("Access Token Signature Verification", data.RefreshResult.AccessTokenSigRows)
-						}
+				}
+			</div>
+		}
+		<!-- Results Timeline -->
+		if len(data.Results) > 0 {
+			<div class="results-timeline">
+				for i, entry := range data.Results {
+					@OIDCResultEntry(i, entry)
+				}
+			</div>
+		}
+		<!-- REFERENCE -->
+		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			@components.OIDCSequence(data.CallbackPath)
+		}
+		@components.Collapsible("sec-provider", "OpenID Provider", true) {
+			if len(data.EndpointRows) > 0 {
+				@components.KeyValueTable("op-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
+			}
+			for i, key := range data.JWKSKeys {
+				@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
+			}
+			@components.CodeBlock("JWKS (Raw)", data.JWKSJSON)
+			if data.DiscoveryJSON != "" {
+				@components.CodeBlock("Discovery Metadata", data.DiscoveryJSON)
+			} else {
+				<article>
+					<header>Discovery Metadata</header>
+					<p class="not-configured">Not configured</p>
+				</article>
+			}
+		}
+	}
+}
+
+func resultBadgeClass(entryType string) string {
+	switch {
+	case entryType == "Login":
+		return "result-login"
+	case entryType == "Refresh":
+		return "result-refresh"
+	case entryType == "Error":
+		return "result-error"
+	default: // Re-auth: *
+		return "result-reauth"
+	}
+}
+
+func resultBadgeLabel(entryType string) string {
+	if entryType == "Error" {
+		return "Error"
+	}
+	return entryType
+}
+
+templ OIDCResultEntry(index int, entry OIDCResultEntryData) {
+	if index == 0 {
+		<details id={ entry.ID } class={ "result-entry", resultBadgeClass(entry.Type) } open>
+			<summary>
+				<kbd class={ resultBadgeClass(entry.Type) }>{ resultBadgeLabel(entry.Type) }</kbd>
+				if entry.Type == "Error" && entry.ErrorCode != "" {
+					{ entry.ErrorCode }
+				}
+				if entry.Subject != "" {
+					{ entry.Subject }
+				}
+				<span class="result-timestamp">({ entry.Timestamp })</span>
+			</summary>
+			@resultEntryContent(entry)
+		</details>
+	} else {
+		<details id={ entry.ID } class={ "result-entry", resultBadgeClass(entry.Type) }>
+			<summary>
+				<kbd class={ resultBadgeClass(entry.Type) }>{ resultBadgeLabel(entry.Type) }</kbd>
+				if entry.Type == "Error" && entry.ErrorCode != "" {
+					{ entry.ErrorCode }
+				}
+				if entry.Subject != "" {
+					{ entry.Subject }
+				}
+				<span class="result-timestamp">({ entry.Timestamp })</span>
+			</summary>
+			@resultEntryContent(entry)
+		</details>
+	}
+}
+
+templ resultEntryContent(entry OIDCResultEntryData) {
+	if entry.Type == "Error" {
+		@errorEntryContent(entry)
+	} else {
+		@normalEntryContent(entry)
+	}
+}
+
+templ errorEntryContent(entry OIDCResultEntryData) {
+	<!-- Error Details -->
+	<article class="result-subsection">
+		<header>Error Details</header>
+		<div class="overflow-auto">
+			<table class="striped">
+				<tbody>
+					if entry.ErrorCode != "" {
+						<tr class="verified-false">
+							<td>error</td>
+							<td>{ entry.ErrorCode }</td>
+						</tr>
 					}
-					@components.CodeBlock("Token Response", data.RefreshResult.TokenResponseJSON)
-					if data.RefreshResult.IDTokenHeader != "" {
-						@components.CodeBlock("ID Token Header", data.RefreshResult.IDTokenHeader)
-						@components.CodeBlock("ID Token Payload", data.RefreshResult.IDTokenPayload)
+					if entry.ErrorDescription != "" {
+						<tr>
+							<td>error_description</td>
+							<td>{ entry.ErrorDescription }</td>
+						</tr>
 					}
-					if data.RefreshResult.AccessTokenDisplay != "" {
-						@components.CodeBlock("Access Token", data.RefreshResult.AccessTokenDisplay)
+					if entry.ErrorURI != "" {
+						<tr>
+							<td>error_uri</td>
+							<td>{ entry.ErrorURI }</td>
+						</tr>
 					}
-				}
-			}
-			<!-- Identity & Claims -->
-			@components.Collapsible("sec-claims", "Identity & Claims", true) {
-				if data.Subject != "" {
-					@components.SubjectTable("Subject (sub)", data.Subject)
-				}
-				<div class="claims-pair">
-					@components.ClaimsTable("id-token-claims", "ID Token Claims", data.IDTokenClaims)
-					if len(data.AccessTokenClaims) > 0 {
-						@components.ClaimsTable("access-token-claims", "Access Token Claims", data.AccessTokenClaims)
+					if entry.ErrorDetail != "" {
+						<tr>
+							<td>detail</td>
+							<td>{ entry.ErrorDetail }</td>
+						</tr>
 					}
-				</div>
-				if len(data.UserInfoClaims) > 0 {
-					@components.ClaimsTable("userinfo-claims", "UserInfo Claims", data.UserInfoClaims)
-				}
-			}
-			<!-- Signature Verification -->
-			@components.CollapsibleWithStatus("sec-sigs", "Signature Verification", data.SigVerifiedAll, false) {
-				if len(data.IDTokenSigRows) > 0 {
-					@components.SignatureTable("ID Token Signature Verification", data.IDTokenSigRows)
-				}
-				if len(data.AccessTokenSigRows) > 0 {
-					@components.SignatureTable("Access Token Signature Verification", data.AccessTokenSigRows)
-				}
-			}
-			<!-- Protocol Details -->
-			@components.Collapsible("sec-protocol", "Protocol Details", false) {
-				if len(data.AuthRequestParams) > 0 {
-					@components.ParamsTable("Authorization Request", data.AuthRequestParams, data.AuthRequestURL)
-				} else {
-					@components.CodeBlock("Authorization Request", data.AuthRequestURL)
-				}
-				if len(data.AuthResponseParams) > 0 {
-					@components.ParamsTable("Authorization Response", data.AuthResponseParams, data.AuthResponseRaw)
-				} else {
-					@components.CodeBlock("Authorization Response", data.AuthResponseRaw)
-				}
-				@components.CodeBlock("Token Response", data.TokenResponseJSON)
-				if data.UserInfoJSON != "" {
-					@components.CodeBlock("UserInfo Response", data.UserInfoJSON)
-				}
-			}
-			<!-- Raw Tokens -->
-			@components.Collapsible("sec-tokens", "Raw Tokens", false) {
-				@components.CodeBlock("ID Token Header", data.IDTokenHeader)
-				@components.CodeBlock("ID Token Payload", data.IDTokenPayload)
-				@components.CodeBlock("Access Token", data.AccessTokenDisplay)
-			}
+				</tbody>
+			</table>
 		</div>
+	</article>
+	if entry.AuthResponseRaw != "" && len(entry.AuthResponseParams) > 0 {
+		@components.ParamsTable("Authorization Response", entry.AuthResponseParams, entry.AuthResponseRaw)
+	}
+	if entry.AuthRequestURL != "" {
+		if len(entry.AuthRequestParams) > 0 {
+			@components.ParamsTable("Authorization Request", entry.AuthRequestParams, entry.AuthRequestURL)
+		} else {
+			@components.CodeBlock("Authorization Request", entry.AuthRequestURL)
+		}
+	}
+}
+
+templ normalEntryContent(entry OIDCResultEntryData) {
+	<!-- Identity & Claims -->
+	if len(entry.IDTokenClaims) > 0 {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Identity & Claims</summary>
+			if entry.Subject != "" {
+				@components.SubjectTable("Subject (sub)", entry.Subject)
+			}
+			<div class="claims-pair">
+				@components.ClaimsTable(entry.ID + "-id-token-claims", "ID Token Claims", entry.IDTokenClaims)
+				if len(entry.AccessTokenClaims) > 0 {
+					@components.ClaimsTable(entry.ID + "-access-token-claims", "Access Token Claims", entry.AccessTokenClaims)
+				}
+			</div>
+			if len(entry.UserInfoClaims) > 0 {
+				@components.ClaimsTable(entry.ID + "-userinfo-claims", "UserInfo Claims", entry.UserInfoClaims)
+			}
+		</details>
+	}
+	<!-- Signature Verification -->
+	if len(entry.IDTokenSigRows) > 0 || len(entry.AccessTokenSigRows) > 0 {
+		<details id={ entry.ID + "-sigs" } class="result-subsection">
+			<summary>
+				Signature Verification
+				if entry.SigVerifiedAll {
+					<span class="verification-badge verified">Verified</span>
+				} else {
+					<span class="verification-badge not-verified">Unverified</span>
+				}
+			</summary>
+			if len(entry.IDTokenSigRows) > 0 {
+				@components.SignatureTable("ID Token Signature Verification", entry.IDTokenSigRows)
+			}
+			if len(entry.AccessTokenSigRows) > 0 {
+				@components.SignatureTable("Access Token Signature Verification", entry.AccessTokenSigRows)
+			}
+		</details>
+	}
+	<!-- Protocol Details -->
+	if entry.AuthRequestURL != "" || entry.TokenResponseJSON != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Details</summary>
+			if len(entry.AuthRequestParams) > 0 {
+				@components.ParamsTable("Authorization Request", entry.AuthRequestParams, entry.AuthRequestURL)
+			} else if entry.AuthRequestURL != "" {
+				@components.CodeBlock("Authorization Request", entry.AuthRequestURL)
+			}
+			if len(entry.AuthResponseParams) > 0 {
+				@components.ParamsTable("Authorization Response", entry.AuthResponseParams, entry.AuthResponseRaw)
+			} else if entry.AuthResponseRaw != "" {
+				@components.CodeBlock("Authorization Response", entry.AuthResponseRaw)
+			}
+			if entry.TokenResponseJSON != "" {
+				@components.CodeBlock("Token Response", entry.TokenResponseJSON)
+			}
+			if entry.UserInfoJSON != "" {
+				@components.CodeBlock("UserInfo Response", entry.UserInfoJSON)
+			}
+		</details>
+	}
+	<!-- Raw Tokens -->
+	if entry.IDTokenHeader != "" || entry.AccessTokenDisplay != "" {
+		<details id={ entry.ID + "-tokens" } class="result-subsection">
+			<summary>Raw Tokens</summary>
+			if entry.IDTokenHeader != "" {
+				@components.CodeBlock("ID Token Header", entry.IDTokenHeader)
+				@components.CodeBlock("ID Token Payload", entry.IDTokenPayload)
+			}
+			if entry.AccessTokenDisplay != "" {
+				@components.CodeBlock("Access Token", entry.AccessTokenDisplay)
+			}
+		</details>
 	}
 }
