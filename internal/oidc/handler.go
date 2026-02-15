@@ -417,13 +417,12 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 
 	// Raw Tokens
 	if entry.IDTokenRaw != "" {
-		data.IDTokenHeader, data.IDTokenPayload = protocol.DecodeJWT(entry.IDTokenRaw)
+		data.IDTokenHeader, data.IDTokenPayload, data.IDTokenSignature = protocol.DecodeJWT(entry.IDTokenRaw)
 	}
 	if protocol.IsJWT(entry.AccessTokenRaw) {
-		atH, atP := protocol.DecodeJWT(entry.AccessTokenRaw)
-		data.AccessTokenDisplay = "Header:\n" + atH + "\n\nPayload:\n" + atP
+		data.AccessTokenHeader, data.AccessTokenPayload, data.AccessTokenSignature = protocol.DecodeJWT(entry.AccessTokenRaw)
 	} else if entry.AccessTokenRaw != "" {
-		data.AccessTokenDisplay = entry.AccessTokenRaw
+		data.AccessTokenRaw = entry.AccessTokenRaw
 	}
 
 	// Signature verification status
@@ -454,12 +453,12 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
 	}
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
-		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature"})
+		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
 	if entry.AuthRequestURL != "" || len(entry.TokenResponse) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Details"})
 	}
-	if entry.IDTokenRaw != "" || protocol.IsJWT(entry.AccessTokenRaw) {
+	if entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-tokens", Label: "Raw Tokens"})
 	}
 

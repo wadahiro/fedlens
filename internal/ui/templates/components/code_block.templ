@@ -14,6 +14,20 @@ templ CodeBlock(title string, content string) {
 	}
 }
 
+templ TokenBlock(title, header, payload, signature string) {
+	<article>
+		<header>{ title }</header>
+		<small class="token-part-label">Header</small>
+		<pre><code class="language-json">{ header }</code></pre>
+		<small class="token-part-label">Payload</small>
+		<pre><code class="language-json">{ payload }</code></pre>
+		if signature != "" {
+			<small class="token-part-label">Signature</small>
+			<pre class="token-signature"><code>{ signature }</code></pre>
+		}
+	</article>
+}
+
 templ XMLCodeBlock(title string, content string) {
 	if content != "" {
 		<article>

@@ -11,14 +11,18 @@ func IsJWT(s string) bool {
 	return strings.Count(s, ".") == 2
 }
 
-// DecodeJWT decodes a JWT's header and payload as pretty-printed JSON strings.
-func DecodeJWT(token string) (header, payload string) {
+// DecodeJWT decodes a JWT's header, payload, and signature.
+// Header and payload are pretty-printed JSON; signature is the raw base64url string.
+func DecodeJWT(token string) (header, payload, signature string) {
 	parts := strings.SplitN(token, ".", 3)
 	if len(parts) < 2 {
-		return token, ""
+		return token, "", ""
 	}
 	header = decodeBase64URL(parts[0])
 	payload = decodeBase64URL(parts[1])
+	if len(parts) == 3 {
+		signature = parts[2]
+	}
 	return
 }
 

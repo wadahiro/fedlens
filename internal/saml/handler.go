@@ -451,7 +451,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 		data.Children = append(data.Children, templates.Section{ID: id + "-response", Label: "Response Details"})
 	}
 	if len(entry.SignatureInfos) > 0 {
-		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature"})
+		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
 	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})

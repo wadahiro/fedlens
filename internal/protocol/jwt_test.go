@@ -29,9 +29,12 @@ func TestDecodeJWT(t *testing.T) {
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"sub":"user1","iss":"https://example.com"}`))
 	token := header + "." + payload + ".signature"
 
-	h, p := DecodeJWT(token)
+	h, p, s := DecodeJWT(token)
 	if h == "" || p == "" {
 		t.Fatal("DecodeJWT returned empty header or payload")
+	}
+	if s != "signature" {
+		t.Errorf("signature should be 'signature', got: %s", s)
 	}
 
 	// Verify it contains expected fields

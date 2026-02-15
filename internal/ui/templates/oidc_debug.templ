@@ -27,9 +27,13 @@ type OIDCResultEntryData struct {
 	AuthResponseRaw    string
 	AuthResponseParams []components.ClaimRow
 	TokenResponseJSON  string
-	IDTokenHeader      string
-	IDTokenPayload     string
-	AccessTokenDisplay string
+	IDTokenHeader        string
+	IDTokenPayload       string
+	IDTokenSignature     string
+	AccessTokenHeader    string
+	AccessTokenPayload   string
+	AccessTokenSignature string
+	AccessTokenRaw       string
 	UserInfoJSON       string
 	SigVerifiedAll     bool
 	SidebarLabel       string
@@ -223,12 +227,10 @@ templ normalEntryContent(entry OIDCResultEntryData) {
 			if entry.Subject != "" {
 				@components.SubjectTable("Subject (sub)", entry.Subject)
 			}
-			<div class="claims-pair">
-				@components.ClaimsTable(entry.ID + "-id-token-claims", "ID Token Claims", entry.IDTokenClaims)
-				if len(entry.AccessTokenClaims) > 0 {
-					@components.ClaimsTable(entry.ID + "-access-token-claims", "Access Token Claims", entry.AccessTokenClaims)
-				}
-			</div>
+			@components.ClaimsTable(entry.ID + "-id-token-claims", "ID Token Claims", entry.IDTokenClaims)
+			if len(entry.AccessTokenClaims) > 0 {
+				@components.ClaimsTable(entry.ID + "-access-token-claims", "Access Token Claims", entry.AccessTokenClaims)
+			}
 			if len(entry.UserInfoClaims) > 0 {
 				@components.ClaimsTable(entry.ID + "-userinfo-claims", "UserInfo Claims", entry.UserInfoClaims)
 			}
@@ -276,15 +278,16 @@ templ normalEntryContent(entry OIDCResultEntryData) {
 		</details>
 	}
 	<!-- Raw Tokens -->
-	if entry.IDTokenHeader != "" || entry.AccessTokenDisplay != "" {
+	if entry.IDTokenHeader != "" || entry.AccessTokenHeader != "" || entry.AccessTokenRaw != "" {
 		<details id={ entry.ID + "-tokens" } class="result-subsection">
 			<summary>Raw Tokens</summary>
 			if entry.IDTokenHeader != "" {
-				@components.CodeBlock("ID Token Header", entry.IDTokenHeader)
-				@components.CodeBlock("ID Token Payload", entry.IDTokenPayload)
+				@components.TokenBlock("ID Token", entry.IDTokenHeader, entry.IDTokenPayload, entry.IDTokenSignature)
 			}
-			if entry.AccessTokenDisplay != "" {
-				@components.CodeBlock("Access Token", entry.AccessTokenDisplay)
+			if entry.AccessTokenHeader != "" {
+				@components.TokenBlock("Access Token", entry.AccessTokenHeader, entry.AccessTokenPayload, entry.AccessTokenSignature)
+			} else if entry.AccessTokenRaw != "" {
+				@components.CodeBlock("Access Token (Opaque)", entry.AccessTokenRaw)
 			}
 		</details>
 	}
