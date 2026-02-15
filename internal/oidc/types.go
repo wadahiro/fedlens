@@ -7,9 +7,9 @@ import (
 	"github.com/wadahiro/fedlens/internal/protocol"
 )
 
-// ResultEntry holds data from a single authentication event (Login, Refresh, Re-auth, Error).
+// ResultEntry holds data from a single authentication event (Login, Refresh, Re-auth, Logout, Error).
 type ResultEntry struct {
-	Type               string    // "Login", "Refresh", "Re-auth: <name>", "Error"
+	Type               string    // "Login", "Refresh", "Re-auth: <name>", "Logout", "Error"
 	Timestamp          time.Time
 	Claims             map[string]any
 	AuthRequestURL     string          // Login/Re-auth/Error
@@ -27,10 +27,18 @@ type ResultEntry struct {
 	ErrorDescription string // Human-readable error description
 	ErrorURI         string // Error URI
 	ErrorDetail      string // Additional info (e.g. "Token exchange failed")
+	// Logout fields
+	LogoutRequestURL string // Full end_session_endpoint URL with params
+	LogoutIDTokenRaw string // id_token_hint value sent in logout request
 }
 
-// Session holds all debug data for an OIDC authentication session.
+// Session holds auth state only (destroyed on logout).
 type Session struct {
-	Results         []ResultEntry // Reverse chronological (newest at [0])
-	RefreshTokenRaw string        // Refresh token maintained at session level
+	IDTokenRaw      string
+	RefreshTokenRaw string
+}
+
+// DebugSession holds all debug data (survives logout).
+type DebugSession struct {
+	Results []ResultEntry // Reverse chronological (newest at [0])
 }

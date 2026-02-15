@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	gooidc "github.com/coreos/go-oidc/v3/oidc"
@@ -26,7 +27,7 @@ import (
 type Handler struct {
 	Config        config.OIDCConfig
 	sessions      *SessionStore
-	errorSessions *SessionStore
+	debugSessions *DebugSessionStore
 	oauth2Config  *oauth2.Config
 	provider      *gooidc.Provider
 	verifier      *gooidc.IDTokenVerifier
@@ -88,7 +89,7 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 	h := &Handler{
 		Config:        cfg,
 		sessions:      NewSessionStore(),
-		errorSessions: NewSessionStore(),
+		debugSessions: NewDebugSessionStore(),
 		oauth2Config:  oauth2Config,
 		provider:      provider,
 		verifier:      verifier,
@@ -187,6 +188,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/logout", h.handleLogout)
 	mux.HandleFunc("/refresh", h.handleRefresh)
 	mux.HandleFunc("/reauth", h.handleReauth)
+	mux.HandleFunc("/clear", h.handleClear)
 }
 
 // activeTab returns the NavTab that is currently active.
@@ -206,80 +208,20 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	session := h.sessions.Get(r)
+	debugSession := h.debugSessions.Get(r)
 
-	// Check for error session (pre-login errors)
-	var errorSession *Session
-	if c, err := r.Cookie("oidc_error_session"); err == nil {
-		errorSession = h.errorSessions.GetByID(c.Value)
-		// Clear error session cookie after reading
-		http.SetCookie(w, &http.Cookie{
-			Name: "oidc_error_session", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
-		})
-		if errorSession != nil {
-			h.errorSessions.Delete(c.Value)
-		}
-	}
-
-	if session == nil {
-		// Pre-login page
-		discoveryJSON := protocol.PrettyJSON(h.discoveryRaw)
-		jwksJSON := protocol.PrettyJSON(h.jwksRaw)
-		page := templates.PageInfo{
-			Tabs:         h.navTabs,
-			ActiveTab:    h.activeTab(),
-			Status:       "disconnected",
-			StatusLabel:  "No Session",
-			LoginURL:     "/login",
-			DefaultTheme: h.defaultTheme,
-			References: []templates.Section{
-				{ID: "sec-flow", Label: "Flow Diagram"},
-				{ID: "sec-provider", Label: "OpenID Provider"},
-			},
-		}
-
-		// Build error entries for pre-login display
-		var errorEntries []templates.OIDCResultEntryData
-		if errorSession != nil {
-			for i, entry := range errorSession.Results {
-				entryData := h.buildResultEntryData(i, entry)
-				errorEntries = append(errorEntries, entryData)
-			}
-			// Add error entries to sidebar sections
-			for _, e := range errorEntries {
-				page.Sections = append(page.Sections, templates.Section{
-					ID:        e.ID,
-					Label:     e.SidebarLabel,
-					Timestamp: e.SidebarTimestamp,
-					Dot:       e.SidebarDot,
-					Children:  e.Children,
-				})
-			}
-		}
-
-		templates.OIDCIndex(page, h.Config.Name, discoveryJSON, h.Config.CallbackPath, h.endpointRows, jwksJSON, h.jwksKeys, errorEntries).Render(r.Context(), w)
-		return
-	}
-
-	// Merge error entries into session if present
-	if errorSession != nil {
-		session.Results = append(errorSession.Results, session.Results...)
-		// Re-save session with merged results
-		if c, err := r.Cookie("session_id"); err == nil {
-			h.sessions.Set(c.Value, session)
-		}
-	}
-
-	// Post-login page: build timeline result entries
+	// Build result entries from debug session
 	var results []templates.OIDCResultEntryData
-	for i, entry := range session.Results {
-		entryData := h.buildResultEntryData(i, entry)
-		results = append(results, entryData)
+	if debugSession != nil {
+		for i, entry := range debugSession.Results {
+			results = append(results, h.buildResultEntryData(i, entry))
+		}
 	}
 
-	data := templates.OIDCDebugData{
+	data := templates.OIDCPageData{
 		Name:            h.Config.Name,
 		Results:         results,
-		HasRefreshToken: session.RefreshTokenRaw != "",
+		HasRefreshToken: session != nil && session.RefreshTokenRaw != "",
 		CallbackPath:    h.Config.CallbackPath,
 		JWKSJSON:        protocol.PrettyJSON(h.jwksRaw),
 		DiscoveryJSON:   protocol.PrettyJSON(h.discoveryRaw),
@@ -290,32 +232,39 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	page := templates.PageInfo{
 		Tabs:         h.navTabs,
 		ActiveTab:    h.activeTab(),
-		Status:       "connected",
-		StatusLabel:  "Active Session",
-		LogoutURL:    "/logout",
 		DefaultTheme: h.defaultTheme,
 		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
 			{ID: "sec-provider", Label: "OpenID Provider"},
 		},
 	}
-	if data.HasRefreshToken {
-		page.RefreshURL = "/refresh"
-	}
 
-	// Build ReauthItems: always include default re-authenticate action
-	page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
-		Label: "Re-authenticate",
-		URL:   "/reauth?step=-1",
-	})
-	for i, rc := range h.Config.Reauth {
+	if session != nil {
+		// Logged in
+		page.Status = "connected"
+		page.StatusLabel = "Active Session"
+		page.LogoutURL = "/logout"
+		if data.HasRefreshToken {
+			page.RefreshURL = "/refresh"
+		}
 		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
-			Label: rc.Name,
-			URL:   "/reauth?step=" + strconv.Itoa(i),
+			Label: "Re-authenticate",
+			URL:   "/reauth?step=-1",
 		})
+		for i, rc := range h.Config.Reauth {
+			page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
+				Label: rc.Name,
+				URL:   "/reauth?step=" + strconv.Itoa(i),
+			})
+		}
+	} else {
+		// Not logged in
+		page.Status = "disconnected"
+		page.StatusLabel = "No Session"
+		page.LoginURL = "/login"
 	}
 
-	// Build Sections from result entries
+	// Build sidebar sections from result entries
 	for _, re := range results {
 		page.Sections = append(page.Sections, templates.Section{
 			ID:        re.ID,
@@ -326,7 +275,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	templates.OIDCDebug(page, data).Render(r.Context(), w)
+	templates.OIDCIndex(page, data).Render(r.Context(), w)
 }
 
 // buildResultEntryData converts a ResultEntry to template display data.
@@ -356,6 +305,26 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 		data.SidebarLabel = "Error"
 		data.SidebarDot = "error"
+		return data
+	}
+
+	// Logout entry
+	if strings.HasPrefix(entry.Type, "Logout") {
+		data.SidebarLabel = entry.Type
+		data.SidebarDot = "logout"
+		if entry.LogoutRequestURL != "" {
+			data.LogoutRequestURL = entry.LogoutRequestURL
+			data.LogoutRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.LogoutRequestURL))
+		}
+		// Logout Details: id_token_hint JWT decode
+		if entry.LogoutIDTokenRaw != "" {
+			data.LogoutIDTokenRaw = entry.LogoutIDTokenRaw
+			data.LogoutIDTokenHeader, data.LogoutIDTokenPayload, data.LogoutIDTokenSignature = protocol.DecodeJWT(entry.LogoutIDTokenRaw)
+			data.Children = append(data.Children, templates.Section{ID: id + "-details", Label: "Logout Details"})
+		}
+		if entry.LogoutRequestURL != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
+		}
 		return data
 	}
 
@@ -407,7 +376,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 	}
 
-	// Protocol Details
+	// Protocol Messages
 	data.AuthRequestURL = entry.AuthRequestURL
 	data.AuthRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthRequestURL))
 	data.AuthResponseRaw = entry.AuthResponseRaw
@@ -437,7 +406,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	}
 	data.SigVerifiedAll = sigVerifiedAll
 
-	// Sidebar label and dot color
+	// Sidebar label and dot color (Logout handled above via early return)
 	switch {
 	case entry.Type == "Login":
 		data.SidebarLabel = "Login"
@@ -458,7 +427,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
 	if entry.AuthRequestURL != "" || len(entry.TokenResponse) > 0 {
-		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Details"})
+		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
 	if entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-tokens", Label: "Raw Tokens"})
@@ -785,11 +754,13 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		JWKSResponse:       jwksRaw,
 	}
 
-	// Check if we have an existing session (re-auth case)
+	// Save entry to debug session
+	h.saveDebugEntry(w, r, entry)
+
+	// Update auth session (refresh token)
 	if cookie, err := r.Cookie("session_id"); err == nil {
 		if existing := h.sessions.GetByID(cookie.Value); existing != nil {
-			// Prepend new entry to existing session
-			existing.Results = append([]ResultEntry{entry}, existing.Results...)
+			existing.IDTokenRaw = rawIDToken
 			if refreshTokenRaw != "" {
 				existing.RefreshTokenRaw = refreshTokenRaw
 			}
@@ -799,7 +770,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// New session
+	// New auth session
 	sessionID, err := protocol.RandomHex(32)
 	if err != nil {
 		log.Printf("Failed to generate session ID: %v", err)
@@ -808,7 +779,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.sessions.Set(sessionID, &Session{
-		Results:         []ResultEntry{entry},
+		IDTokenRaw:      rawIDToken,
 		RefreshTokenRaw: refreshTokenRaw,
 	})
 
@@ -823,49 +794,95 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
-// saveErrorEntry saves an error result entry to the error session store.
+// saveDebugEntry saves a result entry to the debug session.
+func (h *Handler) saveDebugEntry(w http.ResponseWriter, r *http.Request, entry ResultEntry) {
+	var debugSession *DebugSession
+	var debugID string
+
+	if c, err := r.Cookie("oidc_debug_id"); err == nil {
+		debugSession = h.debugSessions.GetByID(c.Value)
+		debugID = c.Value
+	}
+
+	if debugSession == nil {
+		debugID, _ = protocol.RandomHex(32)
+		debugSession = &DebugSession{}
+		http.SetCookie(w, &http.Cookie{
+			Name:     "oidc_debug_id",
+			Value:    debugID,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+		})
+	}
+
+	debugSession.Results = append([]ResultEntry{entry}, debugSession.Results...)
+	h.debugSessions.Set(debugID, debugSession)
+}
+
+// saveErrorEntry saves an error result entry to the debug session.
 func (h *Handler) saveErrorEntry(w http.ResponseWriter, r *http.Request, entry ResultEntry) {
-	// Check if error session already exists
-	var errorSession *Session
-	var errorSessionID string
-	if c, err := r.Cookie("oidc_error_session"); err == nil {
-		errorSession = h.errorSessions.GetByID(c.Value)
-		errorSessionID = c.Value
-	}
-
-	if errorSession == nil {
-		errorSessionID, _ = protocol.RandomHex(32)
-		errorSession = &Session{}
-	}
-
-	errorSession.Results = append([]ResultEntry{entry}, errorSession.Results...)
-	h.errorSessions.Set(errorSessionID, errorSession)
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "oidc_error_session",
-		Value:    errorSessionID,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-	})
+	h.saveDebugEntry(w, r, entry)
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie("session_id")
-	if err == nil {
-		h.sessions.Delete(cookie.Value)
+	// Retrieve id_token_raw from session before deleting it
+	var idTokenRaw string
+	if cookie, err := r.Cookie("session_id"); err == nil {
+		if session := h.sessions.GetByID(cookie.Value); session != nil {
+			idTokenRaw = session.IDTokenRaw
+		}
 	}
 
+	// Build Logout entry
+	logoutEntry := ResultEntry{
+		Type:      "Logout (RP)",
+		Timestamp: time.Now(),
+	}
+
+	// Build end_session_endpoint URL
+	if h.providerInfo.EndSessionEndpoint != "" {
+		logoutURL := h.providerInfo.EndSessionEndpoint + "?post_logout_redirect_uri=" + url.QueryEscape(h.topPageURL) + "&client_id=" + url.QueryEscape(h.Config.ClientID)
+
+		// Add id_token_hint if enabled (default: true)
+		if h.Config.LogoutIDTokenHint == nil || *h.Config.LogoutIDTokenHint {
+			if idTokenRaw != "" {
+				logoutURL += "&id_token_hint=" + url.QueryEscape(idTokenRaw)
+				logoutEntry.LogoutIDTokenRaw = idTokenRaw
+			}
+		}
+
+		logoutEntry.LogoutRequestURL = logoutURL
+	}
+
+	// Save Logout entry to debug session (survives logout)
+	h.saveDebugEntry(w, r, logoutEntry)
+
+	// Destroy auth session only
+	if cookie, err := r.Cookie("session_id"); err == nil {
+		h.sessions.Delete(cookie.Value)
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: "session_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
 	})
 
-	if h.providerInfo.EndSessionEndpoint != "" {
-		logoutURL := h.providerInfo.EndSessionEndpoint + "?post_logout_redirect_uri=" + url.QueryEscape(h.topPageURL) + "&client_id=" + url.QueryEscape(h.Config.ClientID)
-		http.Redirect(w, r, logoutURL, http.StatusFound)
+	// Redirect to IdP end_session_endpoint or back to index
+	if logoutEntry.LogoutRequestURL != "" {
+		http.Redirect(w, r, logoutEntry.LogoutRequestURL, http.StatusFound)
 		return
 	}
 
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
+// handleClear clears all debug results.
+func (h *Handler) handleClear(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie("oidc_debug_id"); err == nil {
+		h.debugSessions.Delete(c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: "oidc_debug_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+	})
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
@@ -925,10 +942,13 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		entry.AccessTokenSigInfo = protocol.BuildJWTSignatureInfo(newToken.AccessToken, jwksRaw, true)
 	}
 
-	// Prepend new entry
-	session.Results = append([]ResultEntry{entry}, session.Results...)
+	// Save entry to debug session
+	h.saveDebugEntry(w, r, entry)
 
-	// Update refresh token for subsequent refreshes
+	// Update tokens in auth session for subsequent refreshes
+	if entry.IDTokenRaw != "" {
+		session.IDTokenRaw = entry.IDTokenRaw
+	}
 	if newRT := newToken.Extra("refresh_token"); newRT != nil {
 		if rt, ok := newRT.(string); ok {
 			session.RefreshTokenRaw = rt

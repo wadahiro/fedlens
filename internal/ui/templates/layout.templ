@@ -85,12 +85,6 @@ templ Layout(title string, page PageInfo) {
 						<span class={ "status-indicator", templ.KV("status-connected", page.Status == "connected"), templ.KV("status-disconnected", page.Status == "disconnected") }>
 							{ page.StatusLabel }
 						</span>
-						if page.LoginURL != "" {
-							<a href={ templ.SafeURL(page.LoginURL) } role="button">Login</a>
-						}
-						if page.LogoutURL != "" {
-							<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline">Logout</a>
-						}
 						<a href="#" class="theme-toggle" onclick="toggleTheme(); return false;">
 							<span class="theme-toggle-icon">&#9790;</span>
 						</a>
@@ -128,11 +122,14 @@ templ Layout(title string, page PageInfo) {
 							}
 						</ul>
 						if len(page.Sections) > 0 {
-							<p class="sidebar-heading">RESULTS</p>
+							<div class="sidebar-results-header">
+								<p class="sidebar-heading">RESULTS</p>
+								<a href="/clear" class="clear-btn" onclick="return confirm('Clear all results?')">Clear</a>
+							</div>
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
 									<li>
-										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
+										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
 											{ sec.Label }
 											if sec.Timestamp != "" {
 												<small>({ sec.Timestamp })</small>

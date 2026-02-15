@@ -33,7 +33,8 @@ type OIDCConfig struct {
 	ResponseType    string            `toml:"response_type"`
 	ResponseMode    string            `toml:"response_mode"`
 	ExtraAuthParams map[string]string `toml:"extra_auth_params"`
-	Reauth          []ReauthConfig    `toml:"reauth"`
+	Reauth            []ReauthConfig    `toml:"reauth"`
+	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
 }
 
 // ReauthConfig defines a re-authentication profile with extra auth params.
