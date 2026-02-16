@@ -11,8 +11,8 @@ test.describe("OIDC Flow", () => {
     // Login button should be visible
     await expect(page.locator('a[role="button"]', { hasText: "Login" })).toBeVisible();
 
-    // Should show OpenID Provider
-    await expect(page.locator("text=OpenID Provider")).toBeVisible();
+    // Should show OpenID Provider section
+    await expect(page.locator("#sec-provider")).toBeVisible();
   });
 
   test("login → claims display → logout", async ({ page }) => {
@@ -29,14 +29,13 @@ test.describe("OIDC Flow", () => {
 
     // Should be redirected back to fedlens with claims
     await expect(page.locator(".status-indicator")).toHaveText("Active Session");
-    await expect(page.locator("text=ID Token Claims")).toBeVisible();
+    await expect(page.locator("summary:has-text('Identity & Claims')").first()).toBeVisible();
 
     // Should show signature verification
-    await expect(page.locator("text=Signature Verification")).toBeVisible();
+    await expect(page.locator("summary:has-text('Signature Verification')").first()).toBeVisible();
 
     // Should show protocol details
-    await expect(page.locator("text=Authorization Request")).toBeVisible();
-    await expect(page.locator("text=Token Response")).toBeVisible();
+    await expect(page.locator("summary:has-text('Protocol Messages')").first()).toBeVisible();
 
     // Click Logout
     await page.click('a[role="button"]:has-text("Logout")');
@@ -61,7 +60,7 @@ test.describe("OIDC Flow", () => {
 
       // Should still show logged in page after refresh
       await expect(page.locator(".status-indicator")).toHaveText("Active Session");
-      await expect(page.locator("text=ID Token Claims")).toBeVisible();
+      await expect(page.locator("summary:has-text('Identity & Claims')").first()).toBeVisible();
     }
 
     // Cleanup: logout

@@ -125,6 +125,13 @@ templ Layout(title string, page PageInfo) {
 					</div>
 				</div>
 			</header>
+			<script>
+				// Measure header height immediately to prevent layout shift
+				(function() {
+					var h = document.querySelector(".site-header");
+					if (h) document.documentElement.style.setProperty("--header-height", h.offsetHeight + "px");
+				})();
+			</script>
 			<div class="app-layout">
 				<!-- Sidebar (PC only) -->
 				<aside class="sidebar">

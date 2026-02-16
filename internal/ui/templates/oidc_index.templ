@@ -75,6 +75,7 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 		@oidcActionBar(page)
 		<!-- Results Timeline -->
 		if len(data.Results) > 0 {
+			<h2 class="body-section-heading">Results</h2>
 			<div class="results-timeline">
 				for i, entry := range data.Results {
 					@OIDCResultEntry(i, entry)
@@ -82,6 +83,7 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 			</div>
 		}
 		<!-- REFERENCE -->
+		<h2 class="body-section-heading">Reference</h2>
 		@components.Collapsible("sec-flow", "Flow Diagram", true) {
 			@components.OIDCSequence(data.CallbackPath)
 		}

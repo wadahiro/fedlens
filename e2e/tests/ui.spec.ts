@@ -29,7 +29,7 @@ test.describe("UI Features", () => {
     const themeButton = page.locator(".theme-toggle");
     await expect(themeButton).toBeVisible();
 
-    // Get initial theme
+    // Get initial theme (may be null if auto-detected)
     const initialTheme = await page.locator("html").getAttribute("data-theme");
 
     // Click toggle
@@ -37,16 +37,15 @@ test.describe("UI Features", () => {
 
     // Theme should change
     const newTheme = await page.locator("html").getAttribute("data-theme");
-    if (initialTheme === "dark") {
-      expect(newTheme).toBe("light");
-    } else {
-      expect(newTheme).toBe("dark");
-    }
+    expect(newTheme).not.toBe(initialTheme);
+    expect(["light", "dark"]).toContain(newTheme);
 
     // Click again to toggle back
     await themeButton.click();
     const revertedTheme = await page.locator("html").getAttribute("data-theme");
-    expect(revertedTheme).toBe(initialTheme || "dark");
+    // After two toggles, should return to the opposite of newTheme
+    const expectedReverted = newTheme === "dark" ? "light" : "dark";
+    expect(revertedTheme).toBe(expectedReverted);
   });
 
   test("copy buttons are present on code blocks", async ({ page, context }) => {

@@ -11,8 +11,8 @@ test.describe("SAML Flow", () => {
     // Login button should be visible
     await expect(page.locator('a[role="button"]', { hasText: "Login" })).toBeVisible();
 
-    // Should show IdP Metadata
-    await expect(page.locator("text=IdP Metadata")).toBeVisible();
+    // Should show Identity Provider section
+    await expect(page.locator("#sec-idp")).toBeVisible();
   });
 
   test("login → attributes display → logout", async ({ page }) => {
@@ -29,16 +29,13 @@ test.describe("SAML Flow", () => {
 
     // Should be redirected back to fedlens with attributes
     await expect(page.locator(".status-indicator")).toHaveText("Active Session");
-    await expect(page.locator("text=Attributes")).toBeVisible();
+    await expect(page.locator("summary:has-text('Identity & Claims')").first()).toBeVisible();
 
     // Should show signature verification
-    await expect(page.locator("text=Signature Verification")).toBeVisible();
+    await expect(page.locator("summary:has-text('Signature Verification')").first()).toBeVisible();
 
-    // Should show SAML Response XML
-    await expect(page.locator("text=SAML Response")).toBeVisible();
-
-    // Should show AuthnRequest XML
-    await expect(page.locator("text=AuthnRequest")).toBeVisible();
+    // Should show protocol messages
+    await expect(page.locator("summary:has-text('Protocol Messages')").first()).toBeVisible();
 
     // Click Logout
     await page.click('a[role="button"]:has-text("Logout")');

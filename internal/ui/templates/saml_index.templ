@@ -64,6 +64,7 @@ templ SAMLIndex(page PageInfo, data SAMLPageData) {
 		@samlActionBar(page)
 		<!-- Results Timeline -->
 		if len(data.Results) > 0 {
+			<h2 class="body-section-heading">Results</h2>
 			<div class="results-timeline">
 				for i, entry := range data.Results {
 					@SAMLResultEntry(i, entry)
@@ -71,6 +72,7 @@ templ SAMLIndex(page PageInfo, data SAMLPageData) {
 			</div>
 		}
 		<!-- REFERENCE -->
+		<h2 class="body-section-heading">Reference</h2>
 		@components.Collapsible("sec-flow", "Flow Diagram", true) {
 			@components.SAMLSequence(data.ACSPath, data.RequestBinding, data.ResponseBinding)
 		}
