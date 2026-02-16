@@ -652,7 +652,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 			Path:     "/",
 			MaxAge:   600,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+			SameSite: sameSiteMode(r),
 		})
 	}
 
@@ -698,7 +699,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 			Path:     "/",
 			MaxAge:   600,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+			SameSite: sameSiteMode(r),
 		})
 	}
 
@@ -816,7 +818,8 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 						Path:     "/",
 						MaxAge:   600,
 						HttpOnly: true,
-						SameSite: http.SameSiteLaxMode,
+						Secure:   isHTTPS(r),
+						SameSite: sameSiteMode(r),
 					})
 				}
 			}
@@ -1003,8 +1006,23 @@ func (h *Handler) saveLogoutEntry(w http.ResponseWriter, r *http.Request, entry 
 		Path:     "/",
 		MaxAge:   600,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 	})
+}
+
+func isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func sameSiteMode(r *http.Request) http.SameSite {
+	if isHTTPS(r) {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {

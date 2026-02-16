@@ -490,7 +490,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 	})
 
 	// Store reauth name in cookie if this is a re-auth flow
@@ -501,7 +502,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 			Path:     "/",
 			MaxAge:   300,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 		})
 	}
 
@@ -524,7 +526,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 			Path:     "/",
 			MaxAge:   300,
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 		})
 
 		if h.Config.PKCEMethod == "plain" {
@@ -566,7 +569,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		Path:     "/",
 		MaxAge:   300,
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 	})
 
 	http.Redirect(w, r, authURL, http.StatusFound)
@@ -788,7 +792,8 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Path:     "/",
 		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+		Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 	})
 
 	http.Redirect(w, r, "/", http.StatusFound)
@@ -812,12 +817,27 @@ func (h *Handler) saveDebugEntry(w http.ResponseWriter, r *http.Request, entry R
 			Value:    debugID,
 			Path:     "/",
 			HttpOnly: true,
-			SameSite: http.SameSiteLaxMode,
+			Secure:   isHTTPS(r),
+		SameSite: sameSiteMode(r),
 		})
 	}
 
 	debugSession.Results = append([]ResultEntry{entry}, debugSession.Results...)
 	h.debugSessions.Set(debugID, debugSession)
+}
+
+func isHTTPS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+func sameSiteMode(r *http.Request) http.SameSite {
+	if isHTTPS(r) {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
 }
 
 // saveErrorEntry saves an error result entry to the debug session.

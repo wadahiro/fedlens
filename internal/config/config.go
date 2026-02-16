@@ -131,6 +131,12 @@ func applyOIDCDefaults(c *OIDCConfig) {
 	}
 }
 
+// TLSEnabled returns true if TLS is configured (self-signed or cert files).
+func (c *Config) TLSEnabled() bool {
+	return c.TLSSelfSigned || (c.TLSCertPath != "" && c.TLSKeyPath != "")
+}
+
+
 func applySAMLDefaults(c *SAMLConfig) {
 	if c.ACSPath == "" {
 		c.ACSPath = "/saml/acs"
