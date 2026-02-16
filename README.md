@@ -1,6 +1,12 @@
-# fedlens
+<p align="center">
+  <img src="docs/logo.svg" alt="fedlens" width="400">
+</p>
 
-A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **OpenID Connect Relying Party** and a **SAML Service Provider**, displaying the raw protocol details at every layer in a single web UI.
+<p align="center">
+  A federation protocol debug tool for OIDC and SAML.<br>
+  fedlens acts as both an <strong>OpenID Connect Relying Party</strong> and a <strong>SAML Service Provider</strong>,<br>
+  displaying the raw protocol details at every layer in a single web UI.
+</p>
 
 ## Screenshots
 

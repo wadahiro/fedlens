@@ -105,7 +105,24 @@ templ Layout(title string, page PageInfo) {
 			<!-- Sticky Header -->
 			<header class="site-header">
 				<div class="header-content">
-					<strong class="brand">fedlens</strong>
+					<span class="brand">
+						<svg class="brand-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="28" height="28">
+							<defs>
+								<linearGradient id="lens-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+									<stop offset="0%" stop-color="#3B82F6"/>
+									<stop offset="100%" stop-color="#06B6D4"/>
+								</linearGradient>
+							</defs>
+							<circle cx="48" cy="48" r="42" stroke="url(#lens-grad)" stroke-width="6" fill="none"/>
+							<circle cx="48" cy="48" r="32" fill="url(#lens-grad)" fill-opacity="0.1"/>
+							<line x1="16" y1="30" x2="80" y2="30" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.3" stroke-dasharray="5 4"/>
+							<line x1="10" y1="48" x2="86" y2="48" stroke="url(#lens-grad)" stroke-width="3" stroke-opacity="0.6"/>
+							<line x1="16" y1="66" x2="80" y2="66" stroke="currentColor" stroke-width="2.5" stroke-opacity="0.3" stroke-dasharray="5 4"/>
+						</svg>
+						<span class="brand-text">
+							<span class="brand-fed">fed</span><span class="brand-lens">lens</span>
+						</span>
+					</span>
 					<div class="header-status">
 						<span class="header-protocol-label">
 							if page.ActiveTab.Protocol == "oidc" {
