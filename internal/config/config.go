@@ -48,17 +48,18 @@ type ReauthConfig struct {
 
 // SAMLConfig defines a single SAML SP instance.
 type SAMLConfig struct {
-	Name           string             `toml:"name"`
-	Host           string             `toml:"host"`
-	IDPMetadataURL string             `toml:"idp_metadata_url"`
-	EntityID       string             `toml:"entity_id"`
-	RootURL        string             `toml:"root_url"`
-	ACSPath        string             `toml:"acs_path"`
-	SLOPath        string             `toml:"slo_path"`
-	MetadataPath   string             `toml:"metadata_path"`
-	CertPath       string             `toml:"cert_path"`
-	KeyPath        string             `toml:"key_path"`
-	Reauth         []SAMLReauthConfig `toml:"reauth"`
+	Name              string             `toml:"name"`
+	Host              string             `toml:"host"`
+	IDPMetadataURL    string             `toml:"idp_metadata_url"`
+	EntityID          string             `toml:"entity_id"`
+	RootURL           string             `toml:"root_url"`
+	ACSPath           string             `toml:"acs_path"`
+	SLOPath           string             `toml:"slo_path"`
+	MetadataPath      string             `toml:"metadata_path"`
+	CertPath          string             `toml:"cert_path"`
+	KeyPath           string             `toml:"key_path"`
+	AllowIDPInitiated bool               `toml:"allow_idp_initiated"`
+	Reauth            []SAMLReauthConfig `toml:"reauth"`
 }
 
 // SAMLReauthConfig defines a SAML re-authentication profile.

@@ -45,6 +45,7 @@ root_url = "http://saml.example.com:3000"
 # metadata_path = "/saml/metadata"  # SP Metadata path (default: /saml/metadata)
 # cert_path = "/path/to/cert.pem"   # omit for auto-generated self-signed cert
 # key_path = "/path/to/key.pem"
+# allow_idp_initiated = true       # Allow IdP-Initiated SSO (default: false)
 
 # [[saml]]
 # name = "Okta SAML"

@@ -25,6 +25,11 @@ import (
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
 )
 
+// contextKey is a private type for context keys to avoid collisions.
+type contextKey int
+
+const debugIDContextKey contextKey = 0
+
 // Handler is a per-SP SAML handler set.
 type Handler struct {
 	Config          config.SAMLConfig
@@ -93,13 +98,14 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 	}
 
 	sp, err := samlsp.New(samlsp.Options{
-		URL:            *rootURL,
-		Key:            keyPair.Key,
-		Certificate:    keyPair.Cert,
-		IDPMetadata:    idpMetadata,
-		EntityID:       cfg.EntityID,
-		SignRequest:    false,
-		LogoutBindings: []string{samlpkg.HTTPPostBinding, samlpkg.HTTPRedirectBinding},
+		URL:               *rootURL,
+		Key:               keyPair.Key,
+		Certificate:       keyPair.Cert,
+		IDPMetadata:       idpMetadata,
+		EntityID:          cfg.EntityID,
+		SignRequest:        false,
+		AllowIDPInitiated: cfg.AllowIDPInitiated,
+		LogoutBindings:    []string{samlpkg.HTTPPostBinding, samlpkg.HTTPRedirectBinding},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create SAML SP: %w", err)
@@ -126,6 +132,9 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		requestBinding:  reqBinding,
 		responseBinding: "post", // SAML Response is always HTTP-POST binding
 	}
+
+	// Replace default error handler to capture errors in debug timeline
+	sp.OnError = h.handleSAMLError
 
 	// Build endpoint rows from IdP metadata
 	h.endpointRows = buildSAMLEndpointRows(&sp.ServiceProvider)
@@ -378,6 +387,13 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 		data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
 		data.SidebarLabel = "Error"
 		data.SidebarDot = "error"
+		// Build sidebar children
+		if entry.ErrorCode != "" || entry.ErrorDetail != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
+		}
+		if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
+		}
 		return data
 	}
 
@@ -768,8 +784,10 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 				resultType = "Re-auth: " + reauthName
 			}
 
+			var debugID string
 			c, cookieErr := r.Cookie("saml_debug_id")
 			if cookieErr == nil {
+				debugID = c.Value
 				if ds := h.debugSessions.GetByID(c.Value); ds != nil {
 					// Retrieve the AuthnRequest XML from the pending entry
 					var authnRequestXML string
@@ -796,7 +814,8 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 				}
 			} else {
 				// IdP-initiated: no existing debug session, create one
-				debugID, err := protocol.RandomHex(16)
+				var err error
+				debugID, err = protocol.RandomHex(16)
 				if err == nil {
 					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
 
@@ -822,6 +841,11 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 						SameSite: sameSiteMode(r),
 					})
 				}
+			}
+
+			// Store debug ID in request context for handleSAMLError
+			if debugID != "" {
+				r = r.WithContext(context.WithValue(r.Context(), debugIDContextKey, debugID))
 			}
 		}
 	}
@@ -1009,6 +1033,36 @@ func (h *Handler) saveLogoutEntry(w http.ResponseWriter, r *http.Request, entry 
 		Secure:   isHTTPS(r),
 		SameSite: sameSiteMode(r),
 	})
+}
+
+// handleSAMLError is a custom error handler for samlsp.Middleware.
+// It captures SAML validation errors in the debug timeline instead of returning a bare 403.
+func (h *Handler) handleSAMLError(w http.ResponseWriter, r *http.Request, err error) {
+	errorCode := "saml_validation_failed"
+	errorDetail := err.Error()
+
+	if parseErr, ok := err.(*samlpkg.InvalidResponseError); ok {
+		errorDetail = parseErr.PrivateErr.Error()
+	}
+
+	// Get debug ID from context (set by handleACS) or from cookie
+	var debugID string
+	if id, ok := r.Context().Value(debugIDContextKey).(string); ok {
+		debugID = id
+	} else if c, err := r.Cookie("saml_debug_id"); err == nil {
+		debugID = c.Value
+	}
+
+	// Update the most recent debug session entry from "Login" to "Error"
+	if debugID != "" {
+		if ds := h.debugSessions.GetByID(debugID); ds != nil && len(ds.Results) > 0 {
+			ds.Results[0].Type = "Error"
+			ds.Results[0].ErrorCode = errorCode
+			ds.Results[0].ErrorDetail = errorDetail
+		}
+	}
+
+	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func isHTTPS(r *http.Request) bool {
