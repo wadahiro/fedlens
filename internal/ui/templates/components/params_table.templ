@@ -18,7 +18,7 @@ templ ParamsTable(title string, rows []ClaimRow, rawValue string) {
 					for _, row := range rows {
 						<tr>
 							<td>{ row.Key }</td>
-							<td>{ row.Value }</td>
+							<td data-testid={ row.Key }>{ row.Value }</td>
 						</tr>
 					}
 				</tbody>

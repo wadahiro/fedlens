@@ -37,6 +37,19 @@ test.describe("SAML Flow", () => {
     // Should show protocol messages
     await expect(page.locator("summary:has-text('Protocol Messages')").first()).toBeVisible();
 
+    // Verify claims via data-testid
+    const claims = page.locator('#result-0-claims');
+
+    // Subject (NameID) — emailAddress format
+    await expect(claims.getByTestId('subject')).toHaveText('testuser@example.com');
+
+    // SAML Attributes (Keycloak returns URN-format attribute names)
+    await expect(claims.getByTestId('urn:oid:1.2.840.113549.1.9.1')).toHaveText('testuser@example.com');
+
+    // Signature verification
+    const sigs = page.locator('#result-0-sigs');
+    await expect(sigs.getByTestId('verified')).toHaveText('true');
+
     // Click Logout
     await page.click('a[role="button"]:has-text("Logout")');
 

@@ -200,39 +200,39 @@ templ resultEntryContent(entry OIDCResultEntryData) {
 
 templ errorEntryContent(entry OIDCResultEntryData) {
 	<!-- Error Details -->
-	<article class="result-subsection">
-		<header>Error Details</header>
+	<details id={ entry.ID + "-error" } class="result-subsection" open>
+		<summary>Error Details</summary>
 		<div class="overflow-auto">
 			<table class="striped">
 				<tbody>
 					if entry.ErrorCode != "" {
 						<tr class="verified-false">
 							<td>error</td>
-							<td>{ entry.ErrorCode }</td>
+							<td data-testid="error">{ entry.ErrorCode }</td>
 						</tr>
 					}
 					if entry.ErrorDescription != "" {
 						<tr>
 							<td>error_description</td>
-							<td>{ entry.ErrorDescription }</td>
+							<td data-testid="error_description">{ entry.ErrorDescription }</td>
 						</tr>
 					}
 					if entry.ErrorURI != "" {
 						<tr>
 							<td>error_uri</td>
-							<td>{ entry.ErrorURI }</td>
+							<td data-testid="error_uri">{ entry.ErrorURI }</td>
 						</tr>
 					}
 					if entry.ErrorDetail != "" {
 						<tr>
 							<td>detail</td>
-							<td>{ entry.ErrorDetail }</td>
+							<td data-testid="detail">{ entry.ErrorDetail }</td>
 						</tr>
 					}
 				</tbody>
 			</table>
 		</div>
-	</article>
+	</details>
 	if entry.AuthResponseRaw != "" && len(entry.AuthResponseParams) > 0 {
 		@components.ParamsTable("Authorization Response", entry.AuthResponseParams, entry.AuthResponseRaw)
 	}

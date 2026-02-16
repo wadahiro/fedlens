@@ -37,6 +37,20 @@ test.describe("OIDC Flow", () => {
     // Should show protocol details
     await expect(page.locator("summary:has-text('Protocol Messages')").first()).toBeVisible();
 
+    // Verify claims via data-testid
+    const claims = page.locator('#result-0-claims');
+
+    // Subject (sub) — Keycloak UUID, just verify it's not empty
+    await expect(claims.getByTestId('subject')).not.toBeEmpty();
+
+    // ID Token Claims
+    await expect(claims.getByTestId('preferred_username')).toHaveText('testuser');
+    await expect(claims.getByTestId('email')).toHaveText('testuser@example.com');
+
+    // Signature verification
+    const sigs = page.locator('#result-0-sigs');
+    await expect(sigs.getByTestId('verified')).toHaveText('true');
+
     // Click Logout
     await page.click('a[role="button"]:has-text("Logout")');
 

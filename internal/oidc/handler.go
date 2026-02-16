@@ -305,6 +305,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 		data.SidebarLabel = "Error"
 		data.SidebarDot = "error"
+		data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
 		return data
 	}
 

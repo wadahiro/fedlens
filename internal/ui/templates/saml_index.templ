@@ -183,31 +183,34 @@ templ samlResultEntryContent(entry SAMLResultEntryData) {
 
 templ samlErrorEntryContent(entry SAMLResultEntryData) {
 	<!-- Error Details -->
-	<article class="result-subsection">
-		<header>Error Details</header>
+	<details id={ entry.ID + "-error" } class="result-subsection" open>
+		<summary>Error Details</summary>
 		<div class="overflow-auto">
 			<table class="striped">
 				<tbody>
 					if entry.ErrorCode != "" {
 						<tr class="verified-false">
 							<td>StatusCode</td>
-							<td>{ entry.ErrorCode }</td>
+							<td data-testid="status_code">{ entry.ErrorCode }</td>
 						</tr>
 					}
 					if entry.ErrorDetail != "" {
 						<tr>
 							<td>Detail</td>
-							<td>{ entry.ErrorDetail }</td>
+							<td data-testid="detail">{ entry.ErrorDetail }</td>
 						</tr>
 					}
 				</tbody>
 			</table>
 		</div>
-	</article>
-	if entry.AuthnRequestXML != "" {
+	</details>
+	<!-- Protocol Messages -->
+	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
 		<details class="result-subsection">
 			<summary>Protocol Messages</summary>
-			@components.XMLCodeBlock("AuthnRequest", entry.AuthnRequestXML)
+			if entry.AuthnRequestXML != "" {
+				@components.XMLCodeBlock("AuthnRequest", entry.AuthnRequestXML)
+			}
 			if entry.SAMLResponseXML != "" {
 				@components.XMLCodeBlock("SAML Response", entry.SAMLResponseXML)
 			}

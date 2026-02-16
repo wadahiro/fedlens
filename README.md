@@ -156,6 +156,7 @@ Each `[[saml]]` block defines a separate SAML Service Provider.
 | `metadata_path` | No | `/saml/metadata` | SP Metadata endpoint path |
 | `cert_path` | No | (auto-generated) | Path to SP certificate PEM file |
 | `key_path` | No | (auto-generated) | Path to SP private key PEM file |
+| `allow_idp_initiated` | No | `false` | Allow IdP-Initiated SSO (skips InResponseTo validation) |
 
 ##### SAML Re-authentication Profiles (`[[saml.reauth]]`)
 
@@ -256,6 +257,72 @@ cd e2e && npm install && npx playwright install && cd ..
 
 # Run all E2E tests
 make e2e
+```
+
+#### Playwright Selectors
+
+The HTML is designed for easy E2E testing. Use the `id` attributes to scope into a specific result entry or section, then use `getByTestId()` to select value cells.
+
+**Scoping by `id`**
+
+| Selector | Scope |
+|---|---|
+| `#result-0` | First (most recent) result entry |
+| `#result-0-claims` | Identity & Claims section |
+| `#result-0-sigs` | Signature Verification section |
+| `#result-0-response` | SAML Response Details section |
+| `#result-0-protocol` | Protocol Messages section |
+| `#result-0-tokens` | Raw Tokens section (OIDC) |
+| `#result-0-error` | Error Details section |
+
+**`data-testid` on value cells**
+
+All value `<td>` elements have `data-testid` attributes for direct access:
+
+| Category | Naming Convention | Examples |
+|---|---|---|
+| Claims / Attributes | IdP key as-is | `sub`, `email`, `preferred_username`, `urn:oid:1.2.840.113549.1.9.1` |
+| Subject | Fixed | `subject` |
+| Error (OIDC) | OAuth 2.0 parameter names | `error`, `error_description`, `error_uri`, `detail` |
+| Error (SAML) | snake_case | `status_code`, `detail` |
+| Signature | Label → snake_case | `verified`, `algorithm`, `key_id_kid`, `key_type_kty` |
+| Response Details | Label → snake_case | `issuer`, `status_code`, `destination` |
+| Params | Parameter key as-is | `redirect_uri`, `scope`, `response_type` |
+
+**Example: OIDC login assertions**
+
+```typescript
+const claims = page.locator('#result-0-claims');
+await expect(claims.getByTestId('subject')).not.toBeEmpty();
+await expect(claims.getByTestId('preferred_username')).toHaveText('testuser');
+await expect(claims.getByTestId('email')).toHaveText('testuser@example.com');
+
+const sigs = page.locator('#result-0-sigs');
+await expect(sigs.getByTestId('verified')).toHaveText('true');
+```
+
+**Example: SAML login assertions**
+
+```typescript
+const claims = page.locator('#result-0-claims');
+await expect(claims.getByTestId('subject')).toHaveText('testuser@example.com');
+
+const sigs = page.locator('#result-0-sigs');
+await expect(sigs.getByTestId('verified')).toHaveText('true');
+```
+
+**Example: Error assertions**
+
+```typescript
+// OIDC
+const oidcError = page.locator('#result-0-error');
+await expect(oidcError.getByTestId('error')).toHaveText('invalid_grant');
+await expect(oidcError.getByTestId('error_description')).toContainText('expired');
+
+// SAML
+const samlError = page.locator('#result-0-error');
+await expect(samlError.getByTestId('status_code')).toHaveText('saml_validation_failed');
+await expect(samlError.getByTestId('detail')).toContainText('InResponseTo');
 ```
 
 ### Tech Stack

@@ -24,7 +24,7 @@ templ SubjectTable(label string, value string) {
 			<table>
 				<tbody>
 					<tr>
-						<td>{ value }</td>
+						<td data-testid="subject">{ value }</td>
 					</tr>
 				</tbody>
 			</table>
@@ -52,9 +52,9 @@ templ KeyValueTable(id string, title string, keyHeader string, valueHeader strin
 				</thead>
 				<tbody>
 					for _, row := range rows {
-						<tr data-attr={ row.Key }>
+						<tr>
 							<td>{ row.Key }</td>
-							<td>{ row.Value }</td>
+							<td data-testid={ row.Key }>{ row.Value }</td>
 						</tr>
 					}
 				</tbody>

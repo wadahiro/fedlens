@@ -1,5 +1,7 @@
 package components
 
+import "strings"
+
 // SignatureRow represents a single signature info key-value pair.
 type SignatureRow struct {
 	Label string
@@ -18,6 +20,21 @@ type RowGroup struct {
 	Rows []GroupedRow
 }
 
+// toTestID converts a display label to a snake_case test ID.
+// "Certificate Subject" → "certificate_subject"
+// "Signature Algorithm (short)" → "signature_algorithm_short"
+// "Verified" → "verified"
+func toTestID(label string) string {
+	// Remove parentheses and their content markers
+	s := strings.ReplaceAll(label, "(", "")
+	s = strings.ReplaceAll(s, ")", "")
+	// Lowercase and replace spaces with underscores
+	s = strings.ToLower(s)
+	// Collapse multiple spaces into one, then replace with underscore
+	fields := strings.Fields(s)
+	return strings.Join(fields, "_")
+}
+
 templ SignatureTable(title string, rows []SignatureRow) {
 	<article>
 		<header>{ title }</header>
@@ -29,17 +46,17 @@ templ SignatureTable(title string, rows []SignatureRow) {
 							if row.Label == "Verified" && row.Value == "true" {
 								<tr class="verified-true">
 									<td>{ row.Label }</td>
-									<td>{ row.Value }</td>
+									<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 								</tr>
 							} else if row.Label == "Verified" && row.Value == "false" {
 								<tr class="verified-false">
 									<td>{ row.Label }</td>
-									<td>{ row.Value }</td>
+									<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 								</tr>
 							} else {
 								<tr>
 									<td>{ row.Label }</td>
-									<td>{ row.Value }</td>
+									<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 								</tr>
 							}
 						}
@@ -61,17 +78,17 @@ templ SignatureTableWithPEM(title string, rows []SignatureRow, pem string) {
 							if row.Label == "Verified" && row.Value == "true" {
 								<tr class="verified-true">
 									<td>{ row.Label }</td>
-									<td>{ row.Value }</td>
+									<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 								</tr>
 							} else if row.Label == "Verified" && row.Value == "false" {
 								<tr class="verified-false">
 									<td>{ row.Label }</td>
-									<td>{ row.Value }</td>
+									<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 								</tr>
 							} else {
 								<tr>
 									<td>{ row.Label }</td>
-									<td>{ row.Value }</td>
+									<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 								</tr>
 							}
 						}
@@ -101,7 +118,7 @@ templ GroupedTable(groups []RowGroup) {
 						for _, row := range group.Rows {
 							<tr>
 								<td>{ row.Label }</td>
-								<td>{ row.Value }</td>
+								<td data-testid={ toTestID(row.Label) }>{ row.Value }</td>
 							</tr>
 						}
 					</tbody>
