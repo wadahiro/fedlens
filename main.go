@@ -2,10 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"math/big"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -24,7 +29,14 @@ import (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
-		resp, err := http.Get("http://localhost:3000/healthz")
+		healthURL := os.Getenv("HEALTHCHECK_URL")
+		if healthURL == "" {
+			healthURL = "http://localhost:3000/healthz"
+		}
+		client := &http.Client{Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}}
+		resp, err := client.Get(healthURL)
 		if err != nil || resp.StatusCode != 200 {
 			os.Exit(1)
 		}
@@ -162,8 +174,24 @@ func main() {
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		slog.Info("Listening", "addr", cfg.ListenAddr)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		var err error
+		if cfg.TLSSelfSigned {
+			tlsCert, certErr := generateSelfSignedTLSCert()
+			if certErr != nil {
+				slog.Error("Failed to generate self-signed TLS certificate", "error", certErr)
+				os.Exit(1)
+			}
+			server.TLSConfig = &tls.Config{Certificates: []tls.Certificate{tlsCert}}
+			slog.Info("Listening (TLS, self-signed)", "addr", cfg.ListenAddr)
+			err = server.ListenAndServeTLS("", "")
+		} else if cfg.TLSCertPath != "" && cfg.TLSKeyPath != "" {
+			slog.Info("Listening (TLS)", "addr", cfg.ListenAddr)
+			err = server.ListenAndServeTLS(cfg.TLSCertPath, cfg.TLSKeyPath)
+		} else {
+			slog.Info("Listening", "addr", cfg.ListenAddr)
+			err = server.ListenAndServe()
+		}
+		if err != nil && err != http.ErrServerClosed {
 			slog.Error("Server failed", "error", err)
 			os.Exit(1)
 		}
@@ -213,4 +241,29 @@ func extractBaseURL(rawURL string) string {
 		return ""
 	}
 	return u.Scheme + "://" + u.Host
+}
+
+func generateSelfSignedTLSCert() (tls.Certificate, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("generate RSA key: %w", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		NotBefore:    time.Now(),
+		NotAfter:     time.Now().Add(365 * 24 * time.Hour),
+		DNSNames:     []string{"localhost"},
+		IPAddresses:  []net.IP{net.IPv4(127, 0, 0, 1)},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("create certificate: %w", err)
+	}
+
+	return tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  key,
+	}, nil
 }

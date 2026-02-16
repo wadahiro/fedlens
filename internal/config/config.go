@@ -14,6 +14,9 @@ type Config struct {
 	LogLevel           string       `toml:"log_level"`
 	Theme              string       `toml:"theme"`
 	Timezone           string       `toml:"timezone"`
+	TLSCertPath        string       `toml:"tls_cert_path"`
+	TLSKeyPath         string       `toml:"tls_key_path"`
+	TLSSelfSigned      bool         `toml:"tls_self_signed"`
 	OIDC               []OIDCConfig `toml:"oidc"`
 	SAML               []SAMLConfig `toml:"saml"`
 }
@@ -93,6 +96,14 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Timezone == "" {
 		cfg.Timezone = "UTC"
+	}
+
+	// Validate TLS settings
+	if cfg.TLSSelfSigned && (cfg.TLSCertPath != "" || cfg.TLSKeyPath != "") {
+		return nil, fmt.Errorf("tls_self_signed and tls_cert_path/tls_key_path are mutually exclusive")
+	}
+	if (cfg.TLSCertPath != "") != (cfg.TLSKeyPath != "") {
+		return nil, fmt.Errorf("both tls_cert_path and tls_key_path must be specified together")
 	}
 
 	for i := range cfg.OIDC {
