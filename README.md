@@ -284,7 +284,11 @@ The HTML is designed for easy E2E testing. Use the `id` attributes to scope into
 | Selector | Scope |
 |---|---|
 | `#result-0` | First (most recent) result entry |
-| `#result-0-claims` | Identity & Claims section |
+| `#result-0-claims` | Identity & Claims section (contains sub-tables below) |
+| `#result-0-id-token-claims` | ID Token Claims table (OIDC) |
+| `#result-0-access-token-claims` | Access Token Claims table (OIDC) |
+| `#result-0-userinfo-claims` | UserInfo Claims table (OIDC) |
+| `#result-0-attributes` | SAML Attributes table |
 | `#result-0-sigs` | Signature Verification section |
 | `#result-0-response` | SAML Response Details section |
 | `#result-0-protocol` | Protocol Messages section |
@@ -308,10 +312,14 @@ All value `<td>` elements have `data-testid` attributes for direct access:
 **Example: OIDC login assertions**
 
 ```typescript
+// Subject is unique within #result-0-claims
 const claims = page.locator('#result-0-claims');
 await expect(claims.getByTestId('subject')).not.toBeEmpty();
-await expect(claims.getByTestId('preferred_username')).toHaveText('testuser');
-await expect(claims.getByTestId('email')).toHaveText('testuser@example.com');
+
+// Scope to specific token table to avoid ambiguity (same claim may exist in ID Token, Access Token, UserInfo)
+const idTokenClaims = page.locator('#result-0-id-token-claims');
+await expect(idTokenClaims.getByTestId('preferred_username')).toHaveText('testuser');
+await expect(idTokenClaims.getByTestId('email')).toHaveText('testuser@example.com');
 
 const sigs = page.locator('#result-0-sigs');
 await expect(sigs.getByTestId('verified')).toHaveText('true');
@@ -321,7 +329,10 @@ await expect(sigs.getByTestId('verified')).toHaveText('true');
 
 ```typescript
 const claims = page.locator('#result-0-claims');
-await expect(claims.getByTestId('subject')).toHaveText('testuser@example.com');
+await expect(claims.getByTestId('subject')).not.toBeEmpty();
+
+const attributes = page.locator('#result-0-attributes');
+await expect(attributes.getByTestId('urn:oid:1.2.840.113549.1.9.1')).toHaveText('testuser@example.com');
 
 const sigs = page.locator('#result-0-sigs');
 await expect(sigs.getByTestId('verified')).toHaveText('true');

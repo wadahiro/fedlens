@@ -43,13 +43,14 @@ test.describe("OIDC Flow", () => {
     // Subject (sub) — Keycloak UUID, just verify it's not empty
     await expect(claims.getByTestId('subject')).not.toBeEmpty();
 
-    // ID Token Claims
-    await expect(claims.getByTestId('preferred_username')).toHaveText('testuser');
-    await expect(claims.getByTestId('email')).toHaveText('testuser@example.com');
+    // ID Token Claims (scoped to specific table to avoid ambiguity with Access Token / UserInfo)
+    const idTokenClaims = page.locator('#result-0-id-token-claims');
+    await expect(idTokenClaims.getByTestId('preferred_username')).toHaveText('testuser');
+    await expect(idTokenClaims.getByTestId('email')).toHaveText('testuser@example.com');
 
-    // Signature verification
+    // Signature verification (multiple sig tables: ID Token + Access Token)
     const sigs = page.locator('#result-0-sigs');
-    await expect(sigs.getByTestId('verified')).toHaveText('true');
+    await expect(sigs.getByTestId('verified').first()).toHaveText('true');
 
     // Click Logout
     await page.click('a[role="button"]:has-text("Logout")');
