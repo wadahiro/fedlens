@@ -12,6 +12,8 @@ A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **Op
 - **UserInfo Claims** table
 - **Signature Verification** details (algorithm, key ID, JWKS key info)
 - **Token Refresh Flow** with before/after comparison
+- **Logout Flow** with configurable `id_token_hint`
+- **Re-authentication Profiles** for step-up authentication
 - **Custom Scopes**, **Response Mode**, and **Extra Auth Parameters**
 - Authorization Request / Response, Token Response, JWKS, Discovery metadata display
 - **Sequence Diagram** showing the Authorization Code Flow
@@ -22,6 +24,8 @@ A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **Op
 - **IdP-initiated SSO** support
 - **Attributes** table
 - **Signature Verification** details for Response and Assertion
+- **Single Logout (SLO)** support
+- **Re-authentication Profiles** with `ForceAuthn` and `AuthnContextClassRef`
 - **External Certificate** support (load from file) or auto-generated self-signed cert
 - AuthnRequest XML, SAML Response XML, IdP Metadata display
 - **Sequence Diagram** showing the SP-Initiated SSO flow
@@ -30,7 +34,10 @@ A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **Op
 
 - **Multiple SP/RP** support via TOML configuration
 - **Tab Navigation** to switch between multiple OIDC RPs and SAML SPs
+- **TLS Support** with self-signed cert auto-generation or external certificates
 - **Dark Mode** toggle with system preference detection
+- **Theme Configuration** (`light` / `dark` / `auto`)
+- **Timezone Configuration** for timestamp display (IANA format)
 - **Syntax Highlighting** for JSON and XML (Prism.js)
 - **Copy Buttons** on all code blocks
 - **Collapsible Sections** with state persistence
@@ -91,6 +98,11 @@ See [config.example.toml](config.example.toml) for a full example.
 | `listen_addr` | `:3000` | Listen address |
 | `insecure_skip_verify` | `false` | Skip TLS certificate verification |
 | `log_level` | `info` | Log level (`debug`, `info`, `warn`, `error`) |
+| `theme` | `auto` | UI theme (`light`, `dark`, `auto`) |
+| `timezone` | `UTC` | IANA timezone for timestamp display (e.g. `Asia/Tokyo`) |
+| `tls_cert_path` | | Path to TLS certificate PEM file |
+| `tls_key_path` | | Path to TLS private key PEM file |
+| `tls_self_signed` | `false` | Auto-generate self-signed TLS certificate |
 
 #### OIDC RP (`[[oidc]]`)
 
@@ -111,6 +123,22 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
 | `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
+| `logout_id_token_hint` | No | `true` | Send `id_token_hint` in logout request |
+
+##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
+
+Each `[[oidc.reauth]]` block defines a re-authentication profile with custom parameters.
+
+| Key | Required | Description |
+|---|---|---|
+| `name` | Yes | Display name for the reauth button |
+| `extra_auth_params` | Yes | Extra auth parameters for re-authentication |
+
+```toml
+[[oidc.reauth]]
+name = "Step-up Auth"
+extra_auth_params = { acr_values = "urn:example:mfa" }
+```
 
 #### SAML SP (`[[saml]]`)
 
@@ -129,11 +157,31 @@ Each `[[saml]]` block defines a separate SAML Service Provider.
 | `cert_path` | No | (auto-generated) | Path to SP certificate PEM file |
 | `key_path` | No | (auto-generated) | Path to SP private key PEM file |
 
+##### SAML Re-authentication Profiles (`[[saml.reauth]]`)
+
+Each `[[saml.reauth]]` block defines a re-authentication profile.
+
+| Key | Required | Default | Description |
+|---|---|---|---|
+| `name` | Yes | | Display name for the reauth button |
+| `authn_context_class_ref` | No | | SAML AuthnContextClassRef |
+| `force_authn` | No | `false` | Force re-authentication |
+
+```toml
+[[saml.reauth]]
+name = "MFA"
+authn_context_class_ref = "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
+force_authn = true
+```
+
 #### Example: Multiple SP/RP
 
 ```toml
 listen_addr = ":3000"
 log_level = "debug"
+# theme = "dark"
+# timezone = "Asia/Tokyo"
+# tls_self_signed = true
 
 [[oidc]]
 name = "Keycloak OIDC"
