@@ -1,4 +1,4 @@
-.PHONY: build dev test e2e e2e-capture generate clean
+.PHONY: build dev test e2e e2e-capture screenshots generate clean
 
 BINARY := fedlens
 
@@ -29,6 +29,16 @@ e2e-capture:
 	docker compose up -d --build --wait
 	cd e2e && CAPTURE=1 npx playwright test
 	docker compose down
+
+# Take screenshots for README (Chromium only, then optimize to JPEG)
+screenshots:
+	mkdir -p docs/screenshots
+	docker compose up -d --build --wait
+	cd e2e && npx playwright test tests/screenshots.spec.ts --project=chromium
+	docker compose down
+	sips -s format jpeg -s formatOptions 85 docs/screenshots/oidc-post-login.png --out docs/screenshots/oidc-post-login.jpg
+	sips -s format jpeg -s formatOptions 85 docs/screenshots/saml-post-login.png --out docs/screenshots/saml-post-login.jpg
+	rm -f docs/screenshots/*.png
 
 # Clean build artifacts
 clean:

@@ -2,6 +2,16 @@
 
 A federation protocol debug tool for OIDC and SAML. fedlens acts as both an **OpenID Connect Relying Party** and a **SAML Service Provider**, displaying the raw protocol details at every layer in a single web UI.
 
+## Screenshots
+
+**OIDC** -- ID Token Claims and Signature Verification:
+
+![OIDC post-login view showing decoded ID Token claims](docs/screenshots/oidc-post-login.jpg)
+
+**SAML** -- Attributes and Response Details:
+
+![SAML post-login view showing SAML attributes and response details](docs/screenshots/saml-post-login.jpg)
+
 ## Features
 
 ### OIDC (OpenID Connect)
