@@ -77,3 +77,77 @@ templ XMLCodeBlock(title string, content string) {
 		</article>
 	}
 }
+
+// HTTPRequestBlock displays HTTP request with Header (request line), optional Body (params table), and optional Raw.
+templ HTTPRequestBlock(title, requestLine string, params []ClaimRow, rawBody string) {
+	<article>
+		<header>
+			{ title }
+		</header>
+		<div class="token-part-header">
+			<small class="token-part-label">Header</small>
+			<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+		</div>
+		<pre><code>{ requestLine }</code></pre>
+		if len(params) > 0 {
+			<div class="token-part-header">
+				<small class="token-part-label">Body</small>
+				<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+			</div>
+			<div class="overflow-auto">
+				<table class="striped">
+					<thead>
+						<tr>
+							<th>Parameter</th>
+							<th>Value</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, row := range params {
+							<tr>
+								<td>{ row.Key }</td>
+								<td>{ row.Value }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+		@RawBlock(rawBody)
+	</article>
+}
+
+// HTTPResponseBlock displays HTTP response with status+headers (plain) and body (syntax highlighted).
+templ HTTPResponseBlock(title, statusLine, headers, body, bodyLang string) {
+	<article>
+		<header>
+			{ title }
+		</header>
+		<div class="token-part-header">
+			<small class="token-part-label">Header</small>
+			<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+		</div>
+		<pre><code>{ statusLine + "\n" + headers }</code></pre>
+		if body != "" {
+			<div class="token-part-header">
+				<small class="token-part-label">Body</small>
+				<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+			</div>
+			if bodyLang == "json" {
+				<pre><code class="language-json">{ body }</code></pre>
+			} else if bodyLang == "markup" {
+				<pre><code class="language-markup">{ body }</code></pre>
+			} else {
+				<pre><code>{ body }</code></pre>
+			}
+		}
+	</article>
+}
+
+// HTTPConnErrorBlock displays connection error (no HTTP response).
+templ HTTPConnErrorBlock(title, message string) {
+	<article>
+		<header>{ title }</header>
+		<pre><code>{ "Connection failed\n" + message }</code></pre>
+	</article>
+}

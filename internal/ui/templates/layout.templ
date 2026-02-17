@@ -193,14 +193,18 @@ templ Layout(title string, page PageInfo) {
 								for _, sec := range page.Sections {
 									<li>
 										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
-											if sec.Timestamp != "" {
-												<small class="sidebar-timestamp">{ sec.Timestamp }</small>
-											}
-											if sec.Dot != "" {
-												<kbd class={ "sidebar-badge", sidebarBadgeClass(sec.Dot) }>{ sidebarBadgeLabel(sec.Dot) }</kbd>
-											} else {
-												{ sec.Label }
-											}
+											<span class="sidebar-entry-content">
+												if sec.Timestamp != "" {
+													<small class="sidebar-timestamp">{ sec.Timestamp }</small>
+												}
+												if sec.Dot == "error" && sec.Label != "" {
+													<kbd class={ "sidebar-badge", sidebarBadgeClass(sec.Dot) }>Error: { sec.Label }</kbd>
+												} else if sec.Dot != "" {
+													<kbd class={ "sidebar-badge", sidebarBadgeClass(sec.Dot) }>{ sidebarBadgeLabel(sec.Dot) }</kbd>
+												} else {
+													{ sec.Label }
+												}
+											</span>
 										</a>
 										if len(sec.Children) > 0 {
 											<ul class="sidebar-subsection-list">

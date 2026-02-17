@@ -33,6 +33,7 @@ type Handler struct {
 	provider      *gooidc.Provider
 	verifier      *gooidc.IDTokenVerifier
 	httpClient    *http.Client
+	capTransport  *capturingTransport
 	discoveryRaw  json.RawMessage
 	providerInfo  struct {
 		EndSessionEndpoint string
@@ -49,6 +50,11 @@ type Handler struct {
 
 // NewHandler creates and initializes an OIDC handler for the given config.
 func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error) {
+	ct := newCapturingTransport(httpClient.Transport)
+	capturedClient := &http.Client{
+		Transport: ct,
+		Timeout:   httpClient.Timeout,
+	}
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, httpClient)
 
 	var (
@@ -94,7 +100,8 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 		oauth2Config:  oauth2Config,
 		provider:      provider,
 		verifier:      verifier,
-		httpClient:    httpClient,
+		httpClient:    capturedClient,
+		capTransport:  ct,
 		discoveryRaw:  discoveryRaw,
 	}
 
@@ -295,7 +302,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	}
 
 	// Error entry
-	if entry.Type == "Error" {
+	if strings.HasPrefix(entry.Type, "Error") {
 		data.ErrorCode = entry.ErrorCode
 		data.ErrorDescription = entry.ErrorDescription
 		data.ErrorURI = entry.ErrorURI
@@ -307,10 +314,63 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		if entry.AuthResponseRaw != "" {
 			data.AuthResponseRaw = entry.AuthResponseRaw
 			data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
+			data.AuthResponseHeader = "HTTP/1.1 302 Found\nLocation: " + entry.AuthResponseRedirectURI + "?" + entry.AuthResponseRaw
 		}
-		data.SidebarLabel = "Error"
+		// Token Request (for "Error: Refresh", "Error: Login" etc.)
+		if entry.TokenRequestURL != "" {
+			orderedKeys := []string{"grant_type", "code", "redirect_uri", "client_id", "client_secret", "code_verifier", "refresh_token"}
+			for _, k := range orderedKeys {
+				if v, ok := entry.TokenRequestParams[k]; ok {
+					data.TokenRequestParams = append(data.TokenRequestParams, components.ClaimRow{Key: k, Value: v})
+				}
+			}
+			data.TokenRequestURL = entry.TokenRequestURL
+			data.TokenRequestRaw = buildTokenRequestRaw("POST "+entry.TokenRequestURL, data.TokenRequestParams)
+		}
+		// Token Response (error path)
+		if entry.TokenHTTPResponse != nil {
+			data.ErrorStatus = strconv.Itoa(entry.TokenHTTPResponse.StatusCode)
+			data.TokenResponseStatusLine, data.TokenResponseHeaders,
+				data.TokenResponseBody, data.TokenResponseBodyLang = buildHTTPResponseDisplay(entry.TokenHTTPResponse)
+		} else if entry.ErrorDetail != "" && entry.TokenRequestURL != "" {
+			data.TokenResponseConnError = protocol.CleanGoErrorMessage(entry.ErrorDetail)
+		}
+		// UserInfo Error (for "Error: UserInfo")
+		if entry.UserInfoError != nil {
+			if entry.UserInfoError.StatusCode > 0 {
+				data.ErrorStatus = strconv.Itoa(entry.UserInfoError.StatusCode)
+			}
+			if entry.UserInfoError.ErrorCode != "" && data.ErrorCode == "" {
+				data.ErrorCode = entry.UserInfoError.ErrorCode
+			}
+			if entry.UserInfoError.Description != "" && data.ErrorDescription == "" {
+				data.ErrorDescription = entry.UserInfoError.Description
+			}
+			if entry.UserInfoError.URI != "" && data.ErrorURI == "" {
+				data.ErrorURI = entry.UserInfoError.URI
+			}
+			if entry.UserInfoError.Detail != "" && data.ErrorDetail == "" {
+				data.ErrorDetail = entry.UserInfoError.Detail
+			}
+		}
+		// UserInfo Response (error path)
+		if entry.UserInfoHTTPResponse != nil {
+			data.UserInfoResponseStatusLine, data.UserInfoResponseHeaders,
+				data.UserInfoResponseBody, data.UserInfoResponseBodyLang = buildHTTPResponseDisplay(entry.UserInfoHTTPResponse)
+		} else if entry.UserInfoError != nil && entry.UserInfoError.Detail != "" {
+			data.UserInfoResponseConnError = protocol.CleanGoErrorMessage(entry.UserInfoError.Detail)
+		}
+		if entry.UserInfoRequestURL != "" {
+			data.UserInfoRequestURL = entry.UserInfoRequestMethod + " " + entry.UserInfoRequestURL + "\nAuthorization: Bearer " + entry.AccessTokenRaw
+		}
+		data.SidebarLabel = strings.TrimPrefix(entry.Type, "Error: ")
 		data.SidebarDot = "error"
-		data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
+		if data.ErrorCode != "" || data.ErrorStatus != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
+		}
+		if entry.AuthRequestURL != "" || data.TokenRequestURL != "" || data.UserInfoRequestURL != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
+		}
 		return data
 	}
 
@@ -397,15 +457,20 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		if entry.UserInfoError.URI != "" {
 			rows = append(rows, components.ErrorRow{Label: "error_uri", Value: entry.UserInfoError.URI})
 		}
+		if entry.UserInfoError.Detail != "" {
+			rows = append(rows, components.ErrorRow{Label: "detail", Value: entry.UserInfoError.Detail})
+		}
 		data.UserInfoErrorRows = rows
-		data.UserInfoErrorRaw = entry.UserInfoError.RawBody
 	}
 
 	// Protocol Messages
 	data.AuthRequestURL = entry.AuthRequestURL
 	data.AuthRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthRequestURL))
-	data.AuthResponseRaw = entry.AuthResponseRaw
-	data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
+	if entry.AuthResponseRaw != "" {
+		data.AuthResponseRaw = entry.AuthResponseRaw
+		data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
+		data.AuthResponseHeader = "HTTP/1.1 302 Found\nLocation: " + entry.AuthResponseRedirectURI + "?" + entry.AuthResponseRaw
+	}
 	// Token Request
 	if entry.TokenRequestURL != "" {
 		orderedKeys := []string{"grant_type", "code", "redirect_uri", "client_id", "client_secret", "code_verifier", "refresh_token"}
@@ -414,19 +479,25 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 				data.TokenRequestParams = append(data.TokenRequestParams, components.ClaimRow{Key: k, Value: v})
 			}
 		}
-		data.TokenRequestURL = buildHTTPRequestRaw("POST", entry.TokenRequestURL, data.TokenRequestParams, nil)
+		data.TokenRequestURL = entry.TokenRequestURL
+		data.TokenRequestRaw = buildTokenRequestRaw("POST "+entry.TokenRequestURL, data.TokenRequestParams)
 	}
-	data.TokenResponseJSON = protocol.PrettyJSON(entry.TokenResponse)
+	// Token Response
+	if entry.TokenHTTPResponse != nil {
+		data.TokenResponseStatusLine, data.TokenResponseHeaders,
+			data.TokenResponseBody, data.TokenResponseBodyLang = buildHTTPResponseDisplay(entry.TokenHTTPResponse)
+	}
 	// UserInfo Request
 	if entry.UserInfoRequestURL != "" {
-		headers := []components.ClaimRow{
-			{Key: "Authorization", Value: "Bearer {access_token}"},
-		}
-		data.UserInfoRequestURL = buildHTTPRequestRaw(
-			entry.UserInfoRequestMethod, entry.UserInfoRequestURL, nil, headers,
-		)
+		data.UserInfoRequestURL = entry.UserInfoRequestMethod + " " + entry.UserInfoRequestURL + "\nAuthorization: Bearer " + entry.AccessTokenRaw
 	}
-	data.UserInfoJSON = protocol.PrettyJSON(entry.UserInfoResponse)
+	// UserInfo Response
+	if entry.UserInfoHTTPResponse != nil {
+		data.UserInfoResponseStatusLine, data.UserInfoResponseHeaders,
+			data.UserInfoResponseBody, data.UserInfoResponseBodyLang = buildHTTPResponseDisplay(entry.UserInfoHTTPResponse)
+	} else if entry.UserInfoError != nil && entry.UserInfoError.Detail != "" {
+		data.UserInfoResponseConnError = protocol.CleanGoErrorMessage(entry.UserInfoError.Detail)
+	}
 
 	// Raw Tokens
 	if entry.IDTokenRaw != "" {
@@ -479,7 +550,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
-	if entry.AuthRequestURL != "" || len(entry.TokenResponse) > 0 || entry.UserInfoRequestURL != "" {
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
 	if entry.Type != "UserInfo" && (entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenRaw != "") {
@@ -682,13 +753,14 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		errURI := r.URL.Query().Get("error_uri")
 
 		errorEntry := ResultEntry{
-			Type:             "Error",
-			Timestamp:        time.Now(),
-			AuthRequestURL:   authRequestURL,
-			AuthResponseRaw:  authResponseRaw,
-			ErrorCode:        errCode,
-			ErrorDescription: errDesc,
-			ErrorURI:         errURI,
+			Type:                    "Error: " + resultType,
+			Timestamp:               time.Now(),
+			AuthRequestURL:          authRequestURL,
+			AuthResponseRaw:         authResponseRaw,
+			AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+			ErrorCode:               errCode,
+			ErrorDescription:        errDesc,
+			ErrorURI:                errURI,
 		}
 
 		h.saveErrorEntry(w, r, errorEntry)
@@ -713,27 +785,62 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	// Build Token Request params for display (before exchange, so available on error)
+	tokenRequestParams := map[string]string{
+		"grant_type":   "authorization_code",
+		"code":         code,
+		"redirect_uri": h.oauth2Config.RedirectURL,
+		"client_id":    h.oauth2Config.ClientID,
+	}
+	if h.oauth2Config.ClientSecret != "" {
+		tokenRequestParams["client_secret"] = "*******"
+	}
+	if pkceVerifier != "" {
+		tokenRequestParams["code_verifier"] = pkceVerifier
+	}
+
 	tokenCtx := context.WithValue(r.Context(), oauth2.HTTPClient, h.httpClient)
 	token, err := h.oauth2Config.Exchange(tokenCtx, code, exchangeOpts...)
 	if err != nil {
 		log.Printf("Token exchange failed: %v", err)
-		code, desc, uri, detail := extractOAuthError(err)
-		if code == "" {
-			code = "token_exchange_failed"
+		errCode, desc, uri, detail, respBody, sc, hdrs := extractOAuthError(err)
+		if sc == 0 {
+			errCode = "connection_failed"
+		} else if errCode == "" {
+			errCode = "token_exchange_failed"
+		}
+		var tokenHTTPResp *HTTPResponseInfo
+		if sc > 0 {
+			tokenHTTPResp = &HTTPResponseInfo{StatusCode: sc, Headers: hdrs, Body: respBody}
 		}
 		errorEntry := ResultEntry{
-			Type:             "Error",
-			Timestamp:        time.Now(),
-			AuthRequestURL:   authRequestURL,
-			AuthResponseRaw:  authResponseRaw,
-			ErrorCode:        code,
-			ErrorDescription: desc,
-			ErrorURI:         uri,
-			ErrorDetail:      detail,
+			Type:                    "Error: " + resultType,
+			Timestamp:               time.Now(),
+			AuthRequestURL:          authRequestURL,
+			AuthResponseRaw:         authResponseRaw,
+			AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+			ErrorCode:               errCode,
+			ErrorDescription:        desc,
+			ErrorURI:                uri,
+			ErrorDetail:             detail,
+			TokenHTTPResponse:       tokenHTTPResp,
+			TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
+			TokenRequestParams:      tokenRequestParams,
 		}
 		h.saveErrorEntry(w, r, errorEntry)
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
+	}
+
+	// Capture Token endpoint HTTP response
+	tokenCapture := h.capTransport.LastCapture()
+	var tokenHTTPResp *HTTPResponseInfo
+	if tokenCapture != nil {
+		tokenHTTPResp = &HTTPResponseInfo{
+			StatusCode: tokenCapture.StatusCode,
+			Headers:    tokenCapture.Headers,
+			Body:       string(tokenCapture.Body),
+		}
 	}
 
 	tokenResponseJSON := marshalTokenResponse(token)
@@ -742,13 +849,16 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		log.Println("No id_token in token response")
 		errorEntry := ResultEntry{
-			Type:            "Error",
-			Timestamp:       time.Now(),
-			AuthRequestURL:  authRequestURL,
-			AuthResponseRaw: authResponseRaw,
-			TokenResponse:   tokenResponseJSON,
-			ErrorCode:       "missing_id_token",
-			ErrorDetail:     "No id_token in token response",
+			Type:                    "Error: " + resultType,
+			Timestamp:               time.Now(),
+			AuthRequestURL:          authRequestURL,
+			AuthResponseRaw:         authResponseRaw,
+			AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+			TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
+			TokenRequestParams:      tokenRequestParams,
+			TokenResponse:           tokenResponseJSON,
+			ErrorCode:               "missing_id_token",
+			ErrorDetail:             "No id_token in token response",
 		}
 		h.saveErrorEntry(w, r, errorEntry)
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -759,14 +869,17 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("ID token verification failed: %v", err)
 		errorEntry := ResultEntry{
-			Type:            "Error",
-			Timestamp:       time.Now(),
-			AuthRequestURL:  authRequestURL,
-			AuthResponseRaw: authResponseRaw,
-			TokenResponse:   tokenResponseJSON,
-			IDTokenRaw:      rawIDToken,
-			ErrorCode:       "id_token_verification_failed",
-			ErrorDetail:     err.Error(),
+			Type:                    "Error: " + resultType,
+			Timestamp:               time.Now(),
+			AuthRequestURL:          authRequestURL,
+			AuthResponseRaw:         authResponseRaw,
+			AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+			TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
+			TokenRequestParams:      tokenRequestParams,
+			TokenResponse:           tokenResponseJSON,
+			IDTokenRaw:              rawIDToken,
+			ErrorCode:               "id_token_verification_failed",
+			ErrorDetail:             err.Error(),
 		}
 		h.saveErrorEntry(w, r, errorEntry)
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -783,8 +896,9 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Fetch UserInfo
 	var userInfoResponse json.RawMessage
 	var userInfoErr *UserInfoError
+	var userInfoHTTPResp *HTTPResponseInfo
 	if h.providerInfo.UserinfoEndpoint != "" {
-		userInfoResponse, userInfoErr = fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, token.AccessToken)
+		userInfoResponse, userInfoErr, userInfoHTTPResp = fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, token.AccessToken)
 	}
 
 	// Fetch JWKS and build signature info
@@ -804,38 +918,27 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		refreshTokenRaw, _ = rt.(string)
 	}
 
-	// Build Token Request params for display
-	tokenRequestParams := map[string]string{
-		"grant_type":   "authorization_code",
-		"code":         code,
-		"redirect_uri": h.oauth2Config.RedirectURL,
-		"client_id":    h.oauth2Config.ClientID,
-	}
-	if h.oauth2Config.ClientSecret != "" {
-		tokenRequestParams["client_secret"] = "*******"
-	}
-	if pkceVerifier != "" {
-		tokenRequestParams["code_verifier"] = pkceVerifier
-	}
-
 	entry := ResultEntry{
-		Type:               resultType,
-		Timestamp:          time.Now(),
-		Claims:             claims,
-		AuthRequestURL:     authRequestURL,
-		AuthResponseCode:   code,
-		AuthResponseRaw:    authResponseRaw,
-		TokenRequestURL:    h.oauth2Config.Endpoint.TokenURL,
-		TokenRequestParams: tokenRequestParams,
+		Type:                    resultType,
+		Timestamp:               time.Now(),
+		Claims:                  claims,
+		AuthRequestURL:          authRequestURL,
+		AuthResponseCode:        code,
+		AuthResponseRaw:         authResponseRaw,
+		AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+		TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
+		TokenRequestParams:      tokenRequestParams,
 		TokenResponse:      tokenResponseJSON,
-		IDTokenRaw:         rawIDToken,
-		AccessTokenRaw:     token.AccessToken,
-		RefreshTokenRaw:    refreshTokenRaw,
-		UserInfoResponse:   userInfoResponse,
-		UserInfoError:      userInfoErr,
-		IDTokenSigInfo:     idTokenSigInfo,
-		AccessTokenSigInfo: accessTokenSigInfo,
-		JWKSResponse:       jwksRaw,
+		TokenHTTPResponse:    tokenHTTPResp,
+		UserInfoHTTPResponse: userInfoHTTPResp,
+		IDTokenRaw:           rawIDToken,
+		AccessTokenRaw:       token.AccessToken,
+		RefreshTokenRaw:      refreshTokenRaw,
+		UserInfoResponse:     userInfoResponse,
+		UserInfoError:        userInfoErr,
+		IDTokenSigInfo:       idTokenSigInfo,
+		AccessTokenSigInfo:   accessTokenSigInfo,
+		JWKSResponse:         jwksRaw,
 	}
 
 	// Record UserInfo Request info
@@ -1002,15 +1105,21 @@ func (h *Handler) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userInfoResponse, userInfoErr := fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, session.AccessTokenRaw)
+	userInfoResponse, userInfoErr, uiHTTPResp := fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, session.AccessTokenRaw)
+
+	entryType := "UserInfo"
+	if userInfoErr != nil {
+		entryType = "Error: UserInfo"
+	}
 
 	entry := ResultEntry{
-		Type:                  "UserInfo",
+		Type:                  entryType,
 		Timestamp:             time.Now(),
 		UserInfoRequestURL:    h.providerInfo.UserinfoEndpoint,
 		UserInfoRequestMethod: "GET",
 		UserInfoResponse:      userInfoResponse,
 		UserInfoError:         userInfoErr,
+		UserInfoHTTPResponse:  uiHTTPResp,
 		AccessTokenRaw:        session.AccessTokenRaw,
 	}
 
@@ -1048,27 +1157,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		RefreshToken: session.RefreshTokenRaw,
 	})
 
-	newToken, err := tokenSource.Token()
-	if err != nil {
-		log.Printf("Token refresh failed: %v", err)
-		code, desc, uri, detail := extractOAuthError(err)
-		if code == "" {
-			code = "token_refresh_failed"
-		}
-		errorEntry := ResultEntry{
-			Type:             "Error",
-			Timestamp:        time.Now(),
-			ErrorCode:        code,
-			ErrorDescription: desc,
-			ErrorURI:         uri,
-			ErrorDetail:      detail,
-		}
-		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
-	}
-
-	// Build Token Request params for display
+	// Build Token Request params for display (before exchange, so available on error)
 	refreshTokenRequestParams := map[string]string{
 		"grant_type":    "refresh_token",
 		"refresh_token": session.RefreshTokenRaw,
@@ -1076,6 +1165,46 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	}
 	if h.oauth2Config.ClientSecret != "" {
 		refreshTokenRequestParams["client_secret"] = "*******"
+	}
+
+	newToken, err := tokenSource.Token()
+	if err != nil {
+		log.Printf("Token refresh failed: %v", err)
+		code, desc, uri, detail, respBody, sc, hdrs := extractOAuthError(err)
+		if sc == 0 {
+			code = "connection_failed"
+		} else if code == "" {
+			code = "token_refresh_failed"
+		}
+		var tokenHTTPResp *HTTPResponseInfo
+		if sc > 0 {
+			tokenHTTPResp = &HTTPResponseInfo{StatusCode: sc, Headers: hdrs, Body: respBody}
+		}
+		errorEntry := ResultEntry{
+			Type:               "Error: Refresh",
+			Timestamp:          time.Now(),
+			ErrorCode:          code,
+			ErrorDescription:   desc,
+			ErrorURI:           uri,
+			ErrorDetail:        detail,
+			TokenHTTPResponse:  tokenHTTPResp,
+			TokenRequestURL:    h.oauth2Config.Endpoint.TokenURL,
+			TokenRequestParams: refreshTokenRequestParams,
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	// Capture Token endpoint HTTP response for refresh
+	refreshCapture := h.capTransport.LastCapture()
+	var refreshHTTPResp *HTTPResponseInfo
+	if refreshCapture != nil {
+		refreshHTTPResp = &HTTPResponseInfo{
+			StatusCode: refreshCapture.StatusCode,
+			Headers:    refreshCapture.Headers,
+			Body:       string(refreshCapture.Body),
+		}
 	}
 
 	// Determine refresh token for display: new one if rotated, otherwise the original
@@ -1092,6 +1221,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		TokenRequestURL:    h.oauth2Config.Endpoint.TokenURL,
 		TokenRequestParams: refreshTokenRequestParams,
 		TokenResponse:      marshalTokenResponse(newToken),
+		TokenHTTPResponse:  refreshHTTPResp,
 		AccessTokenRaw:     newToken.AccessToken,
 		RefreshTokenRaw:    refreshTokenForDisplay,
 	}
@@ -1172,32 +1302,36 @@ func parseToClaimRows(params []protocol.KeyValue) []components.ClaimRow {
 	return rows
 }
 
-// buildHTTPRequestRaw builds an HTTP-like raw representation for display.
-// For POST: "POST <url>\n\nparam1=value1&param2=value2"
-// For GET with headers: "GET <url>\nHeader: value"
-func buildHTTPRequestRaw(method, urlStr string, params []components.ClaimRow, headers []components.ClaimRow) string {
+// buildTokenRequestRaw builds a full HTTP request for display: request line + headers + body.
+func buildTokenRequestRaw(requestLine string, params []components.ClaimRow) string {
 	var b strings.Builder
-	b.WriteString(method)
-	b.WriteString(" ")
-	b.WriteString(urlStr)
-	for _, h := range headers {
-		b.WriteString("\n")
-		b.WriteString(h.Key)
-		b.WriteString(": ")
-		b.WriteString(h.Value)
-	}
-	if len(params) > 0 {
-		b.WriteString("\n\n")
-		for i, p := range params {
-			if i > 0 {
-				b.WriteString("&")
-			}
-			b.WriteString(p.Key)
-			b.WriteString("=")
-			b.WriteString(p.Value)
+	b.WriteString(requestLine)
+	b.WriteString("\nContent-Type: application/x-www-form-urlencoded\n\n")
+	for i, p := range params {
+		if i > 0 {
+			b.WriteString("&")
 		}
+		b.WriteString(p.Key)
+		b.WriteString("=")
+		b.WriteString(p.Value)
 	}
 	return b.String()
+}
+
+// buildHTTPResponseDisplay converts HTTPResponseInfo to display strings.
+func buildHTTPResponseDisplay(resp *HTTPResponseInfo) (statusLine, headers, body, bodyLang string) {
+	statusLine = protocol.FormatHTTPStatusLine(resp.StatusCode)
+	headers = protocol.FormatHTTPHeaders(resp.Headers)
+	body = resp.Body
+	if ct := resp.Headers.Get("Content-Type"); ct != "" {
+		bodyLang = protocol.DetectContentLanguage(ct)
+		if bodyLang == "json" {
+			if pretty := protocol.PrettyJSON(json.RawMessage(resp.Body)); pretty != "" {
+				body = pretty
+			}
+		}
+	}
+	return
 }
 
 func marshalTokenResponse(token *oauth2.Token) json.RawMessage {
@@ -1220,34 +1354,46 @@ func marshalTokenResponse(token *oauth2.Token) json.RawMessage {
 }
 
 // extractOAuthError extracts RFC 6749 error fields from an oauth2.RetrieveError.
-// Returns the error code, description, URI, and raw body. If the error is not
-// an oauth2.RetrieveError, returns empty strings and the error message as detail.
-func extractOAuthError(err error) (code, description, uri, detail string) {
+// Returns the error code, description, URI, detail message, HTTP response body,
+// status code, and headers. For non-RetrieveError, statusCode is 0 and headers is nil.
+func extractOAuthError(err error) (code, description, uri, detail, responseBody string, statusCode int, headers http.Header) {
 	var re *oauth2.RetrieveError
 	if errors.As(err, &re) {
-		return re.ErrorCode, re.ErrorDescription, re.ErrorURI, string(re.Body)
+		sc := 0
+		var h http.Header
+		if re.Response != nil {
+			sc = re.Response.StatusCode
+			h = re.Response.Header.Clone()
+		}
+		return re.ErrorCode, re.ErrorDescription, re.ErrorURI, "", string(re.Body), sc, h
 	}
-	return "", "", "", err.Error()
+	return "", "", "", err.Error(), "", 0, nil
 }
 
-func fetchUserInfo(client *http.Client, userinfoURL, accessToken string) (json.RawMessage, *UserInfoError) {
+func fetchUserInfo(client *http.Client, userinfoURL, accessToken string) (json.RawMessage, *UserInfoError, *HTTPResponseInfo) {
 	req, err := http.NewRequest("GET", userinfoURL, nil)
 	if err != nil {
 		log.Printf("Failed to create userinfo request: %v", err)
-		return nil, &UserInfoError{ErrorCode: "request_failed", Description: err.Error()}
+		return nil, &UserInfoError{ErrorCode: "connection_failed", Detail: err.Error()}, nil
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Failed to fetch userinfo: %v", err)
-		return nil, &UserInfoError{ErrorCode: "request_failed", Description: err.Error()}
+		return nil, &UserInfoError{ErrorCode: "connection_failed", Detail: err.Error()}, nil
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Printf("Failed to read userinfo response: %v", err)
-		return nil, &UserInfoError{ErrorCode: "request_failed", Description: err.Error()}
+		return nil, &UserInfoError{ErrorCode: "connection_failed", Detail: err.Error()}, nil
+	}
+
+	httpResp := &HTTPResponseInfo{
+		StatusCode: resp.StatusCode,
+		Headers:    resp.Header.Clone(),
+		Body:       string(body),
 	}
 
 	if resp.StatusCode >= 300 {
@@ -1267,20 +1413,29 @@ func fetchUserInfo(client *http.Client, userinfoURL, accessToken string) (json.R
 			uiErr.Description = errResp.Description
 			uiErr.URI = errResp.URI
 		}
-		return nil, uiErr
+		// Fallback: parse WWW-Authenticate header (RFC 6750 Section 3)
+		if uiErr.ErrorCode == "" {
+			if wwwAuth := resp.Header.Get("Www-Authenticate"); wwwAuth != "" {
+				code, desc, uri := protocol.ParseWWWAuthenticate(wwwAuth)
+				uiErr.ErrorCode = code
+				uiErr.Description = desc
+				uiErr.URI = uri
+			}
+		}
+		return nil, uiErr, httpResp
 	}
 
 	var raw json.RawMessage
 	if json.Unmarshal(body, &raw) != nil {
 		log.Printf("Failed to decode userinfo response as JSON")
 		return nil, &UserInfoError{
-			StatusCode: resp.StatusCode,
-			ErrorCode:  "invalid_response",
+			StatusCode:  resp.StatusCode,
+			ErrorCode:   "invalid_response",
 			Description: "Response is not valid JSON",
-			RawBody:    string(body),
-		}
+			RawBody:     string(body),
+		}, httpResp
 	}
-	return raw, nil
+	return raw, nil, httpResp
 }
 
 func fetchJWKS(client *http.Client, jwksURL string) json.RawMessage {

@@ -242,7 +242,7 @@ templ samlLogoutEntryContent(entry SAMLResultEntryData) {
 			<summary>Protocol Messages</summary>
 			<!-- SP-initiated: outgoing LogoutRequest URL params -->
 			if len(entry.LogoutRequestParams) > 0 {
-				@components.ParamsTable("Logout Request (Sent)", entry.LogoutRequestParams, entry.LogoutRequestURL)
+				@components.ParamsTable("Logout Request (Sent)", entry.LogoutRequestParams, "GET " + entry.LogoutRequestURL)
 			} else if entry.LogoutRequestURL != "" {
 				@components.CodeBlock("Logout Request (Sent)", entry.LogoutRequestURL)
 			}
@@ -258,7 +258,7 @@ templ samlLogoutEntryContent(entry SAMLResultEntryData) {
 			if entry.LogoutRequestXML != "" && entry.LogoutResponseXML != "" {
 				@components.XMLCodeBlock("Logout Response (Sent)", entry.LogoutResponseXML)
 			} else if entry.LogoutRequestXML != "" && len(entry.LogoutResponseParams) > 0 {
-				@components.ParamsTable("Logout Response (Sent)", entry.LogoutResponseParams, entry.LogoutResponseURL)
+				@components.ParamsTable("Logout Response (Sent)", entry.LogoutResponseParams, "GET " + entry.LogoutResponseURL)
 			} else if entry.LogoutRequestXML != "" && entry.LogoutResponseURL != "" {
 				@components.CodeBlock("Logout Response (Sent)", entry.LogoutResponseURL)
 			}

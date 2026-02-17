@@ -18,18 +18,18 @@ templ OIDCSequence(callbackPath string) {
 			<line x1="350" y1="34" x2="350" y2="400" stroke="currentColor" stroke-dasharray="4"/>
 			<text x="600" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">OpenID Provider</text>
 			<line x1="600" y1="34" x2="600" y2="400" stroke="currentColor" stroke-dasharray="4"/>
-			<!-- 1. Authorization Request -->
+			<!-- 1. Authentication Request -->
 			<line x1="100" y1="68" x2="345" y2="68" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="222" y="62" text-anchor="middle" font-size="13" fill="currentColor">1. GET /login</text>
 			<!-- 2. Redirect to IdP -->
 			<line x1="350" y1="106" x2="105" y2="106" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="222" y="100" text-anchor="middle" font-size="13" fill="currentColor">2. 302 Redirect</text>
 			<line x1="100" y1="144" x2="595" y2="144" stroke="currentColor" marker-end="url(#arrow)"/>
-			<text x="350" y="138" text-anchor="middle" font-size="13" fill="currentColor">3. Authorization Request</text>
+			<text x="350" y="138" text-anchor="middle" font-size="13" fill="currentColor">3. Authentication Request</text>
 			<!-- 4. User authenticates (bidirectional) -->
 			<line x1="600" y1="182" x2="105" y2="182" stroke="currentColor" marker-start="url(#arrow-rev)" marker-end="url(#arrow)"/>
 			<text x="350" y="176" text-anchor="middle" font-size="13" fill="currentColor">4. Login Form / Authentication</text>
-			<!-- 5. Authorization Response -->
+			<!-- 5. Authentication Response -->
 			<line x1="600" y1="220" x2="105" y2="220" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="350" y="214" text-anchor="middle" font-size="13" fill="currentColor">5. 302 Redirect (code, state)</text>
 			<!-- 6. Callback -->

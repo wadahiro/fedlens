@@ -2,10 +2,18 @@ package oidc
 
 import (
 	"encoding/json"
+	"net/http"
 	"time"
 
 	"github.com/wadahiro/fedlens/internal/protocol"
 )
+
+// HTTPResponseInfo holds HTTP response details for display.
+type HTTPResponseInfo struct {
+	StatusCode int
+	Headers    http.Header
+	Body       string
+}
 
 // UserInfoError holds error details from a failed UserInfo request.
 type UserInfoError struct {
@@ -13,6 +21,7 @@ type UserInfoError struct {
 	ErrorCode   string // RFC 6750 "error"
 	Description string // RFC 6750 "error_description"
 	URI         string // RFC 6750 "error_uri"
+	Detail      string // raw error detail (Go error message, not server-provided)
 	RawBody     string // raw response body
 }
 
@@ -22,8 +31,9 @@ type ResultEntry struct {
 	Timestamp          time.Time
 	Claims             map[string]any
 	AuthRequestURL     string          // Login/Re-auth/Error
-	AuthResponseCode   string          // Login/Re-auth only
-	AuthResponseRaw    string          // Login/Re-auth/Error
+	AuthResponseCode        string // Login/Re-auth only
+	AuthResponseRaw         string // Login/Re-auth/Error
+	AuthResponseRedirectURI string // Login/Re-auth/Error — redirect URI for display
 	TokenResponse      json.RawMessage
 	IDTokenRaw         string
 	AccessTokenRaw     string
@@ -33,6 +43,9 @@ type ResultEntry struct {
 	AccessTokenSigInfo *protocol.JWTSignatureInfo
 	JWKSResponse       json.RawMessage // Login/Re-auth only
 	UserInfoError *UserInfoError // non-nil when UserInfo endpoint returned an error
+	// HTTP Response capture
+	TokenHTTPResponse    *HTTPResponseInfo // Token endpoint HTTP response (success & error)
+	UserInfoHTTPResponse *HTTPResponseInfo // UserInfo endpoint HTTP response (success & error)
 	// Token Request fields (Login/Re-auth/Refresh)
 	TokenRequestURL    string
 	TokenRequestParams map[string]string // grant_type, code, redirect_uri, client_id, etc.
