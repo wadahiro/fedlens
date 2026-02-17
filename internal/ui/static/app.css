@@ -162,6 +162,7 @@ small { font-size: 0.75rem; }
 /* === Sidebar dot indicators for results === */
 .sidebar-dot-login::before,
 .sidebar-dot-refresh::before,
+.sidebar-dot-userinfo::before,
 .sidebar-dot-reauth::before,
 .sidebar-dot-logout::before,
 .sidebar-dot-error::before {
@@ -181,6 +182,13 @@ small { font-size: 0.75rem; }
   color: #2e7d32;
 }
 [data-theme="dark"] .sidebar-dot-refresh::before {
+  color: #81c784;
+}
+[data-theme="light"] .sidebar-dot-userinfo::before,
+:root:not([data-theme="dark"]) .sidebar-dot-userinfo::before {
+  color: #2e7d32;
+}
+[data-theme="dark"] .sidebar-dot-userinfo::before {
   color: #81c784;
 }
 [data-theme="light"] .sidebar-dot-reauth::before,

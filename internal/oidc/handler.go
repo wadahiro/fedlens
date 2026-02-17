@@ -188,6 +188,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc(h.Config.CallbackPath, h.handleCallback)
 	mux.HandleFunc("/logout", h.handleLogout)
 	mux.HandleFunc("/refresh", h.handleRefresh)
+	mux.HandleFunc("/userinfo", h.handleUserInfo)
 	mux.HandleFunc("/reauth", h.handleReauth)
 	mux.HandleFunc("/clear", h.handleClear)
 }
@@ -245,6 +246,9 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		page.Status = "connected"
 		page.StatusLabel = "Active Session"
 		page.LogoutURL = "/logout"
+		if h.providerInfo.UserinfoEndpoint != "" {
+			page.UserInfoURL = "/userinfo"
+		}
 		if data.HasRefreshToken {
 			page.RefreshURL = "/refresh"
 		}
@@ -435,6 +439,9 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	case entry.Type == "Refresh":
 		data.SidebarLabel = "Refresh"
 		data.SidebarDot = "refresh"
+	case entry.Type == "UserInfo":
+		data.SidebarLabel = "UserInfo"
+		data.SidebarDot = "userinfo"
 	default: // Re-auth: *
 		data.SidebarLabel = entry.Type
 		data.SidebarDot = "reauth"
@@ -794,6 +801,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("session_id"); err == nil {
 		if existing := h.sessions.GetByID(cookie.Value); existing != nil {
 			existing.IDTokenRaw = rawIDToken
+			existing.AccessTokenRaw = token.AccessToken
 			if refreshTokenRaw != "" {
 				existing.RefreshTokenRaw = refreshTokenRaw
 			}
@@ -813,6 +821,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	h.sessions.Set(sessionID, &Session{
 		IDTokenRaw:      rawIDToken,
+		AccessTokenRaw:  token.AccessToken,
 		RefreshTokenRaw: refreshTokenRaw,
 	})
 
@@ -924,6 +933,39 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+// handleUserInfo fetches the latest UserInfo using the stored access token.
+func (h *Handler) handleUserInfo(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	session := h.sessions.GetByID(cookie.Value)
+	if session == nil || session.AccessTokenRaw == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	if h.providerInfo.UserinfoEndpoint == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+
+	userInfoResponse, userInfoErr := fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, session.AccessTokenRaw)
+
+	entry := ResultEntry{
+		Type:             "UserInfo",
+		Timestamp:        time.Now(),
+		UserInfoResponse: userInfoResponse,
+		UserInfoError:    userInfoErr,
+		AccessTokenRaw:   session.AccessTokenRaw,
+	}
+
+	h.saveDebugEntry(w, r, entry)
+	http.Redirect(w, r, "/", http.StatusFound)
+}
+
 // handleClear clears all debug results.
 func (h *Handler) handleClear(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie("oidc_debug_id"); err == nil {
@@ -1008,6 +1050,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	h.saveDebugEntry(w, r, entry)
 
 	// Update tokens in auth session for subsequent refreshes
+	session.AccessTokenRaw = newToken.AccessToken
 	if entry.IDTokenRaw != "" {
 		session.IDTokenRaw = entry.IDTokenRaw
 	}

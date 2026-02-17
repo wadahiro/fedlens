@@ -110,33 +110,36 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 }
 
 templ oidcActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || len(page.ReauthItems) > 0 {
+	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || len(page.ReauthItems) > 0 {
 		<div class="action-bar">
 			if page.LoginURL != "" {
-				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn">Login</a>
+				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
+			}
+			if page.UserInfoURL != "" {
+				<a href={ templ.SafeURL(page.UserInfoURL) } role="button" class="secondary outline action-btn" data-testid="userinfo-btn">UserInfo</a>
 			}
 			if page.RefreshURL != "" {
-				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn">Refresh Token</a>
+				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
 			}
 			if len(page.ReauthItems) > 0 {
 				if len(page.ReauthItems) == 1 {
-					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn">{ page.ReauthItems[0].Label }</a>
+					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
 				} else {
-					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn">{ page.ReauthItems[0].Label }</a>
+					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
 					<div class="dropdown">
-						<button class="secondary outline action-btn" onclick="toggleDropdown(this)">
+						<button class="secondary outline action-btn" onclick="toggleDropdown(this)" data-testid="reauth-more-btn">
 							More &#9662;
 						</button>
 						<div class="dropdown-menu">
-							for _, item := range page.ReauthItems[1:] {
-								<a href={ templ.SafeURL(item.URL) } class="dropdown-item">{ item.Label }</a>
+							for i, item := range page.ReauthItems[1:] {
+								<a href={ templ.SafeURL(item.URL) } class="dropdown-item" data-testid={ fmt.Sprintf("reauth-%d", i) }>{ item.Label }</a>
 							}
 						</div>
 					</div>
 				}
 			}
 			if page.LogoutURL != "" {
-				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline action-btn">Logout</a>
+				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline action-btn" data-testid="logout-btn">Logout</a>
 			}
 		</div>
 	}
@@ -147,6 +150,8 @@ func resultBadgeClass(entryType string) string {
 	case entryType == "Login":
 		return "result-login"
 	case entryType == "Refresh":
+		return "result-refresh"
+	case entryType == "UserInfo":
 		return "result-refresh"
 	case strings.HasPrefix(entryType, "Logout"):
 		return "result-logout"

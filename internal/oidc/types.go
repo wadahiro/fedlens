@@ -45,6 +45,7 @@ type ResultEntry struct {
 // Session holds auth state only (destroyed on logout).
 type Session struct {
 	IDTokenRaw      string
+	AccessTokenRaw  string
 	RefreshTokenRaw string
 }
 
