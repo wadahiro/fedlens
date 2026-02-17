@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -377,6 +378,25 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 	}
 
+	// UserInfo Error
+	if entry.UserInfoError != nil {
+		var rows []components.ErrorRow
+		if entry.UserInfoError.StatusCode > 0 {
+			rows = append(rows, components.ErrorRow{Label: "status", Value: strconv.Itoa(entry.UserInfoError.StatusCode)})
+		}
+		if entry.UserInfoError.ErrorCode != "" {
+			rows = append(rows, components.ErrorRow{Label: "error", Value: entry.UserInfoError.ErrorCode})
+		}
+		if entry.UserInfoError.Description != "" {
+			rows = append(rows, components.ErrorRow{Label: "error_description", Value: entry.UserInfoError.Description})
+		}
+		if entry.UserInfoError.URI != "" {
+			rows = append(rows, components.ErrorRow{Label: "error_uri", Value: entry.UserInfoError.URI})
+		}
+		data.UserInfoErrorRows = rows
+		data.UserInfoErrorRaw = entry.UserInfoError.RawBody
+	}
+
 	// Protocol Messages
 	data.AuthRequestURL = entry.AuthRequestURL
 	data.AuthRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthRequestURL))
@@ -663,13 +683,19 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	token, err := h.oauth2Config.Exchange(tokenCtx, code, exchangeOpts...)
 	if err != nil {
 		log.Printf("Token exchange failed: %v", err)
+		code, desc, uri, detail := extractOAuthError(err)
+		if code == "" {
+			code = "token_exchange_failed"
+		}
 		errorEntry := ResultEntry{
-			Type:            "Error",
-			Timestamp:       time.Now(),
-			AuthRequestURL:  authRequestURL,
-			AuthResponseRaw: authResponseRaw,
-			ErrorCode:       "token_exchange_failed",
-			ErrorDetail:     err.Error(),
+			Type:             "Error",
+			Timestamp:        time.Now(),
+			AuthRequestURL:   authRequestURL,
+			AuthResponseRaw:  authResponseRaw,
+			ErrorCode:        code,
+			ErrorDescription: desc,
+			ErrorURI:         uri,
+			ErrorDetail:      detail,
 		}
 		h.saveErrorEntry(w, r, errorEntry)
 		http.Redirect(w, r, "/", http.StatusFound)
@@ -722,8 +748,9 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch UserInfo
 	var userInfoResponse json.RawMessage
+	var userInfoErr *UserInfoError
 	if h.providerInfo.UserinfoEndpoint != "" {
-		userInfoResponse = fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, token.AccessToken)
+		userInfoResponse, userInfoErr = fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, token.AccessToken)
 	}
 
 	// Fetch JWKS and build signature info
@@ -754,6 +781,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		IDTokenRaw:         rawIDToken,
 		AccessTokenRaw:     token.AccessToken,
 		UserInfoResponse:   userInfoResponse,
+		UserInfoError:      userInfoErr,
 		IDTokenSigInfo:     idTokenSigInfo,
 		AccessTokenSigInfo: accessTokenSigInfo,
 		JWKSResponse:       jwksRaw,
@@ -911,13 +939,13 @@ func (h *Handler) handleClear(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
-		http.Error(w, "No session", http.StatusBadRequest)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
 	session := h.sessions.GetByID(cookie.Value)
 	if session == nil || session.RefreshTokenRaw == "" {
-		http.Error(w, "No refresh token", http.StatusBadRequest)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
@@ -929,7 +957,20 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	newToken, err := tokenSource.Token()
 	if err != nil {
 		log.Printf("Token refresh failed: %v", err)
-		http.Error(w, "Token refresh failed: "+err.Error(), http.StatusInternalServerError)
+		code, desc, uri, detail := extractOAuthError(err)
+		if code == "" {
+			code = "token_refresh_failed"
+		}
+		errorEntry := ResultEntry{
+			Type:             "Error",
+			Timestamp:        time.Now(),
+			ErrorCode:        code,
+			ErrorDescription: desc,
+			ErrorURI:         uri,
+			ErrorDetail:      detail,
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
 
@@ -1034,26 +1075,68 @@ func marshalTokenResponse(token *oauth2.Token) json.RawMessage {
 	return b
 }
 
-func fetchUserInfo(client *http.Client, userinfoURL, accessToken string) json.RawMessage {
+// extractOAuthError extracts RFC 6749 error fields from an oauth2.RetrieveError.
+// Returns the error code, description, URI, and raw body. If the error is not
+// an oauth2.RetrieveError, returns empty strings and the error message as detail.
+func extractOAuthError(err error) (code, description, uri, detail string) {
+	var re *oauth2.RetrieveError
+	if errors.As(err, &re) {
+		return re.ErrorCode, re.ErrorDescription, re.ErrorURI, string(re.Body)
+	}
+	return "", "", "", err.Error()
+}
+
+func fetchUserInfo(client *http.Client, userinfoURL, accessToken string) (json.RawMessage, *UserInfoError) {
 	req, err := http.NewRequest("GET", userinfoURL, nil)
 	if err != nil {
 		log.Printf("Failed to create userinfo request: %v", err)
-		return nil
+		return nil, &UserInfoError{ErrorCode: "request_failed", Description: err.Error()}
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("Failed to fetch userinfo: %v", err)
-		return nil
+		return nil, &UserInfoError{ErrorCode: "request_failed", Description: err.Error()}
 	}
 	defer resp.Body.Close()
 
-	var raw json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		log.Printf("Failed to decode userinfo response: %v", err)
-		return nil
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read userinfo response: %v", err)
+		return nil, &UserInfoError{ErrorCode: "request_failed", Description: err.Error()}
 	}
-	return raw
+
+	if resp.StatusCode >= 300 {
+		log.Printf("UserInfo endpoint returned status %d", resp.StatusCode)
+		uiErr := &UserInfoError{
+			StatusCode: resp.StatusCode,
+			RawBody:    string(body),
+		}
+		// Attempt to parse RFC 6750 JSON error response
+		var errResp struct {
+			Error       string `json:"error"`
+			Description string `json:"error_description"`
+			URI         string `json:"error_uri"`
+		}
+		if json.Unmarshal(body, &errResp) == nil {
+			uiErr.ErrorCode = errResp.Error
+			uiErr.Description = errResp.Description
+			uiErr.URI = errResp.URI
+		}
+		return nil, uiErr
+	}
+
+	var raw json.RawMessage
+	if json.Unmarshal(body, &raw) != nil {
+		log.Printf("Failed to decode userinfo response as JSON")
+		return nil, &UserInfoError{
+			StatusCode: resp.StatusCode,
+			ErrorCode:  "invalid_response",
+			Description: "Response is not valid JSON",
+			RawBody:    string(body),
+		}
+	}
+	return raw, nil
 }
 
 func fetchJWKS(client *http.Client, jwksURL string) json.RawMessage {

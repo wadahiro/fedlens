@@ -7,6 +7,15 @@ import (
 	"github.com/wadahiro/fedlens/internal/protocol"
 )
 
+// UserInfoError holds error details from a failed UserInfo request.
+type UserInfoError struct {
+	StatusCode  int
+	ErrorCode   string // RFC 6750 "error"
+	Description string // RFC 6750 "error_description"
+	URI         string // RFC 6750 "error_uri"
+	RawBody     string // raw response body
+}
+
 // ResultEntry holds data from a single authentication event (Login, Refresh, Re-auth, Logout, Error).
 type ResultEntry struct {
 	Type               string    // "Login", "Refresh", "Re-auth: <name>", "Logout", "Error"
@@ -22,6 +31,7 @@ type ResultEntry struct {
 	IDTokenSigInfo     *protocol.JWTSignatureInfo
 	AccessTokenSigInfo *protocol.JWTSignatureInfo
 	JWKSResponse       json.RawMessage // Login/Re-auth only
+	UserInfoError *UserInfoError // non-nil when UserInfo endpoint returned an error
 	// Error fields
 	ErrorCode        string // OIDC error code (e.g. "access_denied")
 	ErrorDescription string // Human-readable error description

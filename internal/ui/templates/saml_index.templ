@@ -145,6 +145,17 @@ func samlResultBadgeLabel(entryType string) string {
 	return entryType
 }
 
+func samlErrorRows(entry SAMLResultEntryData) []components.ErrorRow {
+	var rows []components.ErrorRow
+	if entry.ErrorCode != "" {
+		rows = append(rows, components.ErrorRow{Label: "StatusCode", Value: entry.ErrorCode})
+	}
+	if entry.ErrorDetail != "" {
+		rows = append(rows, components.ErrorRow{Label: "Detail", Value: entry.ErrorDetail})
+	}
+	return rows
+}
+
 templ SAMLResultEntry(index int, entry SAMLResultEntryData) {
 	if index == 0 {
 		<details id={ entry.ID } class={ "result-entry", samlResultBadgeClass(entry.Type) } open>
@@ -185,24 +196,7 @@ templ samlErrorEntryContent(entry SAMLResultEntryData) {
 	<!-- Error Details -->
 	<details id={ entry.ID + "-error" } class="result-subsection" open>
 		<summary>Error Details</summary>
-		<div class="overflow-auto">
-			<table class="striped">
-				<tbody>
-					if entry.ErrorCode != "" {
-						<tr class="verified-false">
-							<td>StatusCode</td>
-							<td data-testid="status_code">{ entry.ErrorCode }</td>
-						</tr>
-					}
-					if entry.ErrorDetail != "" {
-						<tr>
-							<td>Detail</td>
-							<td data-testid="detail">{ entry.ErrorDetail }</td>
-						</tr>
-					}
-				</tbody>
-			</table>
-		</div>
+		@components.ErrorTable(samlErrorRows(entry))
 	</details>
 	<!-- Protocol Messages -->
 	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
