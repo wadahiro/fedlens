@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -24,7 +26,7 @@ type Config struct {
 // OIDCConfig defines a single OIDC RP instance.
 type OIDCConfig struct {
 	Name            string            `toml:"name"`
-	Host            string            `toml:"host"`
+	BaseURL         string            `toml:"base_url"`
 	Issuer          string            `toml:"issuer"`
 	ClientID        string            `toml:"client_id"`
 	ClientSecret    string            `toml:"client_secret"`
@@ -38,6 +40,10 @@ type OIDCConfig struct {
 	ExtraAuthParams map[string]string `toml:"extra_auth_params"`
 	Reauth            []ReauthConfig    `toml:"reauth"`
 	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
+
+	// Computed fields (not from TOML)
+	ParsedHost string // host:port extracted from base_url
+	BasePath   string // path prefix extracted from base_url (empty for host-based routing)
 }
 
 // ReauthConfig defines a re-authentication profile with extra auth params.
@@ -49,7 +55,7 @@ type ReauthConfig struct {
 // SAMLConfig defines a single SAML SP instance.
 type SAMLConfig struct {
 	Name              string             `toml:"name"`
-	Host              string             `toml:"host"`
+	BaseURL           string             `toml:"base_url"`
 	IDPMetadataURL    string             `toml:"idp_metadata_url"`
 	EntityID          string             `toml:"entity_id"`
 	RootURL           string             `toml:"root_url"`
@@ -60,6 +66,10 @@ type SAMLConfig struct {
 	KeyPath           string             `toml:"key_path"`
 	AllowIDPInitiated bool               `toml:"allow_idp_initiated"`
 	Reauth            []SAMLReauthConfig `toml:"reauth"`
+
+	// Computed fields (not from TOML)
+	ParsedHost string // host:port extracted from base_url
+	BasePath   string // path prefix extracted from base_url (empty for host-based routing)
 }
 
 // SAMLReauthConfig defines a SAML re-authentication profile.
@@ -114,7 +124,60 @@ func Load(path string) (*Config, error) {
 		applySAMLDefaults(&cfg.SAML[i])
 	}
 
+	// Parse and validate base_url for all entries
+	seen := make(map[string]string) // routeKey -> name for duplicate detection
+	for i := range cfg.OIDC {
+		if err := parseBaseURL(&cfg.OIDC[i].BaseURL, &cfg.OIDC[i].ParsedHost, &cfg.OIDC[i].BasePath); err != nil {
+			return nil, fmt.Errorf("oidc[%d] (%s): %w", i, cfg.OIDC[i].Name, err)
+		}
+		routeKey := cfg.OIDC[i].ParsedHost + cfg.OIDC[i].BasePath
+		if existing, ok := seen[routeKey]; ok {
+			return nil, fmt.Errorf("duplicate base_url route %q: %s and %s", routeKey, existing, cfg.OIDC[i].Name)
+		}
+		seen[routeKey] = cfg.OIDC[i].Name
+	}
+	for i := range cfg.SAML {
+		if err := parseBaseURL(&cfg.SAML[i].BaseURL, &cfg.SAML[i].ParsedHost, &cfg.SAML[i].BasePath); err != nil {
+			return nil, fmt.Errorf("saml[%d] (%s): %w", i, cfg.SAML[i].Name, err)
+		}
+		routeKey := cfg.SAML[i].ParsedHost + cfg.SAML[i].BasePath
+		if existing, ok := seen[routeKey]; ok {
+			return nil, fmt.Errorf("duplicate base_url route %q: %s and %s", routeKey, existing, cfg.SAML[i].Name)
+		}
+		seen[routeKey] = cfg.SAML[i].Name
+	}
+
 	return cfg, nil
+}
+
+// parseBaseURL validates and parses a base_url, setting the computed host and basePath fields.
+func parseBaseURL(baseURL *string, parsedHost *string, basePath *string) error {
+	if *baseURL == "" {
+		return fmt.Errorf("base_url is required")
+	}
+
+	u, err := url.Parse(*baseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base_url %q: %w", *baseURL, err)
+	}
+
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return fmt.Errorf("base_url %q: scheme must be http or https", *baseURL)
+	}
+	if u.Host == "" {
+		return fmt.Errorf("base_url %q: host is required", *baseURL)
+	}
+
+	*parsedHost = u.Host
+
+	// Normalize path: strip trailing slash
+	p := strings.TrimRight(u.Path, "/")
+	*basePath = p
+
+	// Normalize base_url: remove trailing slash
+	*baseURL = u.Scheme + "://" + u.Host + p
+
+	return nil
 }
 
 func applyOIDCDefaults(c *OIDCConfig) {

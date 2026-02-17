@@ -21,7 +21,7 @@ log_level = "debug"
 
 [[oidc]]
 name = "Test OIDC"
-host = "oidc.test:8080"
+base_url = "http://oidc.test:8080"
 issuer = "https://idp.test/realms/test"
 client_id = "test-client"
 client_secret = "secret"
@@ -32,7 +32,7 @@ extra_auth_params = { prompt = "consent" }
 
 [[oidc]]
 name = "Second OIDC"
-host = "oidc2.test:8080"
+base_url = "http://oidc2.test:8080"
 issuer = "https://idp2.test"
 client_id = "client2"
 client_secret = "secret2"
@@ -40,7 +40,7 @@ redirect_uri = "http://oidc2.test:8080/callback"
 
 [[saml]]
 name = "Test SAML"
-host = "saml.test:8080"
+base_url = "http://saml.test:8080"
 idp_metadata_url = "https://idp.test/saml/metadata"
 entity_id = "http://saml.test:8080/saml/metadata"
 root_url = "http://saml.test:8080"
@@ -73,6 +73,15 @@ root_url = "http://saml.test:8080"
 	if oidc.Name != "Test OIDC" {
 		t.Errorf("OIDC[0].Name = %q", oidc.Name)
 	}
+	if oidc.BaseURL != "http://oidc.test:8080" {
+		t.Errorf("OIDC[0].BaseURL = %q", oidc.BaseURL)
+	}
+	if oidc.ParsedHost != "oidc.test:8080" {
+		t.Errorf("OIDC[0].ParsedHost = %q, want oidc.test:8080", oidc.ParsedHost)
+	}
+	if oidc.BasePath != "" {
+		t.Errorf("OIDC[0].BasePath = %q, want empty (host-based)", oidc.BasePath)
+	}
 	if !oidc.PKCE {
 		t.Error("OIDC[0].PKCE should be true")
 	}
@@ -102,6 +111,12 @@ root_url = "http://saml.test:8080"
 	if cfg.SAML[0].Name != "Test SAML" {
 		t.Errorf("SAML[0].Name = %q", cfg.SAML[0].Name)
 	}
+	if cfg.SAML[0].ParsedHost != "saml.test:8080" {
+		t.Errorf("SAML[0].ParsedHost = %q, want saml.test:8080", cfg.SAML[0].ParsedHost)
+	}
+	if cfg.SAML[0].BasePath != "" {
+		t.Errorf("SAML[0].BasePath = %q, want empty (host-based)", cfg.SAML[0].BasePath)
+	}
 	if cfg.SAML[0].ACSPath != "/saml/acs" {
 		t.Errorf("SAML[0].ACSPath = %q, want /saml/acs (default)", cfg.SAML[0].ACSPath)
 	}
@@ -117,7 +132,7 @@ func TestLoadCustomPaths(t *testing.T) {
 	toml := `
 [[oidc]]
 name = "Custom OIDC"
-host = "oidc.test:3000"
+base_url = "http://oidc.test:3000"
 issuer = "https://idp.test"
 client_id = "c"
 client_secret = "s"
@@ -126,7 +141,7 @@ callback_path = "/services/oauth2/callback"
 
 [[saml]]
 name = "Custom SAML"
-host = "saml.test:3000"
+base_url = "http://saml.test:3000"
 idp_metadata_url = "https://idp.test/saml/metadata"
 entity_id = "http://saml.test:3000/sso/saml/metadata"
 root_url = "http://saml.test:3000"
@@ -162,7 +177,7 @@ func TestLoadDefaults(t *testing.T) {
 	toml := `
 [[oidc]]
 name = "Minimal"
-host = "oidc.test:3000"
+base_url = "http://oidc.test:3000"
 issuer = "https://idp.test"
 client_id = "c"
 client_secret = "s"
@@ -194,5 +209,149 @@ redirect_uri = "http://oidc.test:3000/callback"
 	}
 	if oidc.ResponseType != "code" {
 		t.Errorf("ResponseType = %q, want code", oidc.ResponseType)
+	}
+}
+
+func TestLoadPathBasedRouting(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "OIDC on path"
+base_url = "http://localhost:3000/keycloak"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://localhost:3000/keycloak/callback"
+
+[[saml]]
+name = "SAML on path"
+base_url = "http://localhost:3000/keycloak-saml"
+idp_metadata_url = "https://idp.test/saml/metadata"
+entity_id = "http://localhost:3000/keycloak-saml/saml/metadata"
+root_url = "http://localhost:3000/keycloak-saml"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	oidc := cfg.OIDC[0]
+	if oidc.ParsedHost != "localhost:3000" {
+		t.Errorf("OIDC ParsedHost = %q, want localhost:3000", oidc.ParsedHost)
+	}
+	if oidc.BasePath != "/keycloak" {
+		t.Errorf("OIDC BasePath = %q, want /keycloak", oidc.BasePath)
+	}
+	if oidc.BaseURL != "http://localhost:3000/keycloak" {
+		t.Errorf("OIDC BaseURL = %q, want http://localhost:3000/keycloak", oidc.BaseURL)
+	}
+
+	saml := cfg.SAML[0]
+	if saml.ParsedHost != "localhost:3000" {
+		t.Errorf("SAML ParsedHost = %q, want localhost:3000", saml.ParsedHost)
+	}
+	if saml.BasePath != "/keycloak-saml" {
+		t.Errorf("SAML BasePath = %q, want /keycloak-saml", saml.BasePath)
+	}
+}
+
+func TestLoadBaseURLTrailingSlashNormalized(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "Trailing Slash"
+base_url = "http://localhost:3000/app/"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://localhost:3000/app/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.OIDC[0].BaseURL != "http://localhost:3000/app" {
+		t.Errorf("BaseURL = %q, want http://localhost:3000/app (trailing slash removed)", cfg.OIDC[0].BaseURL)
+	}
+	if cfg.OIDC[0].BasePath != "/app" {
+		t.Errorf("BasePath = %q, want /app", cfg.OIDC[0].BasePath)
+	}
+}
+
+func TestLoadBaseURLMissingScheme(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "No Scheme"
+base_url = "localhost:3000"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://localhost:3000/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load should fail for base_url without scheme")
+	}
+}
+
+func TestLoadBaseURLMissing(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "No BaseURL"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://localhost:3000/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load should fail for missing base_url")
+	}
+}
+
+func TestLoadBaseURLDuplicate(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "First"
+base_url = "http://localhost:3000/app"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://localhost:3000/app/callback"
+
+[[saml]]
+name = "Duplicate"
+base_url = "http://localhost:3000/app"
+idp_metadata_url = "https://idp.test/saml/metadata"
+entity_id = "http://localhost:3000/app/saml/metadata"
+root_url = "http://localhost:3000/app"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load should fail for duplicate base_url routes")
 	}
 }

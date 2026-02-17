@@ -40,6 +40,7 @@ type Handler struct {
 		UserinfoEndpoint   string
 		JwksURI            string
 	}
+	basePath     string
 	topPageURL   string
 	navTabs      []templates.NavTab
 	defaultTheme string
@@ -103,6 +104,7 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 		httpClient:    capturedClient,
 		capTransport:  ct,
 		discoveryRaw:  discoveryRaw,
+		basePath:      cfg.BasePath,
 	}
 
 	// Extract provider claims
@@ -118,12 +120,8 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 	h.providerInfo.UserinfoEndpoint = providerClaims.UserinfoEndpoint
 	h.providerInfo.JwksURI = providerClaims.JwksURI
 
-	// Derive top-page URL from redirect URI
-	redirectParsed, err := url.Parse(cfg.RedirectURI)
-	if err != nil {
-		return nil, fmt.Errorf("parse redirect URI: %w", err)
-	}
-	h.topPageURL = redirectParsed.Scheme + "://" + redirectParsed.Host + "/"
+	// Derive top-page URL from base_url
+	h.topPageURL = cfg.BaseURL + "/"
 
 	// Build endpoint rows from discovery
 	h.endpointRows = buildEndpointRows(oauth2Config, h.providerInfo)
@@ -188,6 +186,14 @@ func (h *Handler) SetDefaultTheme(theme string) {
 	h.defaultTheme = theme
 }
 
+// cookiePath returns the cookie Path value scoped to this handler's basePath.
+func (h *Handler) cookiePath() string {
+	if h.basePath == "" {
+		return "/"
+	}
+	return h.basePath + "/"
+}
+
 // RegisterRoutes registers OIDC handlers on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
@@ -242,6 +248,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Tabs:         h.navTabs,
 		ActiveTab:    h.activeTab(),
 		DefaultTheme: h.defaultTheme,
+		ClearURL:     h.basePath + "/clear",
 		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
 			{ID: "sec-provider", Label: "OpenID Provider"},
@@ -252,28 +259,28 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		// Logged in
 		page.Status = "connected"
 		page.StatusLabel = "Active Session"
-		page.LogoutURL = "/logout"
+		page.LogoutURL = h.basePath + "/logout"
 		if h.providerInfo.UserinfoEndpoint != "" {
-			page.UserInfoURL = "/userinfo"
+			page.UserInfoURL = h.basePath + "/userinfo"
 		}
 		if data.HasRefreshToken {
-			page.RefreshURL = "/refresh"
+			page.RefreshURL = h.basePath + "/refresh"
 		}
 		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
 			Label: "Re-authenticate",
-			URL:   "/reauth?step=-1",
+			URL:   h.basePath + "/reauth?step=-1",
 		})
 		for i, rc := range h.Config.Reauth {
 			page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
 				Label: rc.Name,
-				URL:   "/reauth?step=" + strconv.Itoa(i),
+				URL:   h.basePath + "/reauth?step=" + strconv.Itoa(i),
 			})
 		}
 	} else {
 		// Not logged in
 		page.Status = "disconnected"
 		page.StatusLabel = "No Session"
-		page.LoginURL = "/login"
+		page.LoginURL = h.basePath + "/login"
 	}
 
 	// Build sidebar sections from result entries
@@ -611,7 +618,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oidc_state",
 		Value:    state,
-		Path:     "/",
+		Path:     h.cookiePath(),
 		MaxAge:   300,
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
@@ -623,11 +630,11 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oidc_reauth_name",
 			Value:    reauthName,
-			Path:     "/",
+			Path:     h.cookiePath(),
 			MaxAge:   300,
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+			SameSite: sameSiteMode(r),
 		})
 	}
 
@@ -647,11 +654,11 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oidc_pkce_verifier",
 			Value:    verifier,
-			Path:     "/",
+			Path:     h.cookiePath(),
 			MaxAge:   300,
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+			SameSite: sameSiteMode(r),
 		})
 
 		if h.Config.PKCEMethod == "plain" {
@@ -690,7 +697,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 	http.SetCookie(w, &http.Cookie{
 		Name:     "oidc_auth_request_url",
 		Value:    authURL,
-		Path:     "/",
+		Path:     h.cookiePath(),
 		MaxAge:   300,
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
@@ -716,7 +723,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Clear state cookie
 	http.SetCookie(w, &http.Cookie{
-		Name: "oidc_state", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "oidc_state", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 	})
 
 	// Retrieve auth request URL from cookie
@@ -725,7 +732,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		authRequestURL = c.Value
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "oidc_auth_request_url", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "oidc_auth_request_url", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 	})
 
 	// Retrieve reauth name from cookie
@@ -734,7 +741,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		reauthName = c.Value
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "oidc_reauth_name", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "oidc_reauth_name", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 	})
 
 	authResponseRaw := r.URL.RawQuery
@@ -764,7 +771,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -781,7 +788,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 			exchangeOpts = append(exchangeOpts, oauth2.SetAuthURLParam("code_verifier", pkceVerifier))
 		}
 		http.SetCookie(w, &http.Cookie{
-			Name: "oidc_pkce_verifier", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+			Name: "oidc_pkce_verifier", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 		})
 	}
 
@@ -828,7 +835,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 			TokenRequestParams:      tokenRequestParams,
 		}
 		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -861,7 +868,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 			ErrorDetail:             "No id_token in token response",
 		}
 		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -882,7 +889,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 			ErrorDetail:             err.Error(),
 		}
 		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -959,7 +966,7 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 				existing.RefreshTokenRaw = refreshTokenRaw
 			}
 			h.sessions.Set(cookie.Value, existing)
-			http.Redirect(w, r, "/", http.StatusFound)
+			http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 			return
 		}
 	}
@@ -981,13 +988,13 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
 		Value:    sessionID,
-		Path:     "/",
+		Path:     h.cookiePath(),
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		SameSite: sameSiteMode(r),
 	})
 
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 // saveDebugEntry saves a result entry to the debug session.
@@ -1006,10 +1013,10 @@ func (h *Handler) saveDebugEntry(w http.ResponseWriter, r *http.Request, entry R
 		http.SetCookie(w, &http.Cookie{
 			Name:     "oidc_debug_id",
 			Value:    debugID,
-			Path:     "/",
+			Path:     h.cookiePath(),
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+			SameSite: sameSiteMode(r),
 		})
 	}
 
@@ -1074,7 +1081,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		h.sessions.Delete(cookie.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "session_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "session_id", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 	})
 
 	// Redirect to IdP end_session_endpoint or back to index
@@ -1083,25 +1090,25 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 // handleUserInfo fetches the latest UserInfo using the stored access token.
 func (h *Handler) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
 	session := h.sessions.GetByID(cookie.Value)
 	if session == nil || session.AccessTokenRaw == "" {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
 	if h.providerInfo.UserinfoEndpoint == "" {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -1124,7 +1131,7 @@ func (h *Handler) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.saveDebugEntry(w, r, entry)
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 // handleClear clears all debug results.
@@ -1133,22 +1140,22 @@ func (h *Handler) handleClear(w http.ResponseWriter, r *http.Request) {
 		h.debugSessions.Delete(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "oidc_debug_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "oidc_debug_id", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 	})
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 // handleRefresh performs a token refresh using the stored refresh token.
 func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
 	session := h.sessions.GetByID(cookie.Value)
 	if session == nil || session.RefreshTokenRaw == "" {
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -1192,7 +1199,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 			TokenRequestParams: refreshTokenRequestParams,
 		}
 		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -1266,7 +1273,7 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 	h.sessions.Set(cookie.Value, session)
 
 	// Redirect back to index to see updated data
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 func buildJWTSigRows(info *protocol.JWTSignatureInfo) []components.SignatureRow {

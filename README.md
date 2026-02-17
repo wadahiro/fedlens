@@ -127,7 +127,7 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | Key | Required | Default | Description |
 |---|---|---|---|
 | `name` | Yes | | Display name (shown in tab) |
-| `host` | Yes | | Host for routing (e.g. `oidc.example.com:3000`) |
+| `base_url` | Yes | | Base URL for routing (e.g. `http://oidc.example.com:3000` or `http://localhost:3000/myapp`) |
 | `issuer` | Yes | | OIDC Issuer URL |
 | `client_id` | Yes | | Client ID |
 | `client_secret` | Yes | | Client Secret |
@@ -163,7 +163,7 @@ Each `[[saml]]` block defines a separate SAML Service Provider.
 | Key | Required | Default | Description |
 |---|---|---|---|
 | `name` | Yes | | Display name (shown in tab) |
-| `host` | Yes | | Host for routing (e.g. `saml.example.com:3000`) |
+| `base_url` | Yes | | Base URL for routing (e.g. `http://saml.example.com:3000` or `http://localhost:3000/myapp`) |
 | `idp_metadata_url` | Yes | | IdP Metadata URL |
 | `entity_id` | Yes | | SP Entity ID |
 | `root_url` | Yes | | SP Root URL |
@@ -202,7 +202,7 @@ log_level = "debug"
 
 [[oidc]]
 name = "Keycloak OIDC"
-host = "kc-oidc.example.com:3000"
+base_url = "http://kc-oidc.example.com:3000"
 issuer = "https://keycloak.example.com/realms/test"
 client_id = "fedlens"
 client_secret = "secret"
@@ -211,7 +211,7 @@ pkce = true
 
 [[oidc]]
 name = "Entra ID"
-host = "entra-oidc.example.com:3000"
+base_url = "http://entra-oidc.example.com:3000"
 issuer = "https://login.microsoftonline.com/xxx/v2.0"
 client_id = "yyy"
 client_secret = "zzz"
@@ -220,14 +220,14 @@ extra_auth_params = { login_hint = "user@example.com" }
 
 [[saml]]
 name = "Keycloak SAML"
-host = "kc-saml.example.com:3000"
+base_url = "http://kc-saml.example.com:3000"
 idp_metadata_url = "https://keycloak.example.com/realms/test/protocol/saml/descriptor"
 entity_id = "http://kc-saml.example.com:3000/saml/metadata"
 root_url = "http://kc-saml.example.com:3000"
 
 [[saml]]
 name = "Okta SAML"
-host = "okta-saml.example.com:3000"
+base_url = "http://okta-saml.example.com:3000"
 idp_metadata_url = "https://okta.example.com/app/xxx/sso/saml/metadata"
 entity_id = "http://okta-saml.example.com:3000/saml/metadata"
 root_url = "http://okta-saml.example.com:3000"
@@ -237,12 +237,62 @@ This produces tabs: `Keycloak OIDC` | `Entra ID` | `Keycloak SAML` | `Okta SAML`
 
 ## How It Works
 
-fedlens runs a single HTTP server that routes requests based on the `Host` header:
+fedlens runs a single HTTP server that routes requests based on `base_url` (host + optional path prefix):
 
-- Each `[[oidc]]` entry creates an OIDC RP handler bound to its `host`
-- Each `[[saml]]` entry creates a SAML SP handler bound to its `host`
+- Each `[[oidc]]` entry creates an OIDC RP handler bound to its `base_url`
+- Each `[[saml]]` entry creates a SAML SP handler bound to its `base_url`
+- **Host-based**: `base_url = "http://oidc.example.com:3000"` → routes by host only
+- **Path-based**: `base_url = "http://localhost:3000/myapp"` → routes by host + path prefix (no `/etc/hosts` needed)
 
 On startup, fedlens fetches OIDC discovery metadata and SAML IdP metadata, making them available on the pre-login screen. After authentication, all protocol exchange details (tokens, assertions, signatures) are displayed.
+
+### `base_url` and TLS Deployment Patterns
+
+The `base_url` field specifies the **externally visible URL** (scheme + host + optional path). The scheme in `base_url` does not affect how fedlens listens — it is used for routing, navigation links, and cookie scoping.
+
+#### Pattern 1: Plain HTTP (development)
+
+```toml
+listen_addr = ":3000"
+
+[[oidc]]
+base_url = "http://localhost:3000/keycloak"
+```
+
+#### Pattern 2: TLS terminated by fedlens
+
+```toml
+listen_addr = ":443"
+tls_self_signed = true    # or tls_cert_path / tls_key_path
+
+[[oidc]]
+base_url = "https://oidc.example.com"
+```
+
+#### Pattern 3: TLS terminated by reverse proxy (nginx, etc.)
+
+The reverse proxy handles TLS and forwards plain HTTP to fedlens. Set `base_url` to the **external** `https://` URL. Ensure the proxy sets `X-Forwarded-Proto: https` so that fedlens correctly sets the `Secure` flag on cookies.
+
+```toml
+listen_addr = ":3000"    # fedlens listens on plain HTTP
+
+[[oidc]]
+base_url = "https://oidc.example.com"    # external URL seen by browsers
+```
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name oidc.example.com;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+
+    location / {
+        proxy_pass http://fedlens:3000;
+    }
+}
+```
 
 ## Development
 

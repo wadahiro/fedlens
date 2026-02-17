@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +38,7 @@ type Handler struct {
 	sp              *samlsp.Middleware
 	httpClient      *http.Client
 	idpMetadataRaw  string
+	basePath        string
 	rootURLStr      string
 	navTabs         []templates.NavTab
 	defaultTheme    string
@@ -112,9 +114,18 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 	}
 
 	// Override SP endpoint paths from config
-	sp.ServiceProvider.AcsURL = *rootURL.ResolveReference(&url.URL{Path: cfg.ACSPath})
-	sp.ServiceProvider.SloURL = *rootURL.ResolveReference(&url.URL{Path: cfg.SLOPath})
-	sp.ServiceProvider.MetadataURL = *rootURL.ResolveReference(&url.URL{Path: cfg.MetadataPath})
+	// Use path.Join to correctly append paths when rootURL already has a path prefix
+	acsURL := *rootURL
+	acsURL.Path = path.Join(rootURL.Path, cfg.ACSPath)
+	sp.ServiceProvider.AcsURL = acsURL
+
+	sloURL := *rootURL
+	sloURL.Path = path.Join(rootURL.Path, cfg.SLOPath)
+	sp.ServiceProvider.SloURL = sloURL
+
+	metadataURL := *rootURL
+	metadataURL.Path = path.Join(rootURL.Path, cfg.MetadataPath)
+	sp.ServiceProvider.MetadataURL = metadataURL
 
 	// Determine request binding (same logic as handleLogin)
 	reqBinding := "redirect"
@@ -128,6 +139,7 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		sp:              sp,
 		httpClient:      httpClient,
 		idpMetadataRaw:  idpMetadataRaw,
+		basePath:        cfg.BasePath,
 		rootURLStr:      cfg.RootURL,
 		requestBinding:  reqBinding,
 		responseBinding: "post", // SAML Response is always HTTP-POST binding
@@ -241,6 +253,14 @@ func (h *Handler) SetDefaultTheme(theme string) {
 	h.defaultTheme = theme
 }
 
+// cookiePath returns the cookie Path value scoped to this handler's basePath.
+func (h *Handler) cookiePath() string {
+	if h.basePath == "" {
+		return "/"
+	}
+	return h.basePath + "/"
+}
+
 // RegisterRoutes registers SAML handlers on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
@@ -325,6 +345,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		Tabs:         h.navTabs,
 		ActiveTab:    h.activeTab(),
 		DefaultTheme: h.defaultTheme,
+		ClearURL:     h.basePath + "/clear",
 		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
 			{ID: "sec-idp", Label: "Identity Provider"},
@@ -335,22 +356,22 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		// Logged in
 		page.Status = "connected"
 		page.StatusLabel = "Active Session"
-		page.LogoutURL = "/logout"
+		page.LogoutURL = h.basePath + "/logout"
 		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
 			Label: "Re-authenticate",
-			URL:   "/reauth?step=-1",
+			URL:   h.basePath + "/reauth?step=-1",
 		})
 		for i, rc := range h.Config.Reauth {
 			page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
 				Label: rc.Name,
-				URL:   "/reauth?step=" + strconv.Itoa(i),
+				URL:   h.basePath + "/reauth?step=" + strconv.Itoa(i),
 			})
 		}
 	} else {
 		// Not logged in
 		page.Status = "disconnected"
 		page.StatusLabel = "No Session"
-		page.LoginURL = "/login"
+		page.LoginURL = h.basePath + "/login"
 	}
 
 	// Build sidebar sections from result entries
@@ -665,7 +686,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 		http.SetCookie(w, &http.Cookie{
 			Name:     "saml_reauth_name",
 			Value:    reauthName,
-			Path:     "/",
+			Path:     h.cookiePath(),
 			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
@@ -712,7 +733,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 		http.SetCookie(w, &http.Cookie{
 			Name:     "saml_debug_id",
 			Value:    debugID,
-			Path:     "/",
+			Path:     h.cookiePath(),
 			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
@@ -773,7 +794,7 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 			if c, err := r.Cookie("saml_reauth_name"); err == nil {
 				reauthName = c.Value
 				http.SetCookie(w, &http.Cookie{
-					Name: "saml_reauth_name", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+					Name: "saml_reauth_name", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 				})
 			}
 
@@ -834,7 +855,7 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 					http.SetCookie(w, &http.Cookie{
 						Name:     "saml_debug_id",
 						Value:    debugID,
-						Path:     "/",
+						Path:     h.cookiePath(),
 						MaxAge:   600,
 						HttpOnly: true,
 						Secure:   isHTTPS(r),
@@ -891,7 +912,7 @@ func (h *Handler) handleSLO(w http.ResponseWriter, r *http.Request) {
 		}
 
 		h.sp.Session.DeleteSession(w, r)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
@@ -901,7 +922,7 @@ func (h *Handler) handleSLO(w http.ResponseWriter, r *http.Request) {
 		if xmlBytes == nil {
 			log.Printf("Failed to decode IdP-initiated LogoutRequest")
 			h.sp.Session.DeleteSession(w, r)
-			http.Redirect(w, r, "/", http.StatusFound)
+			http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 			return
 		}
 
@@ -910,7 +931,7 @@ func (h *Handler) handleSLO(w http.ResponseWriter, r *http.Request) {
 		if err := xmlpkg.Unmarshal(xmlBytes, &logoutRequest); err != nil {
 			log.Printf("Failed to parse IdP-initiated LogoutRequest: %v", err)
 			h.sp.Session.DeleteSession(w, r)
-			http.Redirect(w, r, "/", http.StatusFound)
+			http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 			return
 		}
 
@@ -979,13 +1000,13 @@ func (h *Handler) handleSLO(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 		return
 	}
 
 	// Neither SAMLResponse nor SAMLRequest — just delete session
 	h.sp.Session.DeleteSession(w, r)
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 // decodeSAMLMessage decodes a Base64-encoded SAML message.
@@ -1027,7 +1048,7 @@ func (h *Handler) saveLogoutEntry(w http.ResponseWriter, r *http.Request, entry 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "saml_debug_id",
 		Value:    debugID,
-		Path:     "/",
+		Path:     h.cookiePath(),
 		MaxAge:   600,
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
@@ -1062,7 +1083,7 @@ func (h *Handler) handleSAMLError(w http.ResponseWriter, r *http.Request, err er
 		}
 	}
 
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 func isHTTPS(r *http.Request) bool {
@@ -1123,7 +1144,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 // handleClear clears all debug results.
@@ -1132,9 +1153,9 @@ func (h *Handler) handleClear(w http.ResponseWriter, r *http.Request) {
 		h.debugSessions.Delete(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: "saml_debug_id", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
+		Name: "saml_debug_id", Value: "", Path: h.cookiePath(), MaxAge: -1, HttpOnly: true,
 	})
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
 func toStringMap(attrs samlsp.Attributes) map[string]string {

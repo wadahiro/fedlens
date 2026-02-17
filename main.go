@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -26,6 +25,13 @@ import (
 	"github.com/wadahiro/fedlens/internal/ui"
 	"github.com/wadahiro/fedlens/internal/ui/templates"
 )
+
+type routeEntry struct {
+	host     string
+	basePath string
+	baseURL  string
+	handler  http.Handler
+}
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
@@ -83,21 +89,23 @@ func main() {
 
 	// Build nav tabs for all SP/RPs
 	var allTabs []templates.NavTab
-	hostTabIndex := make(map[string]int)
+	tabIndex := make(map[string]int) // routeKey -> tab index
 
 	for _, oidcCfg := range cfg.OIDC {
-		hostTabIndex[oidcCfg.Host] = len(allTabs)
+		routeKey := oidcCfg.ParsedHost + oidcCfg.BasePath
+		tabIndex[routeKey] = len(allTabs)
 		allTabs = append(allTabs, templates.NavTab{
 			Label:    oidcCfg.Name,
-			BaseURL:  extractBaseURL(oidcCfg.RedirectURI),
+			BaseURL:  oidcCfg.BaseURL,
 			Protocol: "oidc",
 		})
 	}
 	for _, samlCfg := range cfg.SAML {
-		hostTabIndex[samlCfg.Host] = len(allTabs)
+		routeKey := samlCfg.ParsedHost + samlCfg.BasePath
+		tabIndex[routeKey] = len(allTabs)
 		allTabs = append(allTabs, templates.NavTab{
 			Label:    samlCfg.Name,
-			BaseURL:  extractBaseURL(samlCfg.RootURL),
+			BaseURL:  samlCfg.BaseURL,
 			Protocol: "saml",
 		})
 	}
@@ -110,8 +118,8 @@ func main() {
 	}
 	staticHandler := http.FileServer(http.FS(staticFS))
 
-	// Host-based router
-	hostRouters := make(map[string]http.Handler)
+	// Route entries for host+path based routing
+	var routes []routeEntry
 
 	// Initialize OIDC handlers
 	for _, oidcCfg := range cfg.OIDC {
@@ -120,14 +128,25 @@ func main() {
 			slog.Error("Failed to initialize OIDC handler", "name", oidcCfg.Name, "error", err)
 			os.Exit(1)
 		}
-		handler.SetNavTabs(makeTabsWithActive(allTabs, hostTabIndex[oidcCfg.Host]))
+		routeKey := oidcCfg.ParsedHost + oidcCfg.BasePath
+		handler.SetNavTabs(makeTabsWithActive(allTabs, tabIndex[routeKey]))
 		handler.SetDefaultTheme(cfg.Theme)
 
 		mux := http.NewServeMux()
-		mux.Handle("/static/", http.StripPrefix("/static/", staticHandler))
 		handler.RegisterRoutes(mux)
-		hostRouters[oidcCfg.Host] = mux
-		slog.Info("OIDC RP registered", "name", oidcCfg.Name, "host", oidcCfg.Host)
+
+		var h http.Handler = mux
+		if oidcCfg.BasePath != "" {
+			h = http.StripPrefix(oidcCfg.BasePath, mux)
+		}
+
+		routes = append(routes, routeEntry{
+			host:     oidcCfg.ParsedHost,
+			basePath: oidcCfg.BasePath,
+			baseURL:  oidcCfg.BaseURL,
+			handler:  h,
+		})
+		slog.Info("OIDC RP registered", "name", oidcCfg.Name, "base_url", oidcCfg.BaseURL)
 	}
 
 	// Initialize SAML handlers
@@ -137,28 +156,62 @@ func main() {
 			slog.Error("Failed to initialize SAML handler", "name", samlCfg.Name, "error", err)
 			os.Exit(1)
 		}
-		handler.SetNavTabs(makeTabsWithActive(allTabs, hostTabIndex[samlCfg.Host]))
+		routeKey := samlCfg.ParsedHost + samlCfg.BasePath
+		handler.SetNavTabs(makeTabsWithActive(allTabs, tabIndex[routeKey]))
 		handler.SetDefaultTheme(cfg.Theme)
 
 		mux := http.NewServeMux()
-		mux.Handle("/static/", http.StripPrefix("/static/", staticHandler))
 		handler.RegisterRoutes(mux)
-		hostRouters[samlCfg.Host] = mux
-		slog.Info("SAML SP registered", "name", samlCfg.Name, "host", samlCfg.Host)
+
+		var h http.Handler = mux
+		if samlCfg.BasePath != "" {
+			h = http.StripPrefix(samlCfg.BasePath, mux)
+		}
+
+		routes = append(routes, routeEntry{
+			host:     samlCfg.ParsedHost,
+			basePath: samlCfg.BasePath,
+			baseURL:  samlCfg.BaseURL,
+			handler:  h,
+		})
+		slog.Info("SAML SP registered", "name", samlCfg.Name, "base_url", samlCfg.BaseURL)
 	}
 
-	// Root mux with health check and host-based routing
+	// Root mux with health check, static files, and host+path-based routing
 	rootMux := http.NewServeMux()
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "ok")
 	})
+	rootMux.Handle("/static/", http.StripPrefix("/static/", staticHandler))
 	rootMux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if handler, ok := hostRouters[r.Host]; ok {
-			handler.ServeHTTP(w, r)
+		host := r.Host
+
+		// 1. Path-based routes first (host + path prefix match)
+		for _, route := range routes {
+			if route.basePath != "" && host == route.host {
+				if strings.HasPrefix(r.URL.Path, route.basePath+"/") || r.URL.Path == route.basePath {
+					route.handler.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
+
+		// 2. Host-based routes (host only match, no basePath)
+		for _, route := range routes {
+			if route.basePath == "" && host == route.host {
+				route.handler.ServeHTTP(w, r)
+				return
+			}
+		}
+
+		// 3. Root "/" → redirect to first app (when path-based apps are configured)
+		if r.URL.Path == "/" && len(routes) > 0 {
+			http.Redirect(w, r, routes[0].baseURL+"/", http.StatusFound)
 			return
 		}
-		http.Error(w, "Unknown host", http.StatusNotFound)
+
+		http.Error(w, "Not found", http.StatusNotFound)
 	})
 
 	server := &http.Server{
@@ -233,14 +286,6 @@ func makeTabsWithActive(allTabs []templates.NavTab, activeIdx int) []templates.N
 		tabs[activeIdx].Active = true
 	}
 	return tabs
-}
-
-func extractBaseURL(rawURL string) string {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
 }
 
 func generateSelfSignedTLSCert() (tls.Certificate, error) {

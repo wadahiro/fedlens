@@ -10,7 +10,7 @@ log_level = "debug"
 # OIDC RP definitions (multiple allowed)
 [[oidc]]
 name = "Keycloak OIDC"
-host = "oidc.example.com:3000"
+base_url = "http://oidc.example.com:3000"
 issuer = "http://idp.example.com:8080/realms/fedlens"
 client_id = "fedlens-oidc"
 client_secret = "fedlens-oidc-secret"
@@ -23,20 +23,21 @@ scopes = ["openid", "profile", "email"]
 # callback_path = "/callback"       # IdP redirect-back path (default: /callback)
 # extra_auth_params = { prompt = "consent" }
 
+# Path-based routing example (multiple apps on the same host):
 # [[oidc]]
 # name = "Entra ID"
-# host = "entra-oidc.example.com:3000"
+# base_url = "http://localhost:3000/entra"
 # issuer = "https://login.microsoftonline.com/xxx/v2.0"
 # client_id = "yyy"
 # client_secret = "zzz"
-# redirect_uri = "http://entra-oidc.example.com:3000/callback"
+# redirect_uri = "http://localhost:3000/entra/callback"
 # pkce = true
 # extra_auth_params = { login_hint = "user@example.com" }
 
 # SAML SP definitions (multiple allowed)
 [[saml]]
 name = "Keycloak SAML"
-host = "saml.example.com:3000"
+base_url = "http://saml.example.com:3000"
 idp_metadata_url = "http://idp.example.com:8080/realms/fedlens/protocol/saml/descriptor"
 entity_id = "http://saml.example.com:3000/saml/metadata"
 root_url = "http://saml.example.com:3000"
@@ -47,9 +48,10 @@ root_url = "http://saml.example.com:3000"
 # key_path = "/path/to/key.pem"
 # allow_idp_initiated = true       # Allow IdP-Initiated SSO (default: false)
 
+# Path-based routing example:
 # [[saml]]
 # name = "Okta SAML"
-# host = "okta-saml.example.com:3000"
+# base_url = "http://localhost:3000/okta-saml"
 # idp_metadata_url = "https://okta.example.com/app/xxx/sso/saml/metadata"
-# entity_id = "http://okta-saml.example.com:3000/saml/metadata"
-# root_url = "http://okta-saml.example.com:3000"
+# entity_id = "http://localhost:3000/okta-saml/saml/metadata"
+# root_url = "http://localhost:3000/okta-saml"

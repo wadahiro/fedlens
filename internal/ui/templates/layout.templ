@@ -33,6 +33,7 @@ type PageInfo struct {
 	LogoutURL    string
 	UserInfoURL  string
 	RefreshURL   string
+	ClearURL     string // path to clear debug results
 	ReauthItems  []ReauthItem
 	Sections     []Section // debug results (RESULTS)
 	References   []Section // reference info (REFERENCE)
@@ -187,7 +188,7 @@ templ Layout(title string, page PageInfo) {
 						if len(page.Sections) > 0 {
 							<div class="sidebar-results-header">
 								<p class="sidebar-heading">RESULTS</p>
-								<a href="/clear" class="clear-btn" onclick="return confirm('Clear all results?')">Clear</a>
+								<a href={ templ.SafeURL(page.ClearURL) } class="clear-btn" onclick="return confirm('Clear all results?')">Clear</a>
 							</div>
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
