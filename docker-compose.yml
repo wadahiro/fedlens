@@ -50,6 +50,7 @@ services:
         aliases:
           - oidc.example.com
           - saml.example.com
+          - oauth2.example.com
     depends_on:
       keycloak:
         condition: service_healthy

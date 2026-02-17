@@ -1,10 +1,10 @@
 # fedlens
 
-A federation protocol debug tool for OIDC and SAML.
+A federation protocol debug tool for OIDC, OAuth2, and SAML.
 
 ## Project Overview
 
-fedlens is a single Go binary that acts as both an **OIDC Relying Party** and a **SAML Service Provider**, displaying raw protocol details in a web UI for debugging and development purposes.
+fedlens is a single Go binary that acts as an **OIDC Relying Party**, **OAuth2 Client**, and **SAML Service Provider**, displaying raw protocol details in a web UI for debugging and development purposes.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ fedlens is a single Go binary that acts as both an **OIDC Relying Party** and a 
   - **Host-based**: `base_url = "http://oidc.example.com:3000"` (no path) → routes by host only
   - **Path-based**: `base_url = "http://localhost:3000/keycloak"` → routes by host + path prefix
   - Both modes can be mixed in the same configuration
-- **Multiple SP/RP**: TOML configuration allows defining multiple `[[oidc]]` and `[[saml]]` entries, each with its own `base_url`, session store, and IdP connection
+- **Multiple SP/RP**: TOML configuration allows defining multiple `[[oidc]]`, `[[oauth2]]`, and `[[saml]]` entries, each with its own `base_url`, session store, and IdP connection
 - **No database**: Sessions stored in-memory maps with mutex protection
 - **No framework**: Uses only `net/http` stdlib
 - **UI stack**: templ (type-safe HTML) + htmx 2.0.7 + Pico CSS 2.1.1 + Prism.js 1.30.0, all embedded via `go:embed`
@@ -23,7 +23,7 @@ fedlens is a single Go binary that acts as both an **OIDC Relying Party** and a 
 - `main.go` - Entry point: config loading, logger setup, handler initialization, host+path routing, graceful shutdown
 - `internal/config/` - TOML configuration loading with environment variable fallback
 - `internal/protocol/` - Shared utilities: JWT decode, XML formatting, SAML signature extraction, crypto helpers
-- `internal/oidc/` - OIDC RP handlers (login, callback, logout, refresh), session management
+- `internal/oidc/` - OIDC RP and OAuth2 Client handlers (login, callback, logout, refresh, introspection), session management
 - `internal/saml/` - SAML SP handlers (login, ACS, logout, metadata), session management, certificate handling
 - `internal/ui/` - Static assets (`go:embed`) and templ templates
 
@@ -38,7 +38,7 @@ fedlens is a single Go binary that acts as both an **OIDC Relying Party** and a 
 
 ## Configuration: `base_url` and Path Routing
 
-Each `[[oidc]]` and `[[saml]]` entry requires a `base_url` field (scheme + host + optional path):
+Each `[[oidc]]`, `[[oauth2]]`, and `[[saml]]` entry requires a `base_url` field (scheme + host + optional path):
 
 - **Host-based**: `base_url = "http://oidc.example.com:3000"` → traditional host-based routing
 - **Path-based**: `base_url = "http://localhost:3000/myapp"` → path-prefix routing on same host
@@ -78,6 +78,10 @@ make clean
 - OIDC: Authorization Code Flow with PKCE support, custom scopes, extra auth params, response mode
 - OIDC: ID Token / Access Token claims display, signature verification, UserInfo, JWKS, Discovery metadata
 - OIDC: Token Refresh Flow with UI button
+- OIDC/OAuth2: Token Introspection (RFC 7662) with HTTP capture
+- OAuth2: Authorization Code Flow with PKCE support (reuses OIDC handler with isOAuth2 flag)
+- OAuth2: RFC 8414 Discovery or manual endpoint configuration
+- OAuth2: Access Token claims display (JWT), signature verification, Token Refresh
 - SAML: SP-initiated SSO (HTTP-Redirect and HTTP-POST bindings) and IdP-initiated SSO
 - SAML: Attributes display, signature verification (Response/Assertion level), AuthnRequest/Response XML display
 - SAML: External certificate loading or auto-generated self-signed cert

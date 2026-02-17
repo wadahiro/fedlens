@@ -34,6 +34,39 @@ scopes = ["openid", "profile", "email"]
 # pkce = true
 # extra_auth_params = { login_hint = "user@example.com" }
 
+# OAuth2 Client definitions (multiple allowed)
+[[oauth2]]
+name = "Keycloak OAuth2"
+base_url = "http://oauth2.example.com:3000"
+authorization_url = "http://idp.example.com:8080/realms/fedlens/protocol/openid-connect/auth"
+token_url = "http://idp.example.com:8080/realms/fedlens/protocol/openid-connect/token"
+introspection_url = "http://idp.example.com:8080/realms/fedlens/protocol/openid-connect/token/introspect"
+client_id = "fedlens-oauth2"
+client_secret = "fedlens-oauth2-secret"
+redirect_uri = "http://oauth2.example.com:3000/callback"
+scopes = ["profile", "email"]
+
+# With RFC 8414 Discovery:
+# [[oauth2]]
+# name = "Keycloak OAuth2 (Discovery)"
+# base_url = "http://oauth2.example.com:3000"
+# issuer = "http://idp.example.com:8080/realms/fedlens"
+# client_id = "fedlens-oauth2"
+# client_secret = "fedlens-oauth2-secret"
+# redirect_uri = "http://oauth2.example.com:3000/callback"
+# scopes = ["profile", "email"]
+
+# GitHub OAuth (no Discovery, no Introspection):
+# [[oauth2]]
+# name = "GitHub OAuth"
+# base_url = "http://github-oauth.example.com:3000"
+# authorization_url = "https://github.com/login/oauth/authorize"
+# token_url = "https://github.com/login/oauth/access_token"
+# client_id = "your-github-client-id"
+# client_secret = "your-github-client-secret"
+# redirect_uri = "http://github-oauth.example.com:3000/callback"
+# scopes = ["read:user", "user:email"]
+
 # SAML SP definitions (multiple allowed)
 [[saml]]
 name = "Keycloak SAML"

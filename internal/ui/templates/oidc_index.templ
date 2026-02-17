@@ -78,6 +78,17 @@ type OIDCResultEntryData struct {
 	LogoutIDTokenHeader      string
 	LogoutIDTokenPayload     string
 	LogoutIDTokenSignature   string
+	// Introspection fields
+	IntrospectionRequestURL    string
+	IntrospectionRequestParams []components.ClaimRow
+	IntrospectionClaims        []components.ClaimRow // parsed introspection response as table rows
+	IntrospectionResponseJSON  string // pretty-printed JSON
+	// Introspection Response display
+	IntrospectionResponseStatusLine string
+	IntrospectionResponseHeaders    string
+	IntrospectionResponseBody       string
+	IntrospectionResponseBodyLang   string
+	IntrospectionResponseConnError  string
 }
 
 // OIDCPageData holds all data for the OIDC page.
@@ -132,13 +143,16 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 }
 
 templ oidcActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || len(page.ReauthItems) > 0 {
+	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || page.IntrospectionURL != "" || len(page.ReauthItems) > 0 {
 		<div class="action-bar">
 			if page.LoginURL != "" {
 				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
 			}
 			if page.UserInfoURL != "" {
 				<a href={ templ.SafeURL(page.UserInfoURL) } role="button" class="secondary outline action-btn" data-testid="userinfo-btn">UserInfo</a>
+			}
+			if page.IntrospectionURL != "" {
+				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
 			}
 			if page.RefreshURL != "" {
 				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
@@ -174,6 +188,8 @@ func resultBadgeClass(entryType string) string {
 	case entryType == "Refresh":
 		return "result-refresh"
 	case entryType == "UserInfo":
+		return "result-refresh"
+	case entryType == "Introspection":
 		return "result-refresh"
 	case strings.HasPrefix(entryType, "Logout"):
 		return "result-logout"
@@ -239,6 +255,8 @@ templ resultEntryContent(entry OIDCResultEntryData) {
 		@errorEntryContent(entry)
 	} else if strings.HasPrefix(entry.Type, "Logout") {
 		@logoutEntryContent(entry)
+	} else if entry.Type == "Introspection" {
+		@oidcIntrospectionEntryContent(entry)
 	} else {
 		@normalEntryContent(entry)
 	}
@@ -276,6 +294,23 @@ templ logoutEntryContent(entry OIDCResultEntryData) {
 			} else {
 				@components.CodeBlock("End Session Request (GET)", entry.LogoutRequestURL)
 			}
+		</details>
+	}
+}
+
+templ oidcIntrospectionEntryContent(entry OIDCResultEntryData) {
+	<!-- Token Metadata (Introspection Response as table) -->
+	if len(entry.IntrospectionClaims) > 0 {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Token Metadata</summary>
+			@components.ClaimsTable(entry.ID + "-introspection-claims", "Token Metadata", entry.IntrospectionClaims)
+		</details>
+	}
+	<!-- Protocol Messages -->
+	if entry.IntrospectionRequestURL != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@oidcProtocolMessages(entry)
 		</details>
 	}
 }
@@ -382,5 +417,15 @@ templ oidcProtocolMessages(entry OIDCResultEntryData) {
 		@components.HTTPResponseBlock("UserInfo Response", entry.UserInfoResponseStatusLine, entry.UserInfoResponseHeaders, entry.UserInfoResponseBody, entry.UserInfoResponseBodyLang)
 	} else if entry.UserInfoResponseConnError != "" {
 		@components.HTTPConnErrorBlock("UserInfo Response", entry.UserInfoResponseConnError)
+	}
+	// Introspection Request
+	if len(entry.IntrospectionRequestParams) > 0 {
+		@components.HTTPRequestBlock("Introspection Request (POST)", "POST " + entry.IntrospectionRequestURL, entry.IntrospectionRequestParams, "")
+	}
+	// Introspection Response
+	if entry.IntrospectionResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Introspection Response", entry.IntrospectionResponseStatusLine, entry.IntrospectionResponseHeaders, entry.IntrospectionResponseBody, entry.IntrospectionResponseBodyLang)
+	} else if entry.IntrospectionResponseConnError != "" {
+		@components.HTTPConnErrorBlock("Introspection Response", entry.IntrospectionResponseConnError)
 	}
 }

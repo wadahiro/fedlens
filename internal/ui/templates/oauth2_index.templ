@@ -1,0 +1,221 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+	"github.com/wadahiro/fedlens/internal/ui/templates/components"
+)
+
+templ OAuth2Index(page PageInfo, data OIDCPageData) {
+	@Layout("OAuth2 - " + data.Name, page) {
+		<!-- Action Bar -->
+		@oauth2ActionBar(page)
+		<!-- Results Timeline -->
+		if len(data.Results) > 0 {
+			<h2 class="body-section-heading">Results</h2>
+			<div class="results-timeline">
+				for i, entry := range data.Results {
+					@OAuth2ResultEntry(i, entry)
+				}
+			</div>
+		}
+		<!-- REFERENCE -->
+		<h2 class="body-section-heading">Reference</h2>
+		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			@components.OAuth2Sequence(data.CallbackPath)
+		}
+		@components.Collapsible("sec-provider", "Authorization Server", true) {
+			if len(data.EndpointRows) > 0 {
+				@components.KeyValueTable("as-endpoints", "Endpoints", "Name", "URL", data.EndpointRows)
+			}
+			for i, key := range data.JWKSKeys {
+				@components.SignatureTable(fmt.Sprintf("Public Key #%d", i+1), key.Rows)
+			}
+			if data.JWKSJSON != "" {
+				@components.CodeBlock("JWKS (Raw)", data.JWKSJSON)
+			}
+			if data.DiscoveryJSON != "" {
+				@components.CodeBlock("AS Metadata", data.DiscoveryJSON)
+			} else {
+				<article>
+					<header>AS Metadata</header>
+					<p class="not-configured">Not configured (manual endpoints)</p>
+				</article>
+			}
+		}
+	}
+}
+
+templ oauth2ActionBar(page PageInfo) {
+	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || len(page.ReauthItems) > 0 {
+		<div class="action-bar">
+			if page.LoginURL != "" {
+				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
+			}
+			if page.IntrospectionURL != "" {
+				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
+			}
+			if page.RefreshURL != "" {
+				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
+			}
+			if len(page.ReauthItems) > 0 {
+				if len(page.ReauthItems) == 1 {
+					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
+				} else {
+					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
+					<div class="dropdown">
+						<button class="secondary outline action-btn" onclick="toggleDropdown(this)" data-testid="reauth-more-btn">
+							More &#9662;
+						</button>
+						<div class="dropdown-menu">
+							for i, item := range page.ReauthItems[1:] {
+								<a href={ templ.SafeURL(item.URL) } class="dropdown-item" data-testid={ fmt.Sprintf("reauth-%d", i) }>{ item.Label }</a>
+							}
+						</div>
+					</div>
+				}
+			}
+		</div>
+	}
+}
+
+templ OAuth2ResultEntry(index int, entry OIDCResultEntryData) {
+	if index == 0 {
+		<details id={ entry.ID } class={ "result-entry", resultBadgeClass(entry.Type) } open>
+			<summary>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
+				<kbd class={ resultBadgeClass(entry.Type) }>{ resultBadgeLabel(entry.Type) }</kbd>
+				if strings.HasPrefix(entry.Type, "Error") && entry.ErrorCode != "" {
+					{ entry.ErrorCode }
+				}
+			</summary>
+			@oauth2ResultEntryContent(entry)
+		</details>
+	} else {
+		<details id={ entry.ID } class={ "result-entry", resultBadgeClass(entry.Type) }>
+			<summary>
+				<span class="result-timestamp">{ entry.Timestamp }</span>
+				<kbd class={ resultBadgeClass(entry.Type) }>{ resultBadgeLabel(entry.Type) }</kbd>
+				if strings.HasPrefix(entry.Type, "Error") && entry.ErrorCode != "" {
+					{ entry.ErrorCode }
+				}
+			</summary>
+			@oauth2ResultEntryContent(entry)
+		</details>
+	}
+}
+
+templ oauth2ResultEntryContent(entry OIDCResultEntryData) {
+	if strings.HasPrefix(entry.Type, "Error") {
+		@errorEntryContent(entry)
+	} else if strings.HasPrefix(entry.Type, "Logout") {
+		@oauth2LogoutEntryContent(entry)
+	} else if entry.Type == "Introspection" {
+		@oauth2IntrospectionEntryContent(entry)
+	} else {
+		@oauth2NormalEntryContent(entry)
+	}
+}
+
+templ oauth2LogoutEntryContent(entry OIDCResultEntryData) {
+	<!-- OAuth2 logout: session destroyed only (no end_session_endpoint) -->
+}
+
+templ oauth2IntrospectionEntryContent(entry OIDCResultEntryData) {
+	<!-- Token Metadata (Introspection Response as table) -->
+	if len(entry.IntrospectionClaims) > 0 {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Token Metadata</summary>
+			@components.ClaimsTable(entry.ID + "-introspection-claims", "Token Metadata", entry.IntrospectionClaims)
+		</details>
+	}
+	<!-- Protocol Messages -->
+	if entry.IntrospectionRequestURL != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@oauth2ProtocolMessages(entry)
+		</details>
+	}
+}
+
+templ oauth2NormalEntryContent(entry OIDCResultEntryData) {
+	<!-- Access Token Claims (when JWT) -->
+	if len(entry.AccessTokenClaims) > 0 {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Access Token Claims</summary>
+			@components.ClaimsTable(entry.ID + "-access-token-claims", "Access Token Claims", entry.AccessTokenClaims)
+		</details>
+	}
+	<!-- Signature Verification -->
+	if len(entry.AccessTokenSigRows) > 0 {
+		<details id={ entry.ID + "-sigs" } class="result-subsection">
+			<summary>
+				Signature Verification
+				if entry.SigVerifiedAll {
+					<span class="verification-badge verified">Verified</span>
+				} else {
+					<span class="verification-badge not-verified">Unverified</span>
+				}
+			</summary>
+			@components.SignatureTable("Access Token Signature Verification", entry.AccessTokenSigRows)
+		</details>
+	}
+	<!-- Protocol Messages -->
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@oauth2ProtocolMessages(entry)
+		</details>
+	}
+	<!-- Raw Tokens (no ID Token) -->
+	if entry.Type != "Introspection" && (entry.AccessTokenHeader != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenHeader != "" || entry.RefreshTokenRaw != "") {
+		<details id={ entry.ID + "-tokens" } class="result-subsection">
+			<summary>Raw Tokens</summary>
+			if entry.AccessTokenHeader != "" {
+				@components.TokenBlock("Access Token (JWT)", entry.AccessTokenHeader, entry.AccessTokenPayload, entry.AccessTokenSignature, entry.AccessTokenJWT)
+			} else if entry.AccessTokenRaw != "" {
+				@components.PlainCodeBlock("Access Token (Opaque)", entry.AccessTokenRaw)
+			}
+			if entry.RefreshTokenHeader != "" {
+				@components.TokenBlock("Refresh Token (JWT)", entry.RefreshTokenHeader, entry.RefreshTokenPayload, entry.RefreshTokenSignature, entry.RefreshTokenJWT)
+			} else if entry.RefreshTokenRaw != "" {
+				@components.PlainCodeBlock("Refresh Token (Opaque)", entry.RefreshTokenRaw)
+			}
+		</details>
+	}
+}
+
+templ oauth2ProtocolMessages(entry OIDCResultEntryData) {
+	// Authorization Request
+	if len(entry.AuthRequestParams) > 0 {
+		@components.ParamsTable("Authorization Request (GET)", entry.AuthRequestParams, "GET " + entry.AuthRequestURL)
+	} else if entry.AuthRequestURL != "" {
+		@components.CodeBlock("Authorization Request (GET)", entry.AuthRequestURL)
+	}
+	// Authorization Response
+	if len(entry.AuthResponseParams) > 0 {
+		@components.ParamsTable("Authorization Response", entry.AuthResponseParams, entry.AuthResponseHeader)
+	} else if entry.AuthResponseRaw != "" {
+		@components.CodeBlock("Authorization Response", entry.AuthResponseRaw)
+	}
+	// Token Request
+	if len(entry.TokenRequestParams) > 0 {
+		@components.HTTPRequestBlock("Token Request (POST)", "POST " + entry.TokenRequestURL, entry.TokenRequestParams, entry.TokenRequestRaw)
+	}
+	// Token Response
+	if entry.TokenResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Token Response", entry.TokenResponseStatusLine, entry.TokenResponseHeaders, entry.TokenResponseBody, entry.TokenResponseBodyLang)
+	} else if entry.TokenResponseConnError != "" {
+		@components.HTTPConnErrorBlock("Token Response", entry.TokenResponseConnError)
+	}
+	// Introspection Request
+	if len(entry.IntrospectionRequestParams) > 0 {
+		@components.HTTPRequestBlock("Introspection Request (POST)", "POST " + entry.IntrospectionRequestURL, entry.IntrospectionRequestParams, "")
+	}
+	// Introspection Response
+	if entry.IntrospectionResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Introspection Response", entry.IntrospectionResponseStatusLine, entry.IntrospectionResponseHeaders, entry.IntrospectionResponseBody, entry.IntrospectionResponseBodyLang)
+	} else if entry.IntrospectionResponseConnError != "" {
+		@components.HTTPConnErrorBlock("Introspection Response", entry.IntrospectionResponseConnError)
+	}
+}

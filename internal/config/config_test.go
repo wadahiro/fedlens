@@ -328,6 +328,131 @@ redirect_uri = "http://localhost:3000/callback"
 	}
 }
 
+func TestLoadOAuth2Defaults(t *testing.T) {
+	toml := `
+[[oauth2]]
+name = "Minimal OAuth2"
+base_url = "http://oauth2.test:3000"
+authorization_url = "https://as.test/authorize"
+token_url = "https://as.test/token"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if len(cfg.OAuth2) != 1 {
+		t.Fatalf("len(OAuth2) = %d, want 1", len(cfg.OAuth2))
+	}
+	oa := cfg.OAuth2[0]
+	if oa.CallbackPath != "/callback" {
+		t.Errorf("CallbackPath = %q, want /callback (default)", oa.CallbackPath)
+	}
+	if oa.PKCEMethod != "S256" {
+		t.Errorf("PKCEMethod = %q, want S256 (default)", oa.PKCEMethod)
+	}
+	if len(oa.Scopes) != 2 || oa.Scopes[0] != "profile" || oa.Scopes[1] != "email" {
+		t.Errorf("Scopes = %v, want [profile email]", oa.Scopes)
+	}
+	if oa.ParsedHost != "oauth2.test:3000" {
+		t.Errorf("ParsedHost = %q, want oauth2.test:3000", oa.ParsedHost)
+	}
+	if oa.BasePath != "" {
+		t.Errorf("BasePath = %q, want empty (host-based)", oa.BasePath)
+	}
+}
+
+func TestLoadOAuth2ManualEndpoints(t *testing.T) {
+	toml := `
+[[oauth2]]
+name = "Manual OAuth2"
+base_url = "http://oauth2.test:3000"
+authorization_url = "https://as.test/authorize"
+token_url = "https://as.test/token"
+introspection_url = "https://as.test/introspect"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+scopes = ["read", "write"]
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	oa := cfg.OAuth2[0]
+	if oa.AuthorizationURL != "https://as.test/authorize" {
+		t.Errorf("AuthorizationURL = %q", oa.AuthorizationURL)
+	}
+	if oa.TokenURL != "https://as.test/token" {
+		t.Errorf("TokenURL = %q", oa.TokenURL)
+	}
+	if oa.IntrospectionURL != "https://as.test/introspect" {
+		t.Errorf("IntrospectionURL = %q", oa.IntrospectionURL)
+	}
+	if len(oa.Scopes) != 2 || oa.Scopes[0] != "read" {
+		t.Errorf("Scopes = %v, want [read write]", oa.Scopes)
+	}
+}
+
+func TestLoadOAuth2ValidationError(t *testing.T) {
+	toml := `
+[[oauth2]]
+name = "Bad OAuth2"
+base_url = "http://oauth2.test:3000"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load should fail when neither issuer nor authorization_url+token_url are specified")
+	}
+}
+
+func TestLoadOAuth2WithIssuer(t *testing.T) {
+	toml := `
+[[oauth2]]
+name = "Discovery OAuth2"
+base_url = "http://oauth2.test:3000"
+issuer = "https://as.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	if cfg.OAuth2[0].Issuer != "https://as.test" {
+		t.Errorf("Issuer = %q, want https://as.test", cfg.OAuth2[0].Issuer)
+	}
+}
+
 func TestLoadBaseURLDuplicate(t *testing.T) {
 	toml := `
 [[oidc]]
@@ -353,5 +478,35 @@ root_url = "http://localhost:3000/app"
 	_, err := Load(path)
 	if err == nil {
 		t.Fatal("Load should fail for duplicate base_url routes")
+	}
+}
+
+func TestLoadBaseURLDuplicateOAuth2(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "OIDC"
+base_url = "http://localhost:3000/app"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://localhost:3000/app/callback"
+
+[[oauth2]]
+name = "OAuth2 Duplicate"
+base_url = "http://localhost:3000/app"
+authorization_url = "https://as.test/authorize"
+token_url = "https://as.test/token"
+client_id = "c2"
+client_secret = "s2"
+redirect_uri = "http://localhost:3000/app/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("Load should fail for duplicate base_url routes between OIDC and OAuth2")
 	}
 }

@@ -22,17 +22,19 @@ func TestBuildEndpointRows(t *testing.T) {
 			},
 		}
 		providerInfo := struct {
-			EndSessionEndpoint string
-			UserinfoEndpoint   string
-			JwksURI            string
+			EndSessionEndpoint    string
+			UserinfoEndpoint      string
+			JwksURI               string
+			IntrospectionEndpoint string
 		}{
-			EndSessionEndpoint: "https://idp.example.com/logout",
-			UserinfoEndpoint:   "https://idp.example.com/userinfo",
-			JwksURI:            "https://idp.example.com/jwks",
+			EndSessionEndpoint:    "https://idp.example.com/logout",
+			UserinfoEndpoint:      "https://idp.example.com/userinfo",
+			JwksURI:               "https://idp.example.com/jwks",
+			IntrospectionEndpoint: "https://idp.example.com/introspect",
 		}
 		rows := buildEndpointRows(oauth2Cfg, providerInfo)
-		if len(rows) != 5 {
-			t.Errorf("got %d rows, want 5", len(rows))
+		if len(rows) != 6 {
+			t.Errorf("got %d rows, want 6", len(rows))
 		}
 	})
 
@@ -44,9 +46,10 @@ func TestBuildEndpointRows(t *testing.T) {
 			},
 		}
 		providerInfo := struct {
-			EndSessionEndpoint string
-			UserinfoEndpoint   string
-			JwksURI            string
+			EndSessionEndpoint    string
+			UserinfoEndpoint      string
+			JwksURI               string
+			IntrospectionEndpoint string
 		}{
 			UserinfoEndpoint: "https://idp.example.com/userinfo",
 		}

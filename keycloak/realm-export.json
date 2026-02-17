@@ -100,6 +100,26 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "fedlens-oauth2",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "fedlens-oauth2-secret",
+      "redirectUris": [
+        "http://oauth2.example.com:3000/callback"
+      ],
+      "webOrigins": [
+        "http://oauth2.example.com:3000"
+      ],
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "access.token.signed.response.alg": "RS256"
+      }
     }
   ],
   "users": [

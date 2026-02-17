@@ -60,8 +60,8 @@ func main() {
 		slog.Error("Failed to load config", "error", err)
 		os.Exit(1)
 	}
-	if len(cfg.OIDC) == 0 && len(cfg.SAML) == 0 {
-		slog.Error("No [[oidc]] or [[saml]] entries defined in config file")
+	if len(cfg.OIDC) == 0 && len(cfg.SAML) == 0 && len(cfg.OAuth2) == 0 {
+		slog.Error("No [[oidc]], [[saml]], or [[oauth2]] entries defined in config file")
 		os.Exit(1)
 	}
 
@@ -107,6 +107,15 @@ func main() {
 			Label:    samlCfg.Name,
 			BaseURL:  samlCfg.BaseURL,
 			Protocol: "saml",
+		})
+	}
+	for _, oauth2Cfg := range cfg.OAuth2 {
+		routeKey := oauth2Cfg.ParsedHost + oauth2Cfg.BasePath
+		tabIndex[routeKey] = len(allTabs)
+		allTabs = append(allTabs, templates.NavTab{
+			Label:    oauth2Cfg.Name,
+			BaseURL:  oauth2Cfg.BaseURL,
+			Protocol: "oauth2",
 		})
 	}
 
@@ -175,6 +184,34 @@ func main() {
 			handler:  h,
 		})
 		slog.Info("SAML SP registered", "name", samlCfg.Name, "base_url", samlCfg.BaseURL)
+	}
+
+	// Initialize OAuth2 handlers
+	for _, oauth2Cfg := range cfg.OAuth2 {
+		handler, err := fedoidc.NewOAuth2Handler(oauth2Cfg, httpClient)
+		if err != nil {
+			slog.Error("Failed to initialize OAuth2 handler", "name", oauth2Cfg.Name, "error", err)
+			os.Exit(1)
+		}
+		routeKey := oauth2Cfg.ParsedHost + oauth2Cfg.BasePath
+		handler.SetNavTabs(makeTabsWithActive(allTabs, tabIndex[routeKey]))
+		handler.SetDefaultTheme(cfg.Theme)
+
+		mux := http.NewServeMux()
+		handler.RegisterRoutes(mux)
+
+		var h http.Handler = mux
+		if oauth2Cfg.BasePath != "" {
+			h = http.StripPrefix(oauth2Cfg.BasePath, mux)
+		}
+
+		routes = append(routes, routeEntry{
+			host:     oauth2Cfg.ParsedHost,
+			basePath: oauth2Cfg.BasePath,
+			baseURL:  oauth2Cfg.BaseURL,
+			handler:  h,
+		})
+		slog.Info("OAuth2 Client registered", "name", oauth2Cfg.Name, "base_url", oauth2Cfg.BaseURL)
 	}
 
 	// Root mux with health check, static files, and host+path-based routing

@@ -24,9 +24,10 @@ import (
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
 )
 
-// Handler is a per-SP OIDC handler set.
+// Handler is a per-SP OIDC/OAuth2 handler set.
 type Handler struct {
 	Config        config.OIDCConfig
+	oauth2Cfg     *config.OAuth2Config // non-nil for OAuth2 mode
 	sessions      *SessionStore
 	debugSessions *DebugSessionStore
 	oauth2Config  *oauth2.Config
@@ -36,10 +37,13 @@ type Handler struct {
 	capTransport  *capturingTransport
 	discoveryRaw  json.RawMessage
 	providerInfo  struct {
-		EndSessionEndpoint string
-		UserinfoEndpoint   string
-		JwksURI            string
+		EndSessionEndpoint    string
+		UserinfoEndpoint      string
+		JwksURI               string
+		IntrospectionEndpoint string
 	}
+	isOAuth2     bool   // true = OAuth2 mode (skip ID Token / UserInfo)
+	protocol     string // "oidc" or "oauth2"
 	basePath     string
 	topPageURL   string
 	navTabs      []templates.NavTab
@@ -104,14 +108,17 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 		httpClient:    capturedClient,
 		capTransport:  ct,
 		discoveryRaw:  discoveryRaw,
+		isOAuth2:      false,
+		protocol:      "oidc",
 		basePath:      cfg.BasePath,
 	}
 
 	// Extract provider claims
 	var providerClaims struct {
-		EndSessionEndpoint string `json:"end_session_endpoint"`
-		UserinfoEndpoint   string `json:"userinfo_endpoint"`
-		JwksURI            string `json:"jwks_uri"`
+		EndSessionEndpoint    string `json:"end_session_endpoint"`
+		UserinfoEndpoint      string `json:"userinfo_endpoint"`
+		JwksURI               string `json:"jwks_uri"`
+		IntrospectionEndpoint string `json:"introspection_endpoint"`
 	}
 	if err := provider.Claims(&providerClaims); err != nil {
 		log.Printf("WARNING: Could not extract provider claims (%s): %v", cfg.Name, err)
@@ -119,6 +126,12 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 	h.providerInfo.EndSessionEndpoint = providerClaims.EndSessionEndpoint
 	h.providerInfo.UserinfoEndpoint = providerClaims.UserinfoEndpoint
 	h.providerInfo.JwksURI = providerClaims.JwksURI
+	// Introspection: TOML override takes precedence over Discovery
+	if cfg.IntrospectionURL != "" {
+		h.providerInfo.IntrospectionEndpoint = cfg.IntrospectionURL
+	} else {
+		h.providerInfo.IntrospectionEndpoint = providerClaims.IntrospectionEndpoint
+	}
 
 	// Derive top-page URL from base_url
 	h.topPageURL = cfg.BaseURL + "/"
@@ -127,6 +140,157 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 	h.endpointRows = buildEndpointRows(oauth2Config, h.providerInfo)
 
 	// Pre-fetch JWKS for display (available even before login)
+	if h.providerInfo.JwksURI != "" {
+		h.jwksRaw = fetchJWKS(httpClient, h.providerInfo.JwksURI)
+		h.jwksKeys = buildJWKSKeyRows(protocol.ParseJWKSKeys(h.jwksRaw))
+	}
+
+	return h, nil
+}
+
+// NewOAuth2Handler creates and initializes an OAuth2 handler for the given config.
+// It reuses the OIDC Handler with isOAuth2=true, skipping ID Token / UserInfo features.
+func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handler, error) {
+	ct := newCapturingTransport(httpClient.Transport)
+	capturedClient := &http.Client{
+		Transport: ct,
+		Timeout:   httpClient.Timeout,
+	}
+
+	var authURL, tokenURL, jwksURI, introspectionEndpoint string
+	var discoveryRaw json.RawMessage
+
+	if cfg.Issuer != "" {
+		// RFC 8414 Discovery
+		var asMetadata struct {
+			Issuer                string `json:"issuer"`
+			AuthorizationEndpoint string `json:"authorization_endpoint"`
+			TokenEndpoint         string `json:"token_endpoint"`
+			IntrospectionEndpoint string `json:"introspection_endpoint"`
+			JwksURI               string `json:"jwks_uri"`
+		}
+
+		discoveryURL := cfg.Issuer + "/.well-known/oauth-authorization-server"
+		var lastErr error
+		for i := range 30 {
+			resp, err := httpClient.Get(discoveryURL)
+			if err != nil {
+				lastErr = err
+				log.Printf("OAuth2 AS discovery attempt %d/30 failed (%s): %v", i+1, cfg.Name, err)
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				lastErr = err
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			if resp.StatusCode != 200 {
+				// Fallback: try OIDC discovery endpoint
+				resp2, err := httpClient.Get(cfg.Issuer + "/.well-known/openid-configuration")
+				if err != nil {
+					lastErr = err
+					log.Printf("OAuth2 OIDC fallback discovery attempt %d/30 failed (%s): %v", i+1, cfg.Name, err)
+					time.Sleep(2 * time.Second)
+					continue
+				}
+				body, err = io.ReadAll(resp2.Body)
+				resp2.Body.Close()
+				if err != nil {
+					lastErr = err
+					time.Sleep(2 * time.Second)
+					continue
+				}
+				if resp2.StatusCode != 200 {
+					lastErr = fmt.Errorf("discovery returned %d", resp2.StatusCode)
+					time.Sleep(2 * time.Second)
+					continue
+				}
+			}
+			if err := json.Unmarshal(body, &asMetadata); err != nil {
+				lastErr = err
+				time.Sleep(2 * time.Second)
+				continue
+			}
+			discoveryRaw = json.RawMessage(body)
+			lastErr = nil
+			break
+		}
+		if lastErr != nil {
+			return nil, fmt.Errorf("discover OAuth2 AS %s: %w", cfg.Name, lastErr)
+		}
+		log.Printf("OAuth2 AS discovered: %s (%s)", cfg.Issuer, cfg.Name)
+
+		authURL = asMetadata.AuthorizationEndpoint
+		tokenURL = asMetadata.TokenEndpoint
+		jwksURI = asMetadata.JwksURI
+		introspectionEndpoint = asMetadata.IntrospectionEndpoint
+	} else {
+		// Manual endpoint configuration
+		authURL = cfg.AuthorizationURL
+		tokenURL = cfg.TokenURL
+	}
+
+	// TOML introspection_url overrides discovery
+	if cfg.IntrospectionURL != "" {
+		introspectionEndpoint = cfg.IntrospectionURL
+	}
+
+	oauth2Conf := &oauth2.Config{
+		ClientID:     cfg.ClientID,
+		ClientSecret: cfg.ClientSecret,
+		RedirectURL:  cfg.RedirectURI,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  authURL,
+			TokenURL: tokenURL,
+		},
+		Scopes: cfg.Scopes,
+	}
+
+	// Map OAuth2Config fields to OIDCConfig for shared handler logic
+	oidcCfg := config.OIDCConfig{
+		Name:            cfg.Name,
+		BaseURL:         cfg.BaseURL,
+		ClientID:        cfg.ClientID,
+		ClientSecret:    cfg.ClientSecret,
+		RedirectURI:     cfg.RedirectURI,
+		CallbackPath:    cfg.CallbackPath,
+		Scopes:          cfg.Scopes,
+		PKCE:            cfg.PKCE,
+		PKCEMethod:      cfg.PKCEMethod,
+		ResponseMode:    cfg.ResponseMode,
+		ExtraAuthParams: cfg.ExtraAuthParams,
+		Reauth:          cfg.Reauth,
+		ParsedHost:      cfg.ParsedHost,
+		BasePath:        cfg.BasePath,
+	}
+
+	h := &Handler{
+		Config:        oidcCfg,
+		oauth2Cfg:     &cfg,
+		sessions:      NewSessionStore(),
+		debugSessions: NewDebugSessionStore(),
+		oauth2Config:  oauth2Conf,
+		httpClient:    capturedClient,
+		capTransport:  ct,
+		discoveryRaw:  discoveryRaw,
+		isOAuth2:      true,
+		protocol:      "oauth2",
+		basePath:      cfg.BasePath,
+	}
+
+	h.providerInfo.JwksURI = jwksURI
+	h.providerInfo.IntrospectionEndpoint = introspectionEndpoint
+
+	// Derive top-page URL from base_url
+	h.topPageURL = cfg.BaseURL + "/"
+
+	// Build endpoint rows
+	h.endpointRows = buildEndpointRows(oauth2Conf, h.providerInfo)
+
+	// Pre-fetch JWKS for display
 	if h.providerInfo.JwksURI != "" {
 		h.jwksRaw = fetchJWKS(httpClient, h.providerInfo.JwksURI)
 		h.jwksKeys = buildJWKSKeyRows(protocol.ParseJWKSKeys(h.jwksRaw))
@@ -156,15 +320,17 @@ func buildJWKSKeyRows(keys []protocol.JWKSKeyInfo) []templates.JWKSKeyData {
 }
 
 func buildEndpointRows(oauth2Config *oauth2.Config, providerInfo struct {
-	EndSessionEndpoint string
-	UserinfoEndpoint   string
-	JwksURI            string
+	EndSessionEndpoint    string
+	UserinfoEndpoint      string
+	JwksURI               string
+	IntrospectionEndpoint string
 }) []components.ClaimRow {
 	var rows []components.ClaimRow
 	endpoints := []struct{ key, value string }{
 		{"authorization_endpoint", oauth2Config.Endpoint.AuthURL},
 		{"token_endpoint", oauth2Config.Endpoint.TokenURL},
 		{"userinfo_endpoint", providerInfo.UserinfoEndpoint},
+		{"introspection_endpoint", providerInfo.IntrospectionEndpoint},
 		{"jwks_uri", providerInfo.JwksURI},
 		{"end_session_endpoint", providerInfo.EndSessionEndpoint},
 	}
@@ -194,14 +360,25 @@ func (h *Handler) cookiePath() string {
 	return h.basePath + "/"
 }
 
-// RegisterRoutes registers OIDC handlers on the given mux.
+// RegisterRoutes registers OIDC/OAuth2 handlers on the given mux.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
 	mux.HandleFunc("/login", h.handleLogin)
-	mux.HandleFunc(h.Config.CallbackPath, h.handleCallback)
-	mux.HandleFunc("/logout", h.handleLogout)
+	callbackPath := h.Config.CallbackPath
+	if h.isOAuth2 && h.oauth2Cfg != nil {
+		callbackPath = h.oauth2Cfg.CallbackPath
+	}
+	mux.HandleFunc(callbackPath, h.handleCallback)
+	if !h.isOAuth2 {
+		mux.HandleFunc("/logout", h.handleLogout)
+	}
 	mux.HandleFunc("/refresh", h.handleRefresh)
-	mux.HandleFunc("/userinfo", h.handleUserInfo)
+	if !h.isOAuth2 {
+		mux.HandleFunc("/userinfo", h.handleUserInfo)
+	}
+	if h.providerInfo.IntrospectionEndpoint != "" {
+		mux.HandleFunc("/introspection", h.handleIntrospection)
+	}
 	mux.HandleFunc("/reauth", h.handleReauth)
 	mux.HandleFunc("/clear", h.handleClear)
 }
@@ -244,6 +421,12 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		JWKSKeys:        h.jwksKeys,
 	}
 
+	// Build reference section label based on protocol
+	refLabel := "OpenID Provider"
+	if h.isOAuth2 {
+		refLabel = "Authorization Server"
+	}
+
 	page := templates.PageInfo{
 		Tabs:         h.navTabs,
 		ActiveTab:    h.activeTab(),
@@ -251,7 +434,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		ClearURL:     h.basePath + "/clear",
 		References: []templates.Section{
 			{ID: "sec-flow", Label: "Flow Diagram"},
-			{ID: "sec-provider", Label: "OpenID Provider"},
+			{ID: "sec-provider", Label: refLabel},
 		},
 	}
 
@@ -259,9 +442,14 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		// Logged in
 		page.Status = "connected"
 		page.StatusLabel = "Active Session"
-		page.LogoutURL = h.basePath + "/logout"
-		if h.providerInfo.UserinfoEndpoint != "" {
+		if !h.isOAuth2 {
+			page.LogoutURL = h.basePath + "/logout"
+		}
+		if !h.isOAuth2 && h.providerInfo.UserinfoEndpoint != "" {
 			page.UserInfoURL = h.basePath + "/userinfo"
+		}
+		if h.providerInfo.IntrospectionEndpoint != "" {
+			page.IntrospectionURL = h.basePath + "/introspection"
 		}
 		if data.HasRefreshToken {
 			page.RefreshURL = h.basePath + "/refresh"
@@ -294,7 +482,11 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	templates.OIDCIndex(page, data).Render(r.Context(), w)
+	if h.isOAuth2 {
+		templates.OAuth2Index(page, data).Render(r.Context(), w)
+	} else {
+		templates.OIDCIndex(page, data).Render(r.Context(), w)
+	}
 }
 
 // buildResultEntryData converts a ResultEntry to template display data.
@@ -419,8 +611,8 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.IDTokenSigRows = buildJWTSigRows(entry.IDTokenSigInfo)
 	}
 
-	// Access Token Claims (JWT only, not for UserInfo action entries)
-	if entry.Type != "UserInfo" && protocol.IsJWT(entry.AccessTokenRaw) {
+	// Access Token Claims (JWT only, not for UserInfo or Introspection entries)
+	if entry.Type != "UserInfo" && entry.Type != "Introspection" && protocol.IsJWT(entry.AccessTokenRaw) {
 		_, atPayloadRaw := protocol.DecodeJWTRaw(entry.AccessTokenRaw)
 		var atClaims map[string]any
 		if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
@@ -506,6 +698,35 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.UserInfoResponseConnError = protocol.CleanGoErrorMessage(entry.UserInfoError.Detail)
 	}
 
+	// Introspection Request
+	if entry.IntrospectionRequestURL != "" {
+		data.IntrospectionRequestURL = entry.IntrospectionRequestURL
+		orderedKeys := []string{"token", "token_type_hint"}
+		for _, k := range orderedKeys {
+			if v, ok := entry.IntrospectionRequestParams[k]; ok {
+				data.IntrospectionRequestParams = append(data.IntrospectionRequestParams, components.ClaimRow{Key: k, Value: v})
+			}
+		}
+	}
+	// Introspection Response
+	if entry.IntrospectionHTTPResponse != nil {
+		data.IntrospectionResponseStatusLine, data.IntrospectionResponseHeaders,
+			data.IntrospectionResponseBody, data.IntrospectionResponseBodyLang = buildHTTPResponseDisplay(entry.IntrospectionHTTPResponse)
+	}
+	if len(entry.IntrospectionResponse) > 0 {
+		data.IntrospectionResponseJSON = protocol.PrettyJSON(entry.IntrospectionResponse)
+		// Parse Introspection Response into ClaimRow table format
+		var introClaims map[string]any
+		if json.Unmarshal(entry.IntrospectionResponse, &introClaims) == nil {
+			for _, k := range protocol.SortedKeys(introClaims) {
+				data.IntrospectionClaims = append(data.IntrospectionClaims, components.ClaimRow{
+					Key:   k,
+					Value: protocol.FormatClaimValue(k, introClaims[k]),
+				})
+			}
+		}
+	}
+
 	// Raw Tokens
 	if entry.IDTokenRaw != "" {
 		data.IDTokenRaw = entry.IDTokenRaw
@@ -545,22 +766,33 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	case entry.Type == "UserInfo":
 		data.SidebarLabel = "UserInfo"
 		data.SidebarDot = "userinfo"
+	case entry.Type == "Introspection":
+		data.SidebarLabel = "Introspection"
+		data.SidebarDot = "introspection"
 	default: // Re-auth: *
 		data.SidebarLabel = entry.Type
 		data.SidebarDot = "reauth"
 	}
 
 	// Build sidebar children (sub-sections)
-	if len(data.IDTokenClaims) > 0 || len(data.UserInfoClaims) > 0 {
-		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
+	if entry.Type == "Introspection" {
+		if len(data.IntrospectionClaims) > 0 {
+			data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Token Metadata"})
+		}
+	} else if len(data.IDTokenClaims) > 0 || len(data.UserInfoClaims) > 0 || len(data.AccessTokenClaims) > 0 {
+		label := "Identity & Claims"
+		if h.isOAuth2 {
+			label = "Access Token Claims"
+		}
+		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: label})
 	}
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
-	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" {
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.IntrospectionRequestURL != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
-	if entry.Type != "UserInfo" && (entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenRaw != "") {
+	if entry.Type != "UserInfo" && entry.Type != "Introspection" && (entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenRaw != "") {
 		data.Children = append(data.Children, templates.Section{ID: id + "-tokens", Label: "Raw Tokens"})
 	}
 	return data
@@ -852,68 +1084,91 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	tokenResponseJSON := marshalTokenResponse(token)
 
-	rawIDToken, ok := token.Extra("id_token").(string)
-	if !ok {
-		log.Println("No id_token in token response")
-		errorEntry := ResultEntry{
-			Type:                    "Error: " + resultType,
-			Timestamp:               time.Now(),
-			AuthRequestURL:          authRequestURL,
-			AuthResponseRaw:         authResponseRaw,
-			AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
-			TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
-			TokenRequestParams:      tokenRequestParams,
-			TokenResponse:           tokenResponseJSON,
-			ErrorCode:               "missing_id_token",
-			ErrorDetail:             "No id_token in token response",
-		}
-		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
-		return
-	}
-
-	idToken, err := h.verifier.Verify(tokenCtx, rawIDToken)
-	if err != nil {
-		log.Printf("ID token verification failed: %v", err)
-		errorEntry := ResultEntry{
-			Type:                    "Error: " + resultType,
-			Timestamp:               time.Now(),
-			AuthRequestURL:          authRequestURL,
-			AuthResponseRaw:         authResponseRaw,
-			AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
-			TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
-			TokenRequestParams:      tokenRequestParams,
-			TokenResponse:           tokenResponseJSON,
-			IDTokenRaw:              rawIDToken,
-			ErrorCode:               "id_token_verification_failed",
-			ErrorDetail:             err.Error(),
-		}
-		h.saveErrorEntry(w, r, errorEntry)
-		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
-		return
-	}
-
+	var rawIDToken string
 	var claims map[string]any
-	if err := idToken.Claims(&claims); err != nil {
-		log.Printf("Failed to extract claims: %v", err)
-		http.Error(w, "Failed to extract claims", http.StatusInternalServerError)
-		return
-	}
-
-	// Fetch UserInfo
 	var userInfoResponse json.RawMessage
 	var userInfoErr *UserInfoError
 	var userInfoHTTPResp *HTTPResponseInfo
-	if h.providerInfo.UserinfoEndpoint != "" {
-		userInfoResponse, userInfoErr, userInfoHTTPResp = fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, token.AccessToken)
+	var idTokenSigInfo *protocol.JWTSignatureInfo
+
+	if h.isOAuth2 {
+		// OAuth2 mode: no ID Token, no UserInfo
+		// Extract claims from Access Token if it's a JWT
+		if protocol.IsJWT(token.AccessToken) {
+			_, atPayloadRaw := protocol.DecodeJWTRaw(token.AccessToken)
+			var atClaims map[string]any
+			if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
+				claims = atClaims
+			}
+		}
+	} else {
+		// OIDC mode: verify ID Token and fetch UserInfo
+		var ok bool
+		rawIDToken, ok = token.Extra("id_token").(string)
+		if !ok {
+			log.Println("No id_token in token response")
+			errorEntry := ResultEntry{
+				Type:                    "Error: " + resultType,
+				Timestamp:               time.Now(),
+				AuthRequestURL:          authRequestURL,
+				AuthResponseRaw:         authResponseRaw,
+				AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+				TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
+				TokenRequestParams:      tokenRequestParams,
+				TokenResponse:           tokenResponseJSON,
+				ErrorCode:               "missing_id_token",
+				ErrorDetail:             "No id_token in token response",
+			}
+			h.saveErrorEntry(w, r, errorEntry)
+			http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+			return
+		}
+
+		idToken, err := h.verifier.Verify(tokenCtx, rawIDToken)
+		if err != nil {
+			log.Printf("ID token verification failed: %v", err)
+			errorEntry := ResultEntry{
+				Type:                    "Error: " + resultType,
+				Timestamp:               time.Now(),
+				AuthRequestURL:          authRequestURL,
+				AuthResponseRaw:         authResponseRaw,
+				AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
+				TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
+				TokenRequestParams:      tokenRequestParams,
+				TokenResponse:           tokenResponseJSON,
+				IDTokenRaw:              rawIDToken,
+				ErrorCode:               "id_token_verification_failed",
+				ErrorDetail:             err.Error(),
+			}
+			h.saveErrorEntry(w, r, errorEntry)
+			http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+			return
+		}
+
+		if err := idToken.Claims(&claims); err != nil {
+			log.Printf("Failed to extract claims: %v", err)
+			http.Error(w, "Failed to extract claims", http.StatusInternalServerError)
+			return
+		}
+
+		// Fetch UserInfo
+		if h.providerInfo.UserinfoEndpoint != "" {
+			userInfoResponse, userInfoErr, userInfoHTTPResp = fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, token.AccessToken)
+		}
+
+		// ID Token signature info
+		var jwksRaw json.RawMessage
+		if h.providerInfo.JwksURI != "" {
+			jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
+		}
+		idTokenSigInfo = protocol.BuildJWTSignatureInfo(rawIDToken, jwksRaw, true)
 	}
 
-	// Fetch JWKS and build signature info
+	// Fetch JWKS and build Access Token signature info
 	var jwksRaw json.RawMessage
 	if h.providerInfo.JwksURI != "" {
 		jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
 	}
-	idTokenSigInfo := protocol.BuildJWTSignatureInfo(rawIDToken, jwksRaw, true)
 	var accessTokenSigInfo *protocol.JWTSignatureInfo
 	if protocol.IsJWT(token.AccessToken) {
 		accessTokenSigInfo = protocol.BuildJWTSignatureInfo(token.AccessToken, jwksRaw, true)
@@ -948,8 +1203,8 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		JWKSResponse:         jwksRaw,
 	}
 
-	// Record UserInfo Request info
-	if h.providerInfo.UserinfoEndpoint != "" {
+	// Record UserInfo Request info (OIDC mode only)
+	if !h.isOAuth2 && h.providerInfo.UserinfoEndpoint != "" {
 		entry.UserInfoRequestURL = h.providerInfo.UserinfoEndpoint
 		entry.UserInfoRequestMethod = "GET"
 	}
@@ -1053,13 +1308,17 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build Logout entry
+	logoutType := "Logout (RP)"
+	if h.isOAuth2 {
+		logoutType = "Logout (Client)"
+	}
 	logoutEntry := ResultEntry{
-		Type:      "Logout (RP)",
+		Type:      logoutType,
 		Timestamp: time.Now(),
 	}
 
-	// Build end_session_endpoint URL
-	if h.providerInfo.EndSessionEndpoint != "" {
+	// Build end_session_endpoint URL (OIDC mode only)
+	if !h.isOAuth2 && h.providerInfo.EndSessionEndpoint != "" {
 		logoutURL := h.providerInfo.EndSessionEndpoint + "?post_logout_redirect_uri=" + url.QueryEscape(h.topPageURL) + "&client_id=" + url.QueryEscape(h.Config.ClientID)
 
 		// Add id_token_hint if enabled (default: true)
@@ -1128,6 +1387,101 @@ func (h *Handler) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 		UserInfoError:         userInfoErr,
 		UserInfoHTTPResponse:  uiHTTPResp,
 		AccessTokenRaw:        session.AccessTokenRaw,
+	}
+
+	h.saveDebugEntry(w, r, entry)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+}
+
+// handleIntrospection performs a token introspection (RFC 7662) using the stored access token.
+func (h *Handler) handleIntrospection(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	session := h.sessions.GetByID(cookie.Value)
+	if session == nil || session.AccessTokenRaw == "" {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	if h.providerInfo.IntrospectionEndpoint == "" {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	introspectionURL := h.providerInfo.IntrospectionEndpoint
+	params := url.Values{
+		"token":           {session.AccessTokenRaw},
+		"token_type_hint": {"access_token"},
+	}
+
+	req, err := http.NewRequest("POST", introspectionURL, strings.NewReader(params.Encode()))
+	if err != nil {
+		log.Printf("Failed to create introspection request: %v", err)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(h.oauth2Config.ClientID, h.oauth2Config.ClientSecret)
+
+	resp, err := h.httpClient.Do(req)
+
+	// Capture HTTP response
+	introspectionCapture := h.capTransport.LastCapture()
+	var introspectionHTTPResp *HTTPResponseInfo
+	if introspectionCapture != nil {
+		introspectionHTTPResp = &HTTPResponseInfo{
+			StatusCode: introspectionCapture.StatusCode,
+			Headers:    introspectionCapture.Headers,
+			Body:       string(introspectionCapture.Body),
+		}
+	}
+
+	if err != nil {
+		log.Printf("Introspection request failed: %v", err)
+		errorEntry := ResultEntry{
+			Type:                      "Error: Introspection",
+			Timestamp:                 time.Now(),
+			IntrospectionRequestURL:   introspectionURL,
+			IntrospectionRequestParams: map[string]string{"token": session.AccessTokenRaw, "token_type_hint": "access_token"},
+			IntrospectionHTTPResponse: introspectionHTTPResp,
+			ErrorCode:                 "connection_failed",
+			ErrorDetail:               err.Error(),
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read introspection response: %v", err)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	entryType := "Introspection"
+	if resp.StatusCode >= 300 {
+		entryType = "Error: Introspection"
+	}
+
+	entry := ResultEntry{
+		Type:                      entryType,
+		Timestamp:                 time.Now(),
+		IntrospectionRequestURL:   introspectionURL,
+		IntrospectionRequestParams: map[string]string{"token": session.AccessTokenRaw, "token_type_hint": "access_token"},
+		IntrospectionResponse:     json.RawMessage(body),
+		IntrospectionHTTPResponse: introspectionHTTPResp,
+		AccessTokenRaw:            session.AccessTokenRaw,
+	}
+
+	if resp.StatusCode >= 300 {
+		entry.ErrorCode = "introspection_error"
+		entry.ErrorDetail = fmt.Sprintf("Introspection endpoint returned %d", resp.StatusCode)
 	}
 
 	h.saveDebugEntry(w, r, entry)
@@ -1233,19 +1587,21 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		RefreshTokenRaw:    refreshTokenForDisplay,
 	}
 
-	if newIDToken, ok := newToken.Extra("id_token").(string); ok {
-		entry.IDTokenRaw = newIDToken
-		if idToken, err := h.verifier.Verify(tokenCtx, newIDToken); err == nil {
-			var claims map[string]any
-			if err := idToken.Claims(&claims); err == nil {
-				entry.Claims = claims
+	if !h.isOAuth2 {
+		if newIDToken, ok := newToken.Extra("id_token").(string); ok {
+			entry.IDTokenRaw = newIDToken
+			if idToken, err := h.verifier.Verify(tokenCtx, newIDToken); err == nil {
+				var claims map[string]any
+				if err := idToken.Claims(&claims); err == nil {
+					entry.Claims = claims
+				}
 			}
+			var jwksRaw json.RawMessage
+			if h.providerInfo.JwksURI != "" {
+				jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
+			}
+			entry.IDTokenSigInfo = protocol.BuildJWTSignatureInfo(newIDToken, jwksRaw, true)
 		}
-		var jwksRaw json.RawMessage
-		if h.providerInfo.JwksURI != "" {
-			jwksRaw = fetchJWKS(h.httpClient, h.providerInfo.JwksURI)
-		}
-		entry.IDTokenSigInfo = protocol.BuildJWTSignatureInfo(newIDToken, jwksRaw, true)
 	}
 
 	if protocol.IsJWT(newToken.AccessToken) {

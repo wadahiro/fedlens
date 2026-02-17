@@ -2,6 +2,7 @@ import { Page } from "@playwright/test";
 
 export const OIDC_URL = "http://oidc.example.com:3000";
 export const SAML_URL = "http://saml.example.com:3000";
+export const OAUTH2_URL = "http://oauth2.example.com:3000";
 
 export async function keycloakLogin(page: Page) {
   await page.fill("#username", "testuser");

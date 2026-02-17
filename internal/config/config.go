@@ -11,16 +11,17 @@ import (
 
 // Config is the top-level configuration.
 type Config struct {
-	ListenAddr         string       `toml:"listen_addr"`
-	InsecureSkipVerify bool         `toml:"insecure_skip_verify"`
-	LogLevel           string       `toml:"log_level"`
-	Theme              string       `toml:"theme"`
-	Timezone           string       `toml:"timezone"`
-	TLSCertPath        string       `toml:"tls_cert_path"`
-	TLSKeyPath         string       `toml:"tls_key_path"`
-	TLSSelfSigned      bool         `toml:"tls_self_signed"`
-	OIDC               []OIDCConfig `toml:"oidc"`
-	SAML               []SAMLConfig `toml:"saml"`
+	ListenAddr         string         `toml:"listen_addr"`
+	InsecureSkipVerify bool           `toml:"insecure_skip_verify"`
+	LogLevel           string         `toml:"log_level"`
+	Theme              string         `toml:"theme"`
+	Timezone           string         `toml:"timezone"`
+	TLSCertPath        string         `toml:"tls_cert_path"`
+	TLSKeyPath         string         `toml:"tls_key_path"`
+	TLSSelfSigned      bool           `toml:"tls_self_signed"`
+	OIDC               []OIDCConfig   `toml:"oidc"`
+	SAML               []SAMLConfig   `toml:"saml"`
+	OAuth2             []OAuth2Config `toml:"oauth2"`
 }
 
 // OIDCConfig defines a single OIDC RP instance.
@@ -38,12 +39,37 @@ type OIDCConfig struct {
 	ResponseType    string            `toml:"response_type"`
 	ResponseMode    string            `toml:"response_mode"`
 	ExtraAuthParams map[string]string `toml:"extra_auth_params"`
+	IntrospectionURL  string            `toml:"introspection_url"`    // Token Introspection endpoint (optional, Discovery takes precedence)
 	Reauth            []ReauthConfig    `toml:"reauth"`
 	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
 
 	// Computed fields (not from TOML)
 	ParsedHost string // host:port extracted from base_url
 	BasePath   string // path prefix extracted from base_url (empty for host-based routing)
+}
+
+// OAuth2Config defines a single OAuth2 Client instance.
+type OAuth2Config struct {
+	Name             string            `toml:"name"`
+	BaseURL          string            `toml:"base_url"`
+	Issuer           string            `toml:"issuer"`            // RFC 8414 Discovery (optional)
+	AuthorizationURL string            `toml:"authorization_url"` // Manual (required if no issuer)
+	TokenURL         string            `toml:"token_url"`         // Manual (required if no issuer)
+	IntrospectionURL string            `toml:"introspection_url"` // Token Introspection endpoint (optional)
+	ClientID         string            `toml:"client_id"`
+	ClientSecret     string            `toml:"client_secret"`
+	RedirectURI      string            `toml:"redirect_uri"`
+	CallbackPath     string            `toml:"callback_path"`
+	Scopes           []string          `toml:"scopes"`
+	PKCE             bool              `toml:"pkce"`
+	PKCEMethod       string            `toml:"pkce_method"`
+	ResponseMode     string            `toml:"response_mode"`
+	ExtraAuthParams  map[string]string `toml:"extra_auth_params"`
+	Reauth           []ReauthConfig    `toml:"reauth"`
+
+	// Computed fields (not from TOML)
+	ParsedHost string
+	BasePath   string
 }
 
 // ReauthConfig defines a re-authentication profile with extra auth params.
@@ -123,6 +149,16 @@ func Load(path string) (*Config, error) {
 	for i := range cfg.SAML {
 		applySAMLDefaults(&cfg.SAML[i])
 	}
+	for i := range cfg.OAuth2 {
+		applyOAuth2Defaults(&cfg.OAuth2[i])
+	}
+
+	// Validate OAuth2 entries
+	for i, oa := range cfg.OAuth2 {
+		if oa.Issuer == "" && (oa.AuthorizationURL == "" || oa.TokenURL == "") {
+			return nil, fmt.Errorf("oauth2[%d] (%s): either issuer or both authorization_url and token_url are required", i, oa.Name)
+		}
+	}
 
 	// Parse and validate base_url for all entries
 	seen := make(map[string]string) // routeKey -> name for duplicate detection
@@ -145,6 +181,16 @@ func Load(path string) (*Config, error) {
 			return nil, fmt.Errorf("duplicate base_url route %q: %s and %s", routeKey, existing, cfg.SAML[i].Name)
 		}
 		seen[routeKey] = cfg.SAML[i].Name
+	}
+	for i := range cfg.OAuth2 {
+		if err := parseBaseURL(&cfg.OAuth2[i].BaseURL, &cfg.OAuth2[i].ParsedHost, &cfg.OAuth2[i].BasePath); err != nil {
+			return nil, fmt.Errorf("oauth2[%d] (%s): %w", i, cfg.OAuth2[i].Name, err)
+		}
+		routeKey := cfg.OAuth2[i].ParsedHost + cfg.OAuth2[i].BasePath
+		if existing, ok := seen[routeKey]; ok {
+			return nil, fmt.Errorf("duplicate base_url route %q: %s and %s", routeKey, existing, cfg.OAuth2[i].Name)
+		}
+		seen[routeKey] = cfg.OAuth2[i].Name
 	}
 
 	return cfg, nil
@@ -200,6 +246,18 @@ func (c *Config) TLSEnabled() bool {
 	return c.TLSSelfSigned || (c.TLSCertPath != "" && c.TLSKeyPath != "")
 }
 
+
+func applyOAuth2Defaults(c *OAuth2Config) {
+	if len(c.Scopes) == 0 {
+		c.Scopes = []string{"profile", "email"}
+	}
+	if c.PKCEMethod == "" {
+		c.PKCEMethod = "S256"
+	}
+	if c.CallbackPath == "" {
+		c.CallbackPath = "/callback"
+	}
+}
 
 func applySAMLDefaults(c *SAMLConfig) {
 	if c.ACSPath == "" {

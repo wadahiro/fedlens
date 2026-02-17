@@ -52,6 +52,11 @@ type ResultEntry struct {
 	// UserInfo Request fields (Login/Re-auth/UserInfo action)
 	UserInfoRequestURL    string
 	UserInfoRequestMethod string // "GET"
+	// Introspection fields
+	IntrospectionRequestURL  string
+	IntrospectionRequestParams map[string]string
+	IntrospectionResponse    json.RawMessage
+	IntrospectionHTTPResponse *HTTPResponseInfo
 	// Error fields
 	ErrorCode        string // OIDC error code (e.g. "access_denied")
 	ErrorDescription string // Human-readable error description

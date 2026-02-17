@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  A federation protocol debug tool for OIDC and SAML.<br>
-  fedlens acts as both an <strong>OpenID Connect Relying Party</strong> and a <strong>SAML Service Provider</strong>,<br>
+  A federation protocol debug tool for OIDC, OAuth2, and SAML.<br>
+  fedlens acts as an <strong>OpenID Connect Relying Party</strong>, <strong>OAuth2 Client</strong>, and <strong>SAML Service Provider</strong>,<br>
   displaying the raw protocol details at every layer in a single web UI.
 </p>
 
@@ -46,10 +46,22 @@
 - AuthnRequest XML, SAML Response XML, IdP Metadata display
 - **Sequence Diagram** showing the SP-Initiated SSO flow
 
+### OAuth2
+
+- **Authorization Code Flow** with optional **PKCE** support (S256 / plain)
+- **RFC 8414 Discovery** (OAuth2 Authorization Server Metadata) or manual endpoint configuration
+- **Access Token Claims** table (when JWT) with **Signature Verification**
+- **Token Refresh Flow**
+- **Token Introspection** (RFC 7662) with HTTP request/response capture
+- **Re-authentication Profiles** for custom authorization parameters
+- Authorization Request / Response, Token Request / Response display
+- **Sequence Diagram** showing the OAuth2 Authorization Code Flow
+
 ### General
 
+- **Token Introspection** (RFC 7662) support for OIDC and OAuth2
 - **Multiple SP/RP** support via TOML configuration
-- **Tab Navigation** to switch between multiple OIDC RPs and SAML SPs
+- **Tab Navigation** to switch between multiple OIDC RPs, OAuth2 Clients, and SAML SPs
 - **TLS Support** with self-signed cert auto-generation or external certificates
 - **Dark Mode** toggle with system preference detection
 - **Theme Configuration** (`light` / `dark` / `auto`)
@@ -72,7 +84,7 @@ The easiest way to try fedlens is using Docker Compose with a pre-configured Key
 Add the following entries to your `/etc/hosts`:
 
 ```
-127.0.0.1 idp.example.com oidc.example.com saml.example.com
+127.0.0.1 idp.example.com oidc.example.com saml.example.com oauth2.example.com
 ```
 
 **Start:**
@@ -84,6 +96,7 @@ docker compose up
 **Access:**
 
 - OIDC view: http://oidc.example.com:3000
+- OAuth2 view: http://oauth2.example.com:3000
 - SAML view: http://saml.example.com:3000
 - Keycloak Admin Console: http://idp.example.com:8080 (admin / admin)
 
@@ -139,6 +152,7 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
 | `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
+| `introspection_url` | No | | Token Introspection endpoint URL (optional, Discovery takes precedence) |
 | `logout_id_token_hint` | No | `true` | Send `id_token_hint` in logout request |
 
 ##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
@@ -155,6 +169,34 @@ Each `[[oidc.reauth]]` block defines a re-authentication profile with custom par
 name = "Step-up Auth"
 extra_auth_params = { acr_values = "urn:example:mfa" }
 ```
+
+#### OAuth2 Client (`[[oauth2]]`)
+
+Each `[[oauth2]]` block defines a separate OAuth2 Client. Uses the same handler as OIDC but skips ID Token verification and UserInfo.
+
+| Key | Required | Default | Description |
+|---|---|---|---|
+| `name` | Yes | | Display name (shown in tab) |
+| `base_url` | Yes | | Base URL for routing |
+| `issuer` | No* | | RFC 8414 Discovery URL |
+| `authorization_url` | No* | | Authorization endpoint URL (manual) |
+| `token_url` | No* | | Token endpoint URL (manual) |
+| `introspection_url` | No | | Token Introspection endpoint URL |
+| `client_id` | Yes | | Client ID |
+| `client_secret` | Yes | | Client Secret |
+| `redirect_uri` | Yes | | Redirect URI (callback URL) |
+| `scopes` | No | `["profile", "email"]` | Requested scopes |
+| `pkce` | No | `false` | Enable PKCE |
+| `pkce_method` | No | `S256` | PKCE method (`S256` or `plain`) |
+| `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
+| `callback_path` | No | `/callback` | Callback endpoint path |
+| `extra_auth_params` | No | | Extra auth parameters |
+
+\* Either `issuer` (for RFC 8414 Discovery) or both `authorization_url` + `token_url` (manual) are required.
+
+##### OAuth2 Re-authentication Profiles (`[[oauth2.reauth]]`)
+
+Same format as OIDC re-authentication profiles.
 
 #### SAML SP (`[[saml]]`)
 
@@ -233,18 +275,30 @@ entity_id = "http://okta-saml.example.com:3000/saml/metadata"
 root_url = "http://okta-saml.example.com:3000"
 ```
 
-This produces tabs: `Keycloak OIDC` | `Entra ID` | `Keycloak SAML` | `Okta SAML`
+[[oauth2]]
+name = "GitHub OAuth"
+base_url = "http://github-oauth.example.com:3000"
+authorization_url = "https://github.com/login/oauth/authorize"
+token_url = "https://github.com/login/oauth/access_token"
+client_id = "your-github-client-id"
+client_secret = "your-github-client-secret"
+redirect_uri = "http://github-oauth.example.com:3000/callback"
+scopes = ["read:user", "user:email"]
+```
+
+This produces tabs: `Keycloak OIDC` | `Entra ID` | `GitHub OAuth` | `Keycloak SAML` | `Okta SAML`
 
 ## How It Works
 
 fedlens runs a single HTTP server that routes requests based on `base_url` (host + optional path prefix):
 
 - Each `[[oidc]]` entry creates an OIDC RP handler bound to its `base_url`
+- Each `[[oauth2]]` entry creates an OAuth2 Client handler bound to its `base_url`
 - Each `[[saml]]` entry creates a SAML SP handler bound to its `base_url`
 - **Host-based**: `base_url = "http://oidc.example.com:3000"` → routes by host only
 - **Path-based**: `base_url = "http://localhost:3000/myapp"` → routes by host + path prefix (no `/etc/hosts` needed)
 
-On startup, fedlens fetches OIDC discovery metadata and SAML IdP metadata, making them available on the pre-login screen. After authentication, all protocol exchange details (tokens, assertions, signatures) are displayed.
+On startup, fedlens fetches OIDC discovery metadata, OAuth2 authorization server metadata (RFC 8414), and SAML IdP metadata, making them available on the pre-login screen. After authentication, all protocol exchange details (tokens, assertions, signatures) are displayed.
 
 ### `base_url` and TLS Deployment Patterns
 
@@ -351,13 +405,14 @@ The action bar buttons have fixed `data-testid` attributes. Visibility depends o
 
 | `data-testid` | Element | Protocol | Shown when |
 |---|---|---|---|
-| `login-btn` | Login button | OIDC / SAML | No session |
-| `logout-btn` | Logout button | OIDC / SAML | Active session |
+| `login-btn` | Login button | OIDC / OAuth2 / SAML | No session |
+| `logout-btn` | Logout button | OIDC / OAuth2 / SAML | Active session |
 | `userinfo-btn` | UserInfo button | OIDC only | Active session + UserInfo endpoint configured |
-| `refresh-btn` | Refresh Token button | OIDC only | Active session + refresh token present |
-| `reauth-btn` | Re-authenticate (default) | OIDC / SAML | Active session + `[[*.reauth]]` configured |
-| `reauth-more-btn` | "More ▾" dropdown trigger | OIDC / SAML | 2+ reauth profiles configured |
-| `reauth-0`, `reauth-1`, ... | Dropdown reauth items (0-indexed) | OIDC / SAML | Inside "More ▾" dropdown |
+| `introspection-btn` | Introspection button | OIDC / OAuth2 | Active session + Introspection endpoint configured |
+| `refresh-btn` | Refresh Token button | OIDC / OAuth2 | Active session + refresh token present |
+| `reauth-btn` | Re-authenticate (default) | OIDC / OAuth2 / SAML | Active session + `[[*.reauth]]` configured |
+| `reauth-more-btn` | "More ▾" dropdown trigger | OIDC / OAuth2 / SAML | 2+ reauth profiles configured |
+| `reauth-0`, `reauth-1`, ... | Dropdown reauth items (0-indexed) | OIDC / OAuth2 / SAML | Inside "More ▾" dropdown |
 
 **`data-testid` on value cells**
 

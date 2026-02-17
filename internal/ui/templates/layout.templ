@@ -25,19 +25,20 @@ type ReauthItem struct {
 
 // PageInfo holds layout metadata for every page.
 type PageInfo struct {
-	Tabs         []NavTab
-	ActiveTab    NavTab
-	Status       string // "connected" or "disconnected"
-	StatusLabel  string // "Active Session" or "No Session"
-	LoginURL     string
-	LogoutURL    string
-	UserInfoURL  string
-	RefreshURL   string
-	ClearURL     string // path to clear debug results
-	ReauthItems  []ReauthItem
-	Sections     []Section // debug results (RESULTS)
-	References   []Section // reference info (REFERENCE)
-	DefaultTheme string    // "light", "dark", or "auto"
+	Tabs              []NavTab
+	ActiveTab         NavTab
+	Status            string // "connected" or "disconnected"
+	StatusLabel       string // "Active Session" or "No Session"
+	LoginURL          string
+	LogoutURL         string
+	UserInfoURL       string
+	IntrospectionURL  string // Token Introspection URL (if endpoint available)
+	RefreshURL        string
+	ClearURL          string // path to clear debug results
+	ReauthItems       []ReauthItem
+	Sections          []Section // debug results (RESULTS)
+	References        []Section // reference info (REFERENCE)
+	DefaultTheme      string    // "light", "dark", or "auto"
 }
 
 func sidebarBadgeClass(dot string) string {
@@ -47,6 +48,8 @@ func sidebarBadgeClass(dot string) string {
 	case "refresh":
 		return "result-refresh"
 	case "userinfo":
+		return "result-refresh"
+	case "introspection":
 		return "result-refresh"
 	case "reauth":
 		return "result-reauth"
@@ -67,6 +70,8 @@ func sidebarBadgeLabel(dot string) string {
 		return "Refresh"
 	case "userinfo":
 		return "UserInfo"
+	case "introspection":
+		return "Introspection"
 	case "reauth":
 		return "Re-auth"
 	case "logout":
@@ -133,6 +138,8 @@ templ Layout(title string, page PageInfo) {
 						<span class="header-protocol-label">
 							if page.ActiveTab.Protocol == "oidc" {
 								OIDC RP: { page.ActiveTab.Label }
+							} else if page.ActiveTab.Protocol == "oauth2" {
+								OAuth2 Client: { page.ActiveTab.Label }
 							} else {
 								SAML SP: { page.ActiveTab.Label }
 							}
@@ -167,6 +174,8 @@ templ Layout(title string, page PageInfo) {
 										<a href={ templ.SafeURL(tab.BaseURL + "/") } aria-current="page">
 											if tab.Protocol == "oidc" {
 												<kbd class="protocol-oidc">OIDC</kbd>
+											} else if tab.Protocol == "oauth2" {
+												<kbd class="protocol-oauth2">OAuth2</kbd>
 											} else {
 												<kbd class="protocol-saml">SAML</kbd>
 											}
@@ -176,6 +185,8 @@ templ Layout(title string, page PageInfo) {
 										<a href={ templ.SafeURL(tab.BaseURL + "/") }>
 											if tab.Protocol == "oidc" {
 												<kbd class="protocol-oidc">OIDC</kbd>
+											} else if tab.Protocol == "oauth2" {
+												<kbd class="protocol-oauth2">OAuth2</kbd>
 											} else {
 												<kbd class="protocol-saml">SAML</kbd>
 											}
@@ -193,7 +204,7 @@ templ Layout(title string, page PageInfo) {
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
 									<li>
-										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
+										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-introspection", sec.Dot == "introspection"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
 											<span class="sidebar-entry-content">
 												if sec.Timestamp != "" {
 													<small class="sidebar-timestamp">{ sec.Timestamp }</small>
