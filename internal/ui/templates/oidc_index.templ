@@ -92,6 +92,18 @@ type OIDCResultEntryData struct {
 	IntrospectionResponseBody       string
 	IntrospectionResponseBodyLang   string
 	IntrospectionResponseConnError  string
+	// Resource Access fields
+	ResourceRequestURL         string
+	ResourceRequestRaw         string // "GET <url>\nAuthorization: Bearer <token>"
+	ResourceClaims             []components.ClaimRow
+	ResourceResponseJSON       string
+	ResourceResponseStatusLine string
+	ResourceResponseHeaders    string
+	ResourceResponseBody       string
+	ResourceResponseBodyLang   string
+	ResourceResponseConnError  string
+	ResourceErrorRows          []components.ErrorRow
+	ResourceServerName         string
 }
 
 // OIDCPageData holds all data for the OIDC page.
@@ -194,6 +206,8 @@ func resultBadgeClass(entryType string) string {
 		return "result-refresh"
 	case entryType == "Introspection":
 		return "result-refresh"
+	case entryType == "Resource":
+		return "result-refresh"
 	case strings.HasPrefix(entryType, "Logout"):
 		return "result-logout"
 	case strings.HasPrefix(entryType, "Error"):
@@ -274,7 +288,7 @@ templ errorEntryContent(entry OIDCResultEntryData) {
 		</details>
 	}
 	<!-- Protocol Messages -->
-	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" {
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.ResourceRequestURL != "" {
 		<details id={ entry.ID + "-protocol" } class="result-subsection">
 			<summary>Protocol Messages</summary>
 			@oidcProtocolMessages(entry)
@@ -430,5 +444,15 @@ templ oidcProtocolMessages(entry OIDCResultEntryData) {
 		@components.HTTPResponseBlock("Introspection Response", entry.IntrospectionResponseStatusLine, entry.IntrospectionResponseHeaders, entry.IntrospectionResponseBody, entry.IntrospectionResponseBodyLang)
 	} else if entry.IntrospectionResponseConnError != "" {
 		@components.HTTPConnErrorBlock("Introspection Response", entry.IntrospectionResponseConnError)
+	}
+	// Resource Request
+	if entry.ResourceRequestRaw != "" {
+		@components.HTTPRequestBlock("Resource Request (GET)", entry.ResourceRequestRaw, nil, "")
+	}
+	// Resource Response
+	if entry.ResourceResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Resource Response", entry.ResourceResponseStatusLine, entry.ResourceResponseHeaders, entry.ResourceResponseBody, entry.ResourceResponseBodyLang)
+	} else if entry.ResourceResponseConnError != "" {
+		@components.HTTPConnErrorBlock("Resource Response", entry.ResourceResponseConnError)
 	}
 }

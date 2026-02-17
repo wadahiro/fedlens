@@ -47,13 +47,30 @@ templ OAuth2Index(page PageInfo, data OIDCPageData) {
 }
 
 templ oauth2ActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || len(page.ReauthItems) > 0 {
+	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || len(page.ReauthItems) > 0 || len(page.ResourceAccessItems) > 0 {
 		<div class="action-bar">
 			if page.LoginURL != "" {
 				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
 			}
 			if page.IntrospectionURL != "" {
 				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
+			}
+			if len(page.ResourceAccessItems) > 0 {
+				if len(page.ResourceAccessItems) == 1 {
+					<a href={ templ.SafeURL(page.ResourceAccessItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="resource-access-btn">Resource Access</a>
+				} else {
+					<a href={ templ.SafeURL(page.ResourceAccessItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="resource-access-btn">Resource Access</a>
+					<div class="dropdown">
+						<button class="secondary outline action-btn" onclick="toggleDropdown(this)" data-testid="resource-access-more-btn">
+							RS &#9662;
+						</button>
+						<div class="dropdown-menu">
+							for i, item := range page.ResourceAccessItems {
+								<a href={ templ.SafeURL(item.URL) } class="dropdown-item" data-testid={ fmt.Sprintf("resource-%d", i) }>{ item.Label }</a>
+							}
+						</div>
+					</div>
+				}
 			}
 			if page.RefreshURL != "" {
 				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
@@ -112,6 +129,8 @@ templ oauth2ResultEntryContent(entry OIDCResultEntryData) {
 		@oauth2LogoutEntryContent(entry)
 	} else if entry.Type == "Introspection" {
 		@oauth2IntrospectionEntryContent(entry)
+	} else if entry.Type == "Resource" {
+		@oauth2ResourceEntryContent(entry)
 	} else {
 		@oauth2NormalEntryContent(entry)
 	}
@@ -135,6 +154,36 @@ templ oauth2IntrospectionEntryContent(entry OIDCResultEntryData) {
 			<summary>Protocol Messages</summary>
 			@oauth2ProtocolMessages(entry)
 		</details>
+	}
+}
+
+templ oauth2ResourceEntryContent(entry OIDCResultEntryData) {
+	<!-- Resource Response -->
+	if len(entry.ResourceClaims) > 0 {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Resource Response</summary>
+			@components.ClaimsTable(entry.ID + "-resource-claims", "Resource Data", entry.ResourceClaims)
+		</details>
+	}
+	<!-- Protocol Messages -->
+	if entry.ResourceRequestURL != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@oauth2ResourceProtocolMessages(entry)
+		</details>
+	}
+}
+
+templ oauth2ResourceProtocolMessages(entry OIDCResultEntryData) {
+	// Resource Request
+	if entry.ResourceRequestRaw != "" {
+		@components.HTTPRequestBlock("Resource Request (GET)", entry.ResourceRequestRaw, nil, "")
+	}
+	// Resource Response
+	if entry.ResourceResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Resource Response", entry.ResourceResponseStatusLine, entry.ResourceResponseHeaders, entry.ResourceResponseBody, entry.ResourceResponseBodyLang)
+	} else if entry.ResourceResponseConnError != "" {
+		@components.HTTPConnErrorBlock("Resource Response", entry.ResourceResponseConnError)
 	}
 }
 
@@ -227,5 +276,15 @@ templ oauth2ProtocolMessages(entry OIDCResultEntryData) {
 		@components.HTTPResponseBlock("Introspection Response", entry.IntrospectionResponseStatusLine, entry.IntrospectionResponseHeaders, entry.IntrospectionResponseBody, entry.IntrospectionResponseBodyLang)
 	} else if entry.IntrospectionResponseConnError != "" {
 		@components.HTTPConnErrorBlock("Introspection Response", entry.IntrospectionResponseConnError)
+	}
+	// Resource Request (shown in error entries and protocol messages)
+	if entry.ResourceRequestRaw != "" {
+		@components.HTTPRequestBlock("Resource Request (GET)", entry.ResourceRequestRaw, nil, "")
+	}
+	// Resource Response
+	if entry.ResourceResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Resource Response", entry.ResourceResponseStatusLine, entry.ResourceResponseHeaders, entry.ResourceResponseBody, entry.ResourceResponseBodyLang)
+	} else if entry.ResourceResponseConnError != "" {
+		@components.HTTPConnErrorBlock("Resource Response", entry.ResourceResponseConnError)
 	}
 }

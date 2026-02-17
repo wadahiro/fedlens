@@ -6,12 +6,14 @@ import (
 	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"slices"
@@ -216,6 +218,35 @@ func main() {
 
 	// Root mux with health check, static files, and host+path-based routing
 	rootMux := http.NewServeMux()
+
+	// RFC 9728: Register Protected Resource Metadata well-known endpoints for OAuth2 handlers
+	for _, oauth2Cfg := range cfg.OAuth2 {
+		// Re-derive metadata path and JSON from config (no handler state needed)
+		basePath := oauth2Cfg.BasePath
+		metadataPath := "/.well-known/oauth-protected-resource" + basePath + "/resource"
+		resourceURL := oauth2Cfg.BaseURL + "/resource"
+		authServer := oauth2Cfg.Issuer
+		if authServer == "" && oauth2Cfg.TokenURL != "" {
+			if u, err := url.Parse(oauth2Cfg.TokenURL); err == nil {
+				authServer = u.Scheme + "://" + u.Host
+			}
+		}
+		metadata := map[string]any{
+			"resource":                 resourceURL,
+			"authorization_servers":    []string{authServer},
+			"bearer_methods_supported": []string{"header"},
+			"resource_name":            "fedlens Built-in Resource Server (" + oauth2Cfg.Name + ")",
+		}
+		if len(oauth2Cfg.Scopes) > 0 {
+			metadata["scopes_supported"] = oauth2Cfg.Scopes
+		}
+		metadataJSON, _ := json.MarshalIndent(metadata, "", "  ")
+		rootMux.HandleFunc(metadataPath, func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write(metadataJSON)
+		})
+		slog.Info("RFC 9728 metadata registered", "path", metadataPath)
+	}
 	rootMux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, "ok")

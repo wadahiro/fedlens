@@ -15,6 +15,16 @@ type HTTPResponseInfo struct {
 	Body       string
 }
 
+// ResourceError holds error details from a failed resource access request.
+type ResourceError struct {
+	StatusCode  int
+	ErrorCode   string // RFC 6750 "error"
+	Description string // RFC 6750 "error_description"
+	URI         string // RFC 6750 "error_uri"
+	Detail      string // raw error detail (Go error message, not server-provided)
+	RawBody     string // raw response body
+}
+
 // UserInfoError holds error details from a failed UserInfo request.
 type UserInfoError struct {
 	StatusCode  int
@@ -57,6 +67,13 @@ type ResultEntry struct {
 	IntrospectionRequestParams map[string]string
 	IntrospectionResponse    json.RawMessage
 	IntrospectionHTTPResponse *HTTPResponseInfo
+	// Resource Access fields
+	ResourceRequestURL    string
+	ResourceRequestMethod string
+	ResourceResponse      json.RawMessage
+	ResourceHTTPResponse  *HTTPResponseInfo
+	ResourceError         *ResourceError
+	ResourceServerName    string
 	// Error fields
 	ErrorCode        string // OIDC error code (e.g. "access_denied")
 	ErrorDescription string // Human-readable error description

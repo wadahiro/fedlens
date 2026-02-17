@@ -572,3 +572,37 @@ redirect_uri = "http://localhost:3000/app/callback"
 		t.Fatal("Load should fail for duplicate base_url routes between OIDC and OAuth2")
 	}
 }
+
+func TestLoadOAuth2ResourceURLs(t *testing.T) {
+	toml := `
+[[oauth2]]
+name = "OAuth2 with RS"
+base_url = "http://oauth2.test:3000"
+authorization_url = "https://as.test/authorize"
+token_url = "https://as.test/token"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+resource_urls = ["https://api.example.com/resource", "https://api2.example.com/data"]
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	oa := cfg.OAuth2[0]
+	if len(oa.ResourceURLs) != 2 {
+		t.Fatalf("len(ResourceURLs) = %d, want 2", len(oa.ResourceURLs))
+	}
+	if oa.ResourceURLs[0] != "https://api.example.com/resource" {
+		t.Errorf("ResourceURLs[0] = %q", oa.ResourceURLs[0])
+	}
+	if oa.ResourceURLs[1] != "https://api2.example.com/data" {
+		t.Errorf("ResourceURLs[1] = %q", oa.ResourceURLs[1])
+	}
+}

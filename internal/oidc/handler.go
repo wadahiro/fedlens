@@ -379,6 +379,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	if h.providerInfo.IntrospectionEndpoint != "" {
 		mux.HandleFunc("/introspection", h.handleIntrospection)
 	}
+	if h.isOAuth2 {
+		mux.HandleFunc("/resource", h.handleResource)
+		mux.HandleFunc("/resource-access", h.handleResourceAccess)
+	}
 	mux.HandleFunc("/reauth", h.handleReauth)
 	mux.HandleFunc("/clear", h.handleClear)
 }
@@ -469,6 +473,24 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		page.Status = "disconnected"
 		page.StatusLabel = "No Session"
 		page.LoginURL = h.basePath + "/login"
+	}
+
+	// Resource Access buttons (OAuth2 mode only, available regardless of session)
+	if h.isOAuth2 {
+		if h.providerInfo.IntrospectionEndpoint != "" {
+			page.ResourceAccessItems = append(page.ResourceAccessItems, templates.ResourceAccessItem{
+				Label: "Built-in Resource",
+				URL:   h.basePath + "/resource-access",
+			})
+		}
+		if h.oauth2Cfg != nil {
+			for _, resURL := range h.oauth2Cfg.ResourceURLs {
+				page.ResourceAccessItems = append(page.ResourceAccessItems, templates.ResourceAccessItem{
+					Label: resURL,
+					URL:   h.basePath + "/resource-access?url=" + url.QueryEscape(resURL),
+				})
+			}
+		}
 	}
 
 	// Build sidebar sections from result entries
@@ -562,12 +584,41 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		if entry.UserInfoRequestURL != "" {
 			data.UserInfoRequestURL = entry.UserInfoRequestMethod + " " + entry.UserInfoRequestURL + "\nAuthorization: Bearer " + entry.AccessTokenRaw
 		}
+		// Resource Error (for "Error: Resource")
+		if entry.ResourceError != nil {
+			if entry.ResourceError.StatusCode > 0 && data.ErrorStatus == "" {
+				data.ErrorStatus = strconv.Itoa(entry.ResourceError.StatusCode)
+			}
+			if entry.ResourceError.ErrorCode != "" && data.ErrorCode == "" {
+				data.ErrorCode = entry.ResourceError.ErrorCode
+			}
+			if entry.ResourceError.Description != "" && data.ErrorDescription == "" {
+				data.ErrorDescription = entry.ResourceError.Description
+			}
+			if entry.ResourceError.URI != "" && data.ErrorURI == "" {
+				data.ErrorURI = entry.ResourceError.URI
+			}
+			if entry.ResourceError.Detail != "" && data.ErrorDetail == "" {
+				data.ErrorDetail = entry.ResourceError.Detail
+			}
+		}
+		// Resource Request/Response (error path)
+		if entry.ResourceRequestURL != "" {
+			data.ResourceRequestURL = entry.ResourceRequestURL
+			data.ResourceRequestRaw = buildResourceRequestRaw(entry.ResourceRequestMethod, entry.ResourceRequestURL, entry.AccessTokenRaw)
+		}
+		if entry.ResourceHTTPResponse != nil {
+			data.ResourceResponseStatusLine, data.ResourceResponseHeaders,
+				data.ResourceResponseBody, data.ResourceResponseBodyLang = buildHTTPResponseDisplay(entry.ResourceHTTPResponse)
+		} else if entry.ResourceError != nil && entry.ResourceError.Detail != "" {
+			data.ResourceResponseConnError = protocol.CleanGoErrorMessage(entry.ResourceError.Detail)
+		}
 		data.SidebarLabel = strings.TrimPrefix(entry.Type, "Error: ")
 		data.SidebarDot = "error"
 		if data.ErrorCode != "" || data.ErrorStatus != "" {
 			data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
 		}
-		if entry.AuthRequestURL != "" || data.TokenRequestURL != "" || data.UserInfoRequestURL != "" {
+		if entry.AuthRequestURL != "" || data.TokenRequestURL != "" || data.UserInfoRequestURL != "" || data.ResourceRequestURL != "" {
 			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 		}
 		return data
@@ -727,6 +778,50 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 	}
 
+	// Resource Access
+	if entry.ResourceRequestURL != "" {
+		data.ResourceRequestURL = entry.ResourceRequestURL
+		data.ResourceRequestRaw = buildResourceRequestRaw(entry.ResourceRequestMethod, entry.ResourceRequestURL, entry.AccessTokenRaw)
+	}
+	if entry.ResourceHTTPResponse != nil {
+		data.ResourceResponseStatusLine, data.ResourceResponseHeaders,
+			data.ResourceResponseBody, data.ResourceResponseBodyLang = buildHTTPResponseDisplay(entry.ResourceHTTPResponse)
+	} else if entry.ResourceError != nil && entry.ResourceError.Detail != "" {
+		data.ResourceResponseConnError = protocol.CleanGoErrorMessage(entry.ResourceError.Detail)
+	}
+	if len(entry.ResourceResponse) > 0 {
+		data.ResourceResponseJSON = protocol.PrettyJSON(entry.ResourceResponse)
+		var resClaims map[string]any
+		if json.Unmarshal(entry.ResourceResponse, &resClaims) == nil {
+			for _, k := range protocol.SortedKeys(resClaims) {
+				data.ResourceClaims = append(data.ResourceClaims, components.ClaimRow{
+					Key:   k,
+					Value: protocol.FormatClaimValue(k, resClaims[k]),
+				})
+			}
+		}
+	}
+	if entry.ResourceError != nil {
+		var rows []components.ErrorRow
+		if entry.ResourceError.StatusCode > 0 {
+			rows = append(rows, components.ErrorRow{Label: "status", Value: strconv.Itoa(entry.ResourceError.StatusCode)})
+		}
+		if entry.ResourceError.ErrorCode != "" {
+			rows = append(rows, components.ErrorRow{Label: "error", Value: entry.ResourceError.ErrorCode})
+		}
+		if entry.ResourceError.Description != "" {
+			rows = append(rows, components.ErrorRow{Label: "error_description", Value: entry.ResourceError.Description})
+		}
+		if entry.ResourceError.URI != "" {
+			rows = append(rows, components.ErrorRow{Label: "error_uri", Value: entry.ResourceError.URI})
+		}
+		if entry.ResourceError.Detail != "" {
+			rows = append(rows, components.ErrorRow{Label: "detail", Value: entry.ResourceError.Detail})
+		}
+		data.ResourceErrorRows = rows
+	}
+	data.ResourceServerName = entry.ResourceServerName
+
 	// Raw Tokens
 	if entry.IDTokenRaw != "" {
 		data.IDTokenRaw = entry.IDTokenRaw
@@ -769,6 +864,9 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	case entry.Type == "Introspection":
 		data.SidebarLabel = "Introspection"
 		data.SidebarDot = "introspection"
+	case strings.HasPrefix(entry.Type, "Resource"):
+		data.SidebarLabel = entry.Type
+		data.SidebarDot = "resource"
 	default: // Re-auth: *
 		data.SidebarLabel = entry.Type
 		data.SidebarDot = "reauth"
@@ -785,6 +883,15 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	}
 
 	// Build sidebar children (sub-sections)
+	if entry.Type == "Resource" {
+		if len(data.ResourceClaims) > 0 {
+			data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Resource Response"})
+		}
+		if entry.ResourceRequestURL != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
+		}
+		return data
+	}
 	if entry.Type == "Introspection" {
 		if len(data.IntrospectionClaims) > 0 {
 			data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Token Info"})
@@ -801,7 +908,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
-	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.IntrospectionRequestURL != "" {
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.IntrospectionRequestURL != "" || entry.ResourceRequestURL != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
 	if entry.Type != "UserInfo" && entry.Type != "Introspection" && (entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenRaw != "") {
@@ -1691,6 +1798,16 @@ func buildTokenRequestRaw(requestLine string, params []components.ClaimRow) stri
 		b.WriteString(p.Value)
 	}
 	return b.String()
+}
+
+// buildResourceRequestRaw builds a resource request display string.
+// If accessToken is non-empty, includes the Authorization: Bearer header.
+func buildResourceRequestRaw(method, url, accessToken string) string {
+	raw := method + " " + url
+	if accessToken != "" {
+		raw += "\nAuthorization: Bearer " + accessToken
+	}
+	return raw
 }
 
 // buildHTTPResponseDisplay converts HTTPResponseInfo to display strings.

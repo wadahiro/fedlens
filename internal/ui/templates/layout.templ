@@ -23,6 +23,12 @@ type ReauthItem struct {
 	URL   string
 }
 
+// ResourceAccessItem represents a resource access dropdown menu entry.
+type ResourceAccessItem struct {
+	Label string
+	URL   string
+}
+
 // PageInfo holds layout metadata for every page.
 type PageInfo struct {
 	Tabs              []NavTab
@@ -35,8 +41,9 @@ type PageInfo struct {
 	IntrospectionURL  string // Token Introspection URL (if endpoint available)
 	RefreshURL        string
 	ClearURL          string // path to clear debug results
-	ReauthItems       []ReauthItem
-	Sections          []Section // debug results (RESULTS)
+	ReauthItems          []ReauthItem
+	ResourceAccessItems  []ResourceAccessItem
+	Sections             []Section // debug results (RESULTS)
 	References        []Section // reference info (REFERENCE)
 	DefaultTheme      string    // "light", "dark", or "auto"
 }
@@ -50,6 +57,8 @@ func sidebarBadgeClass(dot string) string {
 	case "userinfo":
 		return "result-refresh"
 	case "introspection":
+		return "result-refresh"
+	case "resource":
 		return "result-refresh"
 	case "reauth":
 		return "result-reauth"
@@ -72,6 +81,8 @@ func sidebarBadgeLabel(dot string) string {
 		return "UserInfo"
 	case "introspection":
 		return "Introspection"
+	case "resource":
+		return "Resource"
 	case "reauth":
 		return "Re-auth"
 	case "logout":
@@ -204,7 +215,7 @@ templ Layout(title string, page PageInfo) {
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
 									<li>
-										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-introspection", sec.Dot == "introspection"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
+										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-introspection", sec.Dot == "introspection"), templ.KV("sidebar-dot-resource", sec.Dot == "resource"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
 											<span class="sidebar-entry-content">
 												if sec.Timestamp != "" {
 													<small class="sidebar-timestamp">{ sec.Timestamp }</small>

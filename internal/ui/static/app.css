@@ -165,6 +165,7 @@ small { font-size: 0.75rem; }
 .sidebar-dot-refresh::before,
 .sidebar-dot-userinfo::before,
 .sidebar-dot-introspection::before,
+.sidebar-dot-resource::before,
 .sidebar-dot-reauth::before,
 .sidebar-dot-logout::before,
 .sidebar-dot-error::before {
@@ -200,6 +201,13 @@ small { font-size: 0.75rem; }
   color: #2e7d32;
 }
 [data-theme="dark"] .sidebar-dot-introspection::before {
+  color: #81c784;
+}
+[data-theme="light"] .sidebar-dot-resource::before,
+:root:not([data-theme="dark"]) .sidebar-dot-resource::before {
+  color: #2e7d32;
+}
+[data-theme="dark"] .sidebar-dot-resource::before {
   color: #81c784;
 }
 [data-theme="light"] .sidebar-dot-reauth::before,

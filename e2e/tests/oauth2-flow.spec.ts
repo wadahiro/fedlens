@@ -103,6 +103,51 @@ test.describe("OAuth2 Flow", () => {
     await page.getByTestId("clear-btn").click();
   });
 
+  test("resource access flow", async ({ page }) => {
+    await page.goto(OAUTH2_URL);
+
+    // Login
+    await page.getByTestId("login-btn").click();
+    await expect(page.locator("#kc-login")).toBeVisible();
+    await keycloakLogin(page);
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
+
+    // Check if Resource Access button exists
+    const resourceButton = page.getByTestId("resource-access-btn");
+    if (await resourceButton.isVisible()) {
+      await resourceButton.click();
+
+      // Should still show logged in page after resource access
+      await expect(page.locator(".status-indicator")).toHaveText(
+        "Active Session"
+      );
+
+      // Should show Resource Response or Error entry
+      const resourceResult = page.locator(
+        "summary:has-text('Resource Response'), summary:has-text('Error Details')"
+      );
+      await expect(resourceResult.first()).toBeVisible();
+    }
+
+    // Cleanup: clear results
+    await page.getByTestId("clear-btn").click();
+  });
+
+  test("RFC 9728 protected resource metadata", async ({ page }) => {
+    // Fetch the well-known metadata endpoint
+    const response = await page.request.get(
+      `${OAUTH2_URL}/.well-known/oauth-protected-resource/resource`
+    );
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toContain("application/json");
+
+    const metadata = await response.json();
+    expect(metadata.resource).toBeTruthy();
+    expect(metadata.authorization_servers).toBeInstanceOf(Array);
+    expect(metadata.bearer_methods_supported).toContain("header");
+    expect(metadata.resource_name).toContain("fedlens");
+  });
+
   test("navigation tabs show OAuth2 badge", async ({ page }) => {
     await page.goto(OAUTH2_URL);
 
