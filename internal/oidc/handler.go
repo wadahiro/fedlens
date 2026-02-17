@@ -352,8 +352,8 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.IDTokenSigRows = buildJWTSigRows(entry.IDTokenSigInfo)
 	}
 
-	// Access Token Claims (JWT only)
-	if protocol.IsJWT(entry.AccessTokenRaw) {
+	// Access Token Claims (JWT only, not for UserInfo action entries)
+	if entry.Type != "UserInfo" && protocol.IsJWT(entry.AccessTokenRaw) {
 		_, atPayloadRaw := protocol.DecodeJWTRaw(entry.AccessTokenRaw)
 		var atClaims map[string]any
 		if json.Unmarshal(atPayloadRaw, &atClaims) == nil {
@@ -406,7 +406,26 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	data.AuthRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthRequestURL))
 	data.AuthResponseRaw = entry.AuthResponseRaw
 	data.AuthResponseParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthResponseRaw))
+	// Token Request
+	if entry.TokenRequestURL != "" {
+		orderedKeys := []string{"grant_type", "code", "redirect_uri", "client_id", "client_secret", "code_verifier", "refresh_token"}
+		for _, k := range orderedKeys {
+			if v, ok := entry.TokenRequestParams[k]; ok {
+				data.TokenRequestParams = append(data.TokenRequestParams, components.ClaimRow{Key: k, Value: v})
+			}
+		}
+		data.TokenRequestURL = buildHTTPRequestRaw("POST", entry.TokenRequestURL, data.TokenRequestParams, nil)
+	}
 	data.TokenResponseJSON = protocol.PrettyJSON(entry.TokenResponse)
+	// UserInfo Request
+	if entry.UserInfoRequestURL != "" {
+		headers := []components.ClaimRow{
+			{Key: "Authorization", Value: "Bearer {access_token}"},
+		}
+		data.UserInfoRequestURL = buildHTTPRequestRaw(
+			entry.UserInfoRequestMethod, entry.UserInfoRequestURL, nil, headers,
+		)
+	}
 	data.UserInfoJSON = protocol.PrettyJSON(entry.UserInfoResponse)
 
 	// Raw Tokens
@@ -419,6 +438,12 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.AccessTokenHeader, data.AccessTokenPayload, data.AccessTokenSignature = protocol.DecodeJWT(entry.AccessTokenRaw)
 	} else if entry.AccessTokenRaw != "" {
 		data.AccessTokenRaw = entry.AccessTokenRaw
+	}
+	if protocol.IsJWT(entry.RefreshTokenRaw) {
+		data.RefreshTokenJWT = entry.RefreshTokenRaw
+		data.RefreshTokenHeader, data.RefreshTokenPayload, data.RefreshTokenSignature = protocol.DecodeJWT(entry.RefreshTokenRaw)
+	} else if entry.RefreshTokenRaw != "" {
+		data.RefreshTokenRaw = entry.RefreshTokenRaw
 	}
 
 	// Signature verification status
@@ -448,16 +473,16 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	}
 
 	// Build sidebar children (sub-sections)
-	if len(data.IDTokenClaims) > 0 {
+	if len(data.IDTokenClaims) > 0 || len(data.UserInfoClaims) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
 	}
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
-	if entry.AuthRequestURL != "" || len(entry.TokenResponse) > 0 {
+	if entry.AuthRequestURL != "" || len(entry.TokenResponse) > 0 || entry.UserInfoRequestURL != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
-	if entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" {
+	if entry.Type != "UserInfo" && (entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenRaw != "") {
 		data.Children = append(data.Children, templates.Section{ID: id + "-tokens", Label: "Raw Tokens"})
 	}
 	return data
@@ -675,11 +700,13 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Build exchange options
 	var exchangeOpts []oauth2.AuthCodeOption
+	var pkceVerifier string
 
 	// PKCE: include code_verifier
 	if h.Config.PKCE {
 		if c, err := r.Cookie("oidc_pkce_verifier"); err == nil {
-			exchangeOpts = append(exchangeOpts, oauth2.SetAuthURLParam("code_verifier", c.Value))
+			pkceVerifier = c.Value
+			exchangeOpts = append(exchangeOpts, oauth2.SetAuthURLParam("code_verifier", pkceVerifier))
 		}
 		http.SetCookie(w, &http.Cookie{
 			Name: "oidc_pkce_verifier", Value: "", Path: "/", MaxAge: -1, HttpOnly: true,
@@ -777,6 +804,20 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		refreshTokenRaw, _ = rt.(string)
 	}
 
+	// Build Token Request params for display
+	tokenRequestParams := map[string]string{
+		"grant_type":   "authorization_code",
+		"code":         code,
+		"redirect_uri": h.oauth2Config.RedirectURL,
+		"client_id":    h.oauth2Config.ClientID,
+	}
+	if h.oauth2Config.ClientSecret != "" {
+		tokenRequestParams["client_secret"] = "*******"
+	}
+	if pkceVerifier != "" {
+		tokenRequestParams["code_verifier"] = pkceVerifier
+	}
+
 	entry := ResultEntry{
 		Type:               resultType,
 		Timestamp:          time.Now(),
@@ -784,14 +825,23 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		AuthRequestURL:     authRequestURL,
 		AuthResponseCode:   code,
 		AuthResponseRaw:    authResponseRaw,
+		TokenRequestURL:    h.oauth2Config.Endpoint.TokenURL,
+		TokenRequestParams: tokenRequestParams,
 		TokenResponse:      tokenResponseJSON,
 		IDTokenRaw:         rawIDToken,
 		AccessTokenRaw:     token.AccessToken,
+		RefreshTokenRaw:    refreshTokenRaw,
 		UserInfoResponse:   userInfoResponse,
 		UserInfoError:      userInfoErr,
 		IDTokenSigInfo:     idTokenSigInfo,
 		AccessTokenSigInfo: accessTokenSigInfo,
 		JWKSResponse:       jwksRaw,
+	}
+
+	// Record UserInfo Request info
+	if h.providerInfo.UserinfoEndpoint != "" {
+		entry.UserInfoRequestURL = h.providerInfo.UserinfoEndpoint
+		entry.UserInfoRequestMethod = "GET"
 	}
 
 	// Save entry to debug session
@@ -955,11 +1005,13 @@ func (h *Handler) handleUserInfo(w http.ResponseWriter, r *http.Request) {
 	userInfoResponse, userInfoErr := fetchUserInfo(h.httpClient, h.providerInfo.UserinfoEndpoint, session.AccessTokenRaw)
 
 	entry := ResultEntry{
-		Type:             "UserInfo",
-		Timestamp:        time.Now(),
-		UserInfoResponse: userInfoResponse,
-		UserInfoError:    userInfoErr,
-		AccessTokenRaw:   session.AccessTokenRaw,
+		Type:                  "UserInfo",
+		Timestamp:             time.Now(),
+		UserInfoRequestURL:    h.providerInfo.UserinfoEndpoint,
+		UserInfoRequestMethod: "GET",
+		UserInfoResponse:      userInfoResponse,
+		UserInfoError:         userInfoErr,
+		AccessTokenRaw:        session.AccessTokenRaw,
 	}
 
 	h.saveDebugEntry(w, r, entry)
@@ -1016,11 +1068,32 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build Token Request params for display
+	refreshTokenRequestParams := map[string]string{
+		"grant_type":    "refresh_token",
+		"refresh_token": session.RefreshTokenRaw,
+		"client_id":     h.oauth2Config.ClientID,
+	}
+	if h.oauth2Config.ClientSecret != "" {
+		refreshTokenRequestParams["client_secret"] = "*******"
+	}
+
+	// Determine refresh token for display: new one if rotated, otherwise the original
+	refreshTokenForDisplay := session.RefreshTokenRaw
+	if newRT := newToken.Extra("refresh_token"); newRT != nil {
+		if rt, ok := newRT.(string); ok {
+			refreshTokenForDisplay = rt
+		}
+	}
+
 	entry := ResultEntry{
-		Type:           "Refresh",
-		Timestamp:      time.Now(),
-		TokenResponse:  marshalTokenResponse(newToken),
-		AccessTokenRaw: newToken.AccessToken,
+		Type:               "Refresh",
+		Timestamp:          time.Now(),
+		TokenRequestURL:    h.oauth2Config.Endpoint.TokenURL,
+		TokenRequestParams: refreshTokenRequestParams,
+		TokenResponse:      marshalTokenResponse(newToken),
+		AccessTokenRaw:     newToken.AccessToken,
+		RefreshTokenRaw:    refreshTokenForDisplay,
 	}
 
 	if newIDToken, ok := newToken.Extra("id_token").(string); ok {
@@ -1097,6 +1170,34 @@ func parseToClaimRows(params []protocol.KeyValue) []components.ClaimRow {
 		rows[i] = components.ClaimRow{Key: p.Key, Value: p.Value}
 	}
 	return rows
+}
+
+// buildHTTPRequestRaw builds an HTTP-like raw representation for display.
+// For POST: "POST <url>\n\nparam1=value1&param2=value2"
+// For GET with headers: "GET <url>\nHeader: value"
+func buildHTTPRequestRaw(method, urlStr string, params []components.ClaimRow, headers []components.ClaimRow) string {
+	var b strings.Builder
+	b.WriteString(method)
+	b.WriteString(" ")
+	b.WriteString(urlStr)
+	for _, h := range headers {
+		b.WriteString("\n")
+		b.WriteString(h.Key)
+		b.WriteString(": ")
+		b.WriteString(h.Value)
+	}
+	if len(params) > 0 {
+		b.WriteString("\n\n")
+		for i, p := range params {
+			if i > 0 {
+				b.WriteString("&")
+			}
+			b.WriteString(p.Key)
+			b.WriteString("=")
+			b.WriteString(p.Value)
+		}
+	}
+	return b.String()
 }
 
 func marshalTokenResponse(token *oauth2.Token) json.RawMessage {

@@ -29,7 +29,11 @@ type OIDCResultEntryData struct {
 	AuthRequestParams  []components.ClaimRow
 	AuthResponseRaw    string
 	AuthResponseParams []components.ClaimRow
-	TokenResponseJSON  string
+	TokenRequestURL       string
+	TokenRequestParams    []components.ClaimRow
+	TokenResponseJSON     string
+	UserInfoRequestURL    string
+	UserInfoRequestParams []components.ClaimRow
 	IDTokenRaw           string
 	IDTokenHeader        string
 	IDTokenPayload       string
@@ -39,6 +43,11 @@ type OIDCResultEntryData struct {
 	AccessTokenPayload   string
 	AccessTokenSignature string
 	AccessTokenRaw       string
+	RefreshTokenJWT       string
+	RefreshTokenHeader    string
+	RefreshTokenPayload   string
+	RefreshTokenSignature string
+	RefreshTokenRaw       string
 	UserInfoJSON       string
 	SigVerifiedAll     bool
 	SidebarLabel       string
@@ -233,9 +242,9 @@ templ errorEntryContent(entry OIDCResultEntryData) {
 	}
 	if entry.AuthRequestURL != "" {
 		if len(entry.AuthRequestParams) > 0 {
-			@components.ParamsTable("Authorization Request", entry.AuthRequestParams, entry.AuthRequestURL)
+			@components.ParamsTable("Authorization Request (GET)", entry.AuthRequestParams, entry.AuthRequestURL)
 		} else {
-			@components.CodeBlock("Authorization Request", entry.AuthRequestURL)
+			@components.CodeBlock("Authorization Request (GET)", entry.AuthRequestURL)
 		}
 	}
 }
@@ -261,13 +270,15 @@ templ logoutEntryContent(entry OIDCResultEntryData) {
 
 templ normalEntryContent(entry OIDCResultEntryData) {
 	<!-- Identity & Claims -->
-	if len(entry.IDTokenClaims) > 0 {
+	if len(entry.IDTokenClaims) > 0 || len(entry.UserInfoClaims) > 0 {
 		<details id={ entry.ID + "-claims" } class="result-subsection" open>
 			<summary>Identity & Claims</summary>
 			if entry.Subject != "" {
 				@components.SubjectTable("Subject (sub)", entry.Subject)
 			}
-			@components.ClaimsTable(entry.ID + "-id-token-claims", "ID Token Claims", entry.IDTokenClaims)
+			if len(entry.IDTokenClaims) > 0 {
+				@components.ClaimsTable(entry.ID + "-id-token-claims", "ID Token Claims", entry.IDTokenClaims)
+			}
 			if len(entry.AccessTokenClaims) > 0 {
 				@components.ClaimsTable(entry.ID + "-access-token-claims", "Access Token Claims", entry.AccessTokenClaims)
 			}
@@ -300,21 +311,27 @@ templ normalEntryContent(entry OIDCResultEntryData) {
 		</details>
 	}
 	<!-- Protocol Messages -->
-	if entry.AuthRequestURL != "" || entry.TokenResponseJSON != "" {
+	if entry.AuthRequestURL != "" || entry.TokenResponseJSON != "" || entry.UserInfoRequestURL != "" {
 		<details id={ entry.ID + "-protocol" } class="result-subsection">
 			<summary>Protocol Messages</summary>
 			if len(entry.AuthRequestParams) > 0 {
-				@components.ParamsTable("Authorization Request", entry.AuthRequestParams, entry.AuthRequestURL)
+				@components.ParamsTable("Authorization Request (GET)", entry.AuthRequestParams, entry.AuthRequestURL)
 			} else if entry.AuthRequestURL != "" {
-				@components.CodeBlock("Authorization Request", entry.AuthRequestURL)
+				@components.CodeBlock("Authorization Request (GET)", entry.AuthRequestURL)
 			}
 			if len(entry.AuthResponseParams) > 0 {
 				@components.ParamsTable("Authorization Response", entry.AuthResponseParams, entry.AuthResponseRaw)
 			} else if entry.AuthResponseRaw != "" {
 				@components.CodeBlock("Authorization Response", entry.AuthResponseRaw)
 			}
+			if len(entry.TokenRequestParams) > 0 {
+				@components.ParamsTable("Token Request (POST)", entry.TokenRequestParams, entry.TokenRequestURL)
+			}
 			if entry.TokenResponseJSON != "" {
 				@components.CodeBlock("Token Response", entry.TokenResponseJSON)
+			}
+			if entry.UserInfoRequestURL != "" {
+				@components.PlainCodeBlock("UserInfo Request (GET)", entry.UserInfoRequestURL)
 			}
 			if entry.UserInfoJSON != "" {
 				@components.CodeBlock("UserInfo Response", entry.UserInfoJSON)
@@ -325,16 +342,21 @@ templ normalEntryContent(entry OIDCResultEntryData) {
 		</details>
 	}
 	<!-- Raw Tokens -->
-	if entry.IDTokenHeader != "" || entry.AccessTokenHeader != "" || entry.AccessTokenRaw != "" {
+	if entry.Type != "UserInfo" && (entry.IDTokenHeader != "" || entry.AccessTokenHeader != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenHeader != "" || entry.RefreshTokenRaw != "") {
 		<details id={ entry.ID + "-tokens" } class="result-subsection">
 			<summary>Raw Tokens</summary>
 			if entry.IDTokenHeader != "" {
-				@components.TokenBlock("ID Token", entry.IDTokenHeader, entry.IDTokenPayload, entry.IDTokenSignature, entry.IDTokenRaw)
+				@components.TokenBlock("ID Token (JWT)", entry.IDTokenHeader, entry.IDTokenPayload, entry.IDTokenSignature, entry.IDTokenRaw)
 			}
 			if entry.AccessTokenHeader != "" {
-				@components.TokenBlock("Access Token", entry.AccessTokenHeader, entry.AccessTokenPayload, entry.AccessTokenSignature, entry.AccessTokenJWT)
+				@components.TokenBlock("Access Token (JWT)", entry.AccessTokenHeader, entry.AccessTokenPayload, entry.AccessTokenSignature, entry.AccessTokenJWT)
 			} else if entry.AccessTokenRaw != "" {
-				@components.CodeBlock("Access Token (Opaque)", entry.AccessTokenRaw)
+				@components.PlainCodeBlock("Access Token (Opaque)", entry.AccessTokenRaw)
+			}
+			if entry.RefreshTokenHeader != "" {
+				@components.TokenBlock("Refresh Token (JWT)", entry.RefreshTokenHeader, entry.RefreshTokenPayload, entry.RefreshTokenSignature, entry.RefreshTokenJWT)
+			} else if entry.RefreshTokenRaw != "" {
+				@components.PlainCodeBlock("Refresh Token (Opaque)", entry.RefreshTokenRaw)
 			}
 		</details>
 	}

@@ -50,6 +50,20 @@ templ TokenBlock(title, header, payload, signature, raw string) {
 	</article>
 }
 
+templ PlainCodeBlock(title string, content string) {
+	if content != "" {
+		<article>
+			if title != "" {
+				<header>
+					{ title }
+					<button class="copy-btn outline secondary" onclick="copyToClipboard(this)">Copy</button>
+				</header>
+			}
+			<pre><code>{ content }</code></pre>
+		</article>
+	}
+}
+
 templ XMLCodeBlock(title string, content string) {
 	if content != "" {
 		<article>

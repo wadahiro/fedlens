@@ -27,11 +27,18 @@ type ResultEntry struct {
 	TokenResponse      json.RawMessage
 	IDTokenRaw         string
 	AccessTokenRaw     string
+	RefreshTokenRaw    string
 	UserInfoResponse   json.RawMessage // Login/Re-auth only
 	IDTokenSigInfo     *protocol.JWTSignatureInfo
 	AccessTokenSigInfo *protocol.JWTSignatureInfo
 	JWKSResponse       json.RawMessage // Login/Re-auth only
 	UserInfoError *UserInfoError // non-nil when UserInfo endpoint returned an error
+	// Token Request fields (Login/Re-auth/Refresh)
+	TokenRequestURL    string
+	TokenRequestParams map[string]string // grant_type, code, redirect_uri, client_id, etc.
+	// UserInfo Request fields (Login/Re-auth/UserInfo action)
+	UserInfoRequestURL    string
+	UserInfoRequestMethod string // "GET"
 	// Error fields
 	ErrorCode        string // OIDC error code (e.g. "access_denied")
 	ErrorDescription string // Human-readable error description
