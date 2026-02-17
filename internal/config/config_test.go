@@ -453,6 +453,68 @@ redirect_uri = "http://oauth2.test:3000/callback"
 	}
 }
 
+func TestLoadDefinitionOrder(t *testing.T) {
+	toml := `
+[[oidc]]
+name = "First OIDC"
+base_url = "http://oidc1.test:3000"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oidc1.test:3000/callback"
+
+[[saml]]
+name = "Second SAML"
+base_url = "http://saml.test:3000"
+idp_metadata_url = "https://idp.test/saml/metadata"
+entity_id = "http://saml.test:3000/saml/metadata"
+root_url = "http://saml.test:3000"
+
+[[oauth2]]
+name = "Third OAuth2"
+base_url = "http://oauth2.test:3000"
+authorization_url = "https://as.test/authorize"
+token_url = "https://as.test/token"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+
+[[oidc]]
+name = "Fourth OIDC"
+base_url = "http://oidc2.test:3000"
+issuer = "https://idp2.test"
+client_id = "c2"
+client_secret = "s2"
+redirect_uri = "http://oidc2.test:3000/callback"
+`
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load failed: %v", err)
+	}
+
+	// OIDC[0] = "First OIDC" should be order 0
+	if cfg.OIDC[0].Order != 0 {
+		t.Errorf("OIDC[0].Order = %d, want 0", cfg.OIDC[0].Order)
+	}
+	// OIDC[1] = "Fourth OIDC" should be order 3
+	if cfg.OIDC[1].Order != 3 {
+		t.Errorf("OIDC[1].Order = %d, want 3", cfg.OIDC[1].Order)
+	}
+	// SAML[0] = "Second SAML" should be order 1
+	if cfg.SAML[0].Order != 1 {
+		t.Errorf("SAML[0].Order = %d, want 1", cfg.SAML[0].Order)
+	}
+	// OAuth2[0] = "Third OAuth2" should be order 2
+	if cfg.OAuth2[0].Order != 2 {
+		t.Errorf("OAuth2[0].Order = %d, want 2", cfg.OAuth2[0].Order)
+	}
+}
+
 func TestLoadBaseURLDuplicate(t *testing.T) {
 	toml := `
 [[oidc]]

@@ -774,17 +774,29 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		data.SidebarDot = "reauth"
 	}
 
+	// Opaque Access Token detection (OAuth2 Login/Refresh only)
+	if h.isOAuth2 && entry.Type != "Introspection" && entry.Type != "UserInfo" {
+		if !protocol.IsJWT(entry.AccessTokenRaw) && entry.AccessTokenRaw != "" {
+			data.IsOpaqueAccessToken = true
+		}
+		if h.providerInfo.IntrospectionEndpoint != "" {
+			data.HasIntrospection = true
+		}
+	}
+
 	// Build sidebar children (sub-sections)
 	if entry.Type == "Introspection" {
 		if len(data.IntrospectionClaims) > 0 {
-			data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Token Metadata"})
+			data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Token Info"})
 		}
 	} else if len(data.IDTokenClaims) > 0 || len(data.UserInfoClaims) > 0 || len(data.AccessTokenClaims) > 0 {
 		label := "Identity & Claims"
 		if h.isOAuth2 {
-			label = "Access Token Claims"
+			label = "Token Info"
 		}
 		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: label})
+	} else if h.isOAuth2 && data.IsOpaqueAccessToken {
+		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Token Info"})
 	}
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -46,6 +47,7 @@ type OIDCConfig struct {
 	// Computed fields (not from TOML)
 	ParsedHost string // host:port extracted from base_url
 	BasePath   string // path prefix extracted from base_url (empty for host-based routing)
+	Order      int    // definition order in TOML file (computed)
 }
 
 // OAuth2Config defines a single OAuth2 Client instance.
@@ -70,6 +72,7 @@ type OAuth2Config struct {
 	// Computed fields (not from TOML)
 	ParsedHost string
 	BasePath   string
+	Order      int // definition order in TOML file (computed)
 }
 
 // ReauthConfig defines a re-authentication profile with extra auth params.
@@ -96,6 +99,7 @@ type SAMLConfig struct {
 	// Computed fields (not from TOML)
 	ParsedHost string // host:port extracted from base_url
 	BasePath   string // path prefix extracted from base_url (empty for host-based routing)
+	Order      int    // definition order in TOML file (computed)
 }
 
 // SAMLReauthConfig defines a SAML re-authentication profile.
@@ -120,6 +124,9 @@ func Load(path string) (*Config, error) {
 	if err := toml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
 	}
+
+	// Assign definition order based on TOML section header positions
+	assignDefinitionOrder(data, cfg)
 
 	// Apply defaults
 	if cfg.ListenAddr == "" {
@@ -256,6 +263,33 @@ func applyOAuth2Defaults(c *OAuth2Config) {
 	}
 	if c.CallbackPath == "" {
 		c.CallbackPath = "/callback"
+	}
+}
+
+// assignDefinitionOrder sets the Order field based on TOML section header positions.
+func assignDefinitionOrder(data []byte, cfg *Config) {
+	re := regexp.MustCompile(`(?m)^\s*\[\[(oidc|oauth2|saml)\]\]`)
+	matches := re.FindAllSubmatchIndex(data, -1)
+
+	counters := map[string]int{"oidc": 0, "oauth2": 0, "saml": 0}
+	for order, match := range matches {
+		protocol := string(data[match[2]:match[3]])
+		idx := counters[protocol]
+		counters[protocol]++
+		switch protocol {
+		case "oidc":
+			if idx < len(cfg.OIDC) {
+				cfg.OIDC[idx].Order = order
+			}
+		case "oauth2":
+			if idx < len(cfg.OAuth2) {
+				cfg.OAuth2[idx].Order = order
+			}
+		case "saml":
+			if idx < len(cfg.SAML) {
+				cfg.SAML[idx].Order = order
+			}
+		}
 	}
 }
 

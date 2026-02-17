@@ -78,6 +78,9 @@ type OIDCResultEntryData struct {
 	LogoutIDTokenHeader      string
 	LogoutIDTokenPayload     string
 	LogoutIDTokenSignature   string
+	// Opaque Access Token guidance (OAuth2 mode)
+	IsOpaqueAccessToken bool   // true when Access Token is not JWT
+	HasIntrospection    bool   // true when introspection endpoint is configured
 	// Introspection fields
 	IntrospectionRequestURL    string
 	IntrospectionRequestParams []components.ClaimRow
@@ -299,10 +302,10 @@ templ logoutEntryContent(entry OIDCResultEntryData) {
 }
 
 templ oidcIntrospectionEntryContent(entry OIDCResultEntryData) {
-	<!-- Token Metadata (Introspection Response as table) -->
+	<!-- Token Info (Introspection Response as table) -->
 	if len(entry.IntrospectionClaims) > 0 {
 		<details id={ entry.ID + "-claims" } class="result-subsection" open>
-			<summary>Token Metadata</summary>
+			<summary>Token Info</summary>
 			@components.ClaimsTable(entry.ID + "-introspection-claims", "Token Metadata", entry.IntrospectionClaims)
 		</details>
 	}

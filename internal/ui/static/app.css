@@ -535,6 +535,12 @@ details:target > summary {
   font-style: italic;
 }
 
+/* === Opaque token hint === */
+.opaque-token-hint {
+  color: var(--pico-muted-color);
+  font-style: italic;
+}
+
 /* === PEM block inside article === */
 .pem-block {
   border-top: 1px solid var(--pico-muted-border-color);

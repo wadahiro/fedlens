@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -87,36 +88,35 @@ func main() {
 		slog.Warn("TLS certificate verification is disabled")
 	}
 
-	// Build nav tabs for all SP/RPs
+	// Build nav tabs for all SP/RPs (sorted by TOML definition order)
+	type tabInfo struct {
+		order    int
+		routeKey string
+		tab      templates.NavTab
+	}
+	var tabInfos []tabInfo
+	for _, c := range cfg.OIDC {
+		routeKey := c.ParsedHost + c.BasePath
+		tabInfos = append(tabInfos, tabInfo{order: c.Order, routeKey: routeKey,
+			tab: templates.NavTab{Label: c.Name, BaseURL: c.BaseURL, Protocol: "oidc"}})
+	}
+	for _, c := range cfg.SAML {
+		routeKey := c.ParsedHost + c.BasePath
+		tabInfos = append(tabInfos, tabInfo{order: c.Order, routeKey: routeKey,
+			tab: templates.NavTab{Label: c.Name, BaseURL: c.BaseURL, Protocol: "saml"}})
+	}
+	for _, c := range cfg.OAuth2 {
+		routeKey := c.ParsedHost + c.BasePath
+		tabInfos = append(tabInfos, tabInfo{order: c.Order, routeKey: routeKey,
+			tab: templates.NavTab{Label: c.Name, BaseURL: c.BaseURL, Protocol: "oauth2"}})
+	}
+	slices.SortStableFunc(tabInfos, func(a, b tabInfo) int { return a.order - b.order })
+
 	var allTabs []templates.NavTab
 	tabIndex := make(map[string]int) // routeKey -> tab index
-
-	for _, oidcCfg := range cfg.OIDC {
-		routeKey := oidcCfg.ParsedHost + oidcCfg.BasePath
-		tabIndex[routeKey] = len(allTabs)
-		allTabs = append(allTabs, templates.NavTab{
-			Label:    oidcCfg.Name,
-			BaseURL:  oidcCfg.BaseURL,
-			Protocol: "oidc",
-		})
-	}
-	for _, samlCfg := range cfg.SAML {
-		routeKey := samlCfg.ParsedHost + samlCfg.BasePath
-		tabIndex[routeKey] = len(allTabs)
-		allTabs = append(allTabs, templates.NavTab{
-			Label:    samlCfg.Name,
-			BaseURL:  samlCfg.BaseURL,
-			Protocol: "saml",
-		})
-	}
-	for _, oauth2Cfg := range cfg.OAuth2 {
-		routeKey := oauth2Cfg.ParsedHost + oauth2Cfg.BasePath
-		tabIndex[routeKey] = len(allTabs)
-		allTabs = append(allTabs, templates.NavTab{
-			Label:    oauth2Cfg.Name,
-			BaseURL:  oauth2Cfg.BaseURL,
-			Protocol: "oauth2",
-		})
+	for i, ti := range tabInfos {
+		tabIndex[ti.routeKey] = i
+		allTabs = append(allTabs, ti.tab)
 	}
 
 	// Static file server for embedded assets

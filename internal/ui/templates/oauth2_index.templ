@@ -122,10 +122,10 @@ templ oauth2LogoutEntryContent(entry OIDCResultEntryData) {
 }
 
 templ oauth2IntrospectionEntryContent(entry OIDCResultEntryData) {
-	<!-- Token Metadata (Introspection Response as table) -->
+	<!-- Token Info (Introspection Response as table) -->
 	if len(entry.IntrospectionClaims) > 0 {
 		<details id={ entry.ID + "-claims" } class="result-subsection" open>
-			<summary>Token Metadata</summary>
+			<summary>Token Info</summary>
 			@components.ClaimsTable(entry.ID + "-introspection-claims", "Token Metadata", entry.IntrospectionClaims)
 		</details>
 	}
@@ -139,11 +139,21 @@ templ oauth2IntrospectionEntryContent(entry OIDCResultEntryData) {
 }
 
 templ oauth2NormalEntryContent(entry OIDCResultEntryData) {
-	<!-- Access Token Claims (when JWT) -->
+	<!-- Token Info -->
 	if len(entry.AccessTokenClaims) > 0 {
 		<details id={ entry.ID + "-claims" } class="result-subsection" open>
-			<summary>Access Token Claims</summary>
+			<summary>Token Info</summary>
 			@components.ClaimsTable(entry.ID + "-access-token-claims", "Access Token Claims", entry.AccessTokenClaims)
+		</details>
+	} else if entry.IsOpaqueAccessToken {
+		<details id={ entry.ID + "-claims" } class="result-subsection" open>
+			<summary>Token Info</summary>
+			<p class="opaque-token-hint">
+				Access Token is opaque (not JWT).
+				if entry.HasIntrospection {
+					Use <strong>Introspection</strong> to inspect token details.
+				}
+			</p>
 		</details>
 	}
 	<!-- Signature Verification -->

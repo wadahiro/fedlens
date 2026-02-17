@@ -93,9 +93,9 @@ test.describe("OAuth2 Flow", () => {
         "Active Session"
       );
 
-      // Should show Token Metadata section (not "Introspection Response")
+      // Should show Token Info section
       await expect(
-        page.locator("summary:has-text('Token Metadata')").first()
+        page.locator("summary:has-text('Token Info')").first()
       ).toBeVisible();
     }
 
