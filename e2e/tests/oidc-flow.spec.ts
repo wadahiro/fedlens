@@ -9,7 +9,7 @@ test.describe("OIDC Flow", () => {
     await expect(page.locator(".status-indicator")).toHaveText("No Session");
 
     // Login button should be visible
-    await expect(page.locator('a[role="button"]', { hasText: "Login" })).toBeVisible();
+    await expect(page.getByTestId("login-btn")).toBeVisible();
 
     // Should show OpenID Provider section
     await expect(page.locator("#sec-provider")).toBeVisible();
@@ -19,7 +19,7 @@ test.describe("OIDC Flow", () => {
     await page.goto(OIDC_URL);
 
     // Click Login
-    await page.click('a[role="button"]:has-text("Login")');
+    await page.getByTestId("login-btn").click();
 
     // Should redirect to Keycloak login form
     await expect(page.locator("#kc-login")).toBeVisible();
@@ -53,7 +53,7 @@ test.describe("OIDC Flow", () => {
     await expect(sigs.getByTestId('verified').first()).toHaveText('true');
 
     // Click Logout
-    await page.click('a[role="button"]:has-text("Logout")');
+    await page.getByTestId("logout-btn").click();
 
     // Should return to pre-login page
     await expect(page.locator(".status-indicator")).toHaveText("No Session");
@@ -63,13 +63,13 @@ test.describe("OIDC Flow", () => {
     await page.goto(OIDC_URL);
 
     // Login
-    await page.click('a[role="button"]:has-text("Login")');
+    await page.getByTestId("login-btn").click();
     await expect(page.locator("#kc-login")).toBeVisible();
     await keycloakLogin(page);
     await expect(page.locator(".status-indicator")).toHaveText("Active Session");
 
     // Check if Refresh Token button exists
-    const refreshButton = page.locator('a[role="button"]:has-text("Refresh Token")');
+    const refreshButton = page.getByTestId("refresh-btn");
     if (await refreshButton.isVisible()) {
       await refreshButton.click();
 
@@ -79,7 +79,7 @@ test.describe("OIDC Flow", () => {
     }
 
     // Cleanup: logout
-    await page.click('a[role="button"]:has-text("Logout")');
+    await page.getByTestId("logout-btn").click();
   });
 
   test("navigation tabs are displayed", async ({ page }) => {

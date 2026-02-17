@@ -295,6 +295,20 @@ The HTML is designed for easy E2E testing. Use the `id` attributes to scope into
 | `#result-0-tokens` | Raw Tokens section (OIDC) |
 | `#result-0-error` | Error Details section |
 
+**`data-testid` on action buttons**
+
+The action bar buttons have fixed `data-testid` attributes. Visibility depends on session state.
+
+| `data-testid` | Element | Protocol | Shown when |
+|---|---|---|---|
+| `login-btn` | Login button | OIDC / SAML | No session |
+| `logout-btn` | Logout button | OIDC / SAML | Active session |
+| `userinfo-btn` | UserInfo button | OIDC only | Active session + UserInfo endpoint configured |
+| `refresh-btn` | Refresh Token button | OIDC only | Active session + refresh token present |
+| `reauth-btn` | Re-authenticate (default) | OIDC / SAML | Active session + `[[*.reauth]]` configured |
+| `reauth-more-btn` | "More ▾" dropdown trigger | OIDC / SAML | 2+ reauth profiles configured |
+| `reauth-0`, `reauth-1`, ... | Dropdown reauth items (0-indexed) | OIDC / SAML | Inside "More ▾" dropdown |
+
 **`data-testid` on value cells**
 
 All value `<td>` elements have `data-testid` attributes for direct access:
@@ -305,9 +319,29 @@ All value `<td>` elements have `data-testid` attributes for direct access:
 | Subject | Fixed | `subject` |
 | Error (OIDC) | OAuth 2.0 parameter names | `error`, `error_description`, `error_uri`, `detail` |
 | Error (SAML) | snake_case | `status_code`, `detail` |
-| Signature | Label → snake_case | `verified`, `algorithm`, `key_id_kid`, `key_type_kty` |
-| Response Details | Label → snake_case | `issuer`, `status_code`, `destination` |
+| Signature | Label → `toTestID()` | `verified`, `algorithm`, `key_id_kid`, `key_type_kty` |
+| Response Details | Label → `toTestID()` | `issuer`, `status_code`, `destination` |
 | Params | Parameter key as-is | `redirect_uri`, `scope`, `response_type` |
+
+The `toTestID()` conversion rule for Signature / Response Details labels:
+1. Remove parentheses → `Key ID (kid)` → `Key ID kid`
+2. Lowercase → `key id kid`
+3. Replace spaces with `_` → `key_id_kid`
+
+**Example: Action button interactions**
+
+```typescript
+// Pre-login: click Login
+await page.getByTestId('login-btn').click();
+
+// Post-login: trigger actions
+await page.getByTestId('userinfo-btn').click();       // OIDC only
+await page.getByTestId('refresh-btn').click();         // OIDC only
+await page.getByTestId('reauth-btn').click();          // Re-authenticate (default profile)
+await page.getByTestId('reauth-more-btn').click();     // Open dropdown
+await page.getByTestId('reauth-0').click();            // Select first additional profile
+await page.getByTestId('logout-btn').click();
+```
 
 **Example: OIDC login assertions**
 

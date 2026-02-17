@@ -9,7 +9,7 @@ test.describe("SAML Flow", () => {
     await expect(page.locator(".status-indicator")).toHaveText("No Session");
 
     // Login button should be visible
-    await expect(page.locator('a[role="button"]', { hasText: "Login" })).toBeVisible();
+    await expect(page.getByTestId("login-btn")).toBeVisible();
 
     // Should show Identity Provider section
     await expect(page.locator("#sec-idp")).toBeVisible();
@@ -19,7 +19,7 @@ test.describe("SAML Flow", () => {
     await page.goto(SAML_URL);
 
     // Click Login
-    await page.click('a[role="button"]:has-text("Login")');
+    await page.getByTestId("login-btn").click();
 
     // Should redirect to Keycloak login form
     await expect(page.locator("#kc-login")).toBeVisible();
@@ -52,7 +52,7 @@ test.describe("SAML Flow", () => {
     await expect(sigs.getByTestId('verified').first()).toHaveText('true');
 
     // Click Logout
-    await page.click('a[role="button"]:has-text("Logout")');
+    await page.getByTestId("logout-btn").click();
 
     // Should return to pre-login page
     await expect(page.locator(".status-indicator")).toHaveText("No Session");

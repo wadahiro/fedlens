@@ -8,7 +8,7 @@ test.describe("Screenshots for README", () => {
 
   test("OIDC post-login", async ({ page }) => {
     await page.goto(OIDC_URL);
-    await page.click('a[role="button"]:has-text("Login")');
+    await page.getByTestId("login-btn").click();
     await expect(page.locator("#kc-login")).toBeVisible();
     await keycloakLogin(page);
     await expect(page.locator(".status-indicator")).toHaveText("Active Session");
@@ -17,12 +17,12 @@ test.describe("Screenshots for README", () => {
 
     await page.screenshot({ path: `${screenshotDir}/oidc-post-login.png` });
 
-    await page.click('a[role="button"]:has-text("Logout")');
+    await page.getByTestId("logout-btn").click();
   });
 
   test("SAML post-login", async ({ page }) => {
     await page.goto(SAML_URL);
-    await page.click('a[role="button"]:has-text("Login")');
+    await page.getByTestId("login-btn").click();
     await expect(page.locator("#kc-login")).toBeVisible();
     await keycloakLogin(page);
     await expect(page.locator(".status-indicator")).toHaveText("Active Session");
@@ -31,6 +31,6 @@ test.describe("Screenshots for README", () => {
 
     await page.screenshot({ path: `${screenshotDir}/saml-post-login.png` });
 
-    await page.click('a[role="button"]:has-text("Logout")');
+    await page.getByTestId("logout-btn").click();
   });
 });
