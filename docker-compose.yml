@@ -1,4 +1,11 @@
 services:
+  socks-proxy:
+    image: serjs/go-socks5-proxy
+    environment:
+      REQUIRE_AUTH: "false"
+    ports:
+      - "1080:1080"
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.5.3
     hostname: idp.example.com
@@ -15,6 +22,10 @@ services:
       - "8080:8080"
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+    networks:
+      default:
+        aliases:
+          - idp.example.com
     healthcheck:
       test:
         [
@@ -34,6 +45,11 @@ services:
       - ./config.example.toml:/etc/fedlens/config.toml:ro
     ports:
       - "3000:3000"
+    networks:
+      default:
+        aliases:
+          - oidc.example.com
+          - saml.example.com
     depends_on:
       keycloak:
         condition: service_healthy

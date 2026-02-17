@@ -11,6 +11,9 @@ export default defineConfig({
   reporter: "html",
   use: {
     baseURL: "http://oidc.example.com:3000",
+    proxy: {
+      server: "socks5://localhost:1080",
+    },
     trace: captureMode ? "on" : "retain-on-failure",
     video: captureMode ? "on" : "retain-on-failure",
     screenshot: captureMode ? "on" : "only-on-failure",

@@ -48,17 +48,24 @@ test.describe("UI Features", () => {
     expect(revertedTheme).toBe(expectedReverted);
   });
 
-  test("copy buttons are present on code blocks", async ({ page, context }) => {
-    // Grant clipboard permissions for chromium
-    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  test("copy buttons are present on code blocks", async ({ page, context, browserName }) => {
+    // Grant clipboard permissions (Chromium only; Firefox/WebKit use execCommand fallback)
+    if (browserName === "chromium") {
+      await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    }
     await page.goto(OIDC_URL);
 
-    // Code blocks should have copy buttons (on the pre-login page with discovery metadata)
-    const copyButtons = page.locator('button:has-text("Copy")');
+    // Use specific selector to exclude "Copy as JSON" buttons
+    const copyButtons = page.locator("button.copy-btn:not(.copy-json-btn)");
     const count = await copyButtons.count();
 
     // At least one copy button should be present (for discovery metadata)
     expect(count).toBeGreaterThan(0);
+
+    // Verify copy works by checking button text feedback (use nth to pin the element)
+    const firstCopyBtn = copyButtons.nth(0);
+    await firstCopyBtn.click();
+    await expect(firstCopyBtn).toHaveText("Copied!");
   });
 
   test("sequence diagram is displayed on pre-login page", async ({ page }) => {
