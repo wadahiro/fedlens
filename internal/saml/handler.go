@@ -266,7 +266,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
 	mux.HandleFunc("/login", h.handleLogin)
 	mux.HandleFunc(h.Config.ACSPath, h.handleACS)
-	mux.Handle(h.Config.MetadataPath, h.sp)
+	mux.HandleFunc(h.Config.MetadataPath, h.sp.ServeMetadata)
 	mux.HandleFunc(h.Config.SLOPath, h.handleSLO)
 	mux.HandleFunc("/logout", h.handleLogout)
 	mux.HandleFunc("/reauth", h.handleReauth)
