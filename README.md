@@ -28,6 +28,8 @@
 - **UserInfo Claims** table
 - **Signature Verification** details (algorithm, key ID, JWKS key info)
 - **Token Refresh Flow** with before/after comparison
+- **Token Introspection** (RFC 7662) with HTTP request/response capture
+- **Token Revocation** (RFC 7009) for Access Token and Refresh Token
 - **Logout Flow** with configurable `id_token_hint`
 - **Re-authentication Profiles** for step-up authentication
 - **Custom Scopes**, **Response Mode**, and **Extra Auth Parameters**
@@ -53,6 +55,8 @@
 - **Access Token Claims** table (when JWT) with **Signature Verification**
 - **Token Refresh Flow**
 - **Token Introspection** (RFC 7662) with HTTP request/response capture
+- **Token Revocation** (RFC 7009) for Access Token and Refresh Token
+- **Resource Access** with built-in Resource Server and RFC 9728 metadata
 - **Re-authentication Profiles** for custom authorization parameters
 - Authorization Request / Response, Token Request / Response display
 - **Sequence Diagram** showing the OAuth2 Authorization Code Flow
@@ -60,6 +64,8 @@
 ### General
 
 - **Token Introspection** (RFC 7662) support for OIDC and OAuth2
+- **Token Revocation** (RFC 7009) support for OIDC and OAuth2
+- **Boolean value highlighting** in claims tables (true=green, false=red)
 - **Multiple SP/RP** support via TOML configuration
 - **Tab Navigation** to switch between multiple OIDC RPs, OAuth2 Clients, and SAML SPs
 - **TLS Support** with self-signed cert auto-generation or external certificates
@@ -153,6 +159,7 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
 | `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
 | `introspection_url` | No | | Token Introspection endpoint URL (optional, Discovery takes precedence) |
+| `revocation_url` | No | | Token Revocation endpoint URL (optional, Discovery takes precedence) |
 | `logout_id_token_hint` | No | `true` | Send `id_token_hint` in logout request |
 
 ##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
@@ -182,6 +189,7 @@ Each `[[oauth2]]` block defines a separate OAuth2 Client. Uses the same handler 
 | `authorization_url` | No* | | Authorization endpoint URL (manual) |
 | `token_url` | No* | | Token endpoint URL (manual) |
 | `introspection_url` | No | | Token Introspection endpoint URL |
+| `revocation_url` | No | | Token Revocation endpoint URL |
 | `client_id` | Yes | | Client ID |
 | `client_secret` | Yes | | Client Secret |
 | `redirect_uri` | Yes | | Redirect URI (callback URL) |
@@ -273,7 +281,6 @@ base_url = "http://okta-saml.example.com:3000"
 idp_metadata_url = "https://okta.example.com/app/xxx/sso/saml/metadata"
 entity_id = "http://okta-saml.example.com:3000/saml/metadata"
 root_url = "http://okta-saml.example.com:3000"
-```
 
 [[oauth2]]
 name = "GitHub OAuth"
@@ -409,6 +416,9 @@ The action bar buttons have fixed `data-testid` attributes. Visibility depends o
 | `logout-btn` | Logout button | OIDC / OAuth2 / SAML | Active session |
 | `userinfo-btn` | UserInfo button | OIDC only | Active session + UserInfo endpoint configured |
 | `introspection-btn` | Introspection button | OIDC / OAuth2 | Active session + Introspection endpoint configured |
+| `revoke-at-btn` | Revoke Access Token button | OIDC / OAuth2 | Active session + Revocation endpoint configured |
+| `revoke-rt-btn` | Revoke Refresh Token button | OIDC / OAuth2 | Active session + Revocation endpoint + refresh token present |
+| `resource-access-btn` | Resource Access button | OAuth2 | Active session + Resource Server configured |
 | `refresh-btn` | Refresh Token button | OIDC / OAuth2 | Active session + refresh token present |
 | `reauth-btn` | Re-authenticate (default) | OIDC / OAuth2 / SAML | Active session + `[[*.reauth]]` configured |
 | `reauth-more-btn` | "More ▾" dropdown trigger | OIDC / OAuth2 / SAML | 2+ reauth profiles configured |
