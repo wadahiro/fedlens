@@ -425,6 +425,16 @@ table thead th {
   color: var(--pico-muted-color);
 }
 
+/* Highlight boolean values in claims tables */
+tr.claim-true td:last-child {
+  color: var(--pico-ins-color);
+  font-weight: 700;
+}
+tr.claim-false td:last-child {
+  color: var(--pico-del-color);
+  font-weight: 700;
+}
+
 /* === Article header with copy button === */
 article > header {
   display: flex;

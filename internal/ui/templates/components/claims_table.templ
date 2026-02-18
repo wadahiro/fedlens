@@ -52,10 +52,22 @@ templ KeyValueTable(id string, title string, keyHeader string, valueHeader strin
 				</thead>
 				<tbody>
 					for _, row := range rows {
-						<tr>
-							<td>{ row.Key }</td>
-							<td data-testid={ row.Key }>{ row.Value }</td>
-						</tr>
+						if row.Value == "false" {
+							<tr class="claim-false">
+								<td>{ row.Key }</td>
+								<td data-testid={ row.Key }>{ row.Value }</td>
+							</tr>
+						} else if row.Value == "true" {
+							<tr class="claim-true">
+								<td>{ row.Key }</td>
+								<td data-testid={ row.Key }>{ row.Value }</td>
+							</tr>
+						} else {
+							<tr>
+								<td>{ row.Key }</td>
+								<td data-testid={ row.Key }>{ row.Value }</td>
+							</tr>
+						}
 					}
 				</tbody>
 			</table>

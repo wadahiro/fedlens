@@ -35,10 +35,10 @@ templ OAuth2Index(page PageInfo, data OIDCPageData) {
 				@components.CodeBlock("JWKS (Raw)", data.JWKSJSON)
 			}
 			if data.DiscoveryJSON != "" {
-				@components.CodeBlock("AS Metadata", data.DiscoveryJSON)
+				@components.CodeBlock("Authorization Server Metadata", data.DiscoveryJSON)
 			} else {
 				<article>
-					<header>AS Metadata</header>
+					<header>Authorization Server Metadata</header>
 					<p class="not-configured">Not configured (manual endpoints)</p>
 				</article>
 			}
