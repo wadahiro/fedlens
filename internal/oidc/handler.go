@@ -41,6 +41,7 @@ type Handler struct {
 		UserinfoEndpoint      string
 		JwksURI               string
 		IntrospectionEndpoint string
+		RevocationEndpoint    string
 	}
 	isOAuth2     bool   // true = OAuth2 mode (skip ID Token / UserInfo)
 	protocol     string // "oidc" or "oauth2"
@@ -119,6 +120,7 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 		UserinfoEndpoint      string `json:"userinfo_endpoint"`
 		JwksURI               string `json:"jwks_uri"`
 		IntrospectionEndpoint string `json:"introspection_endpoint"`
+		RevocationEndpoint    string `json:"revocation_endpoint"`
 	}
 	if err := provider.Claims(&providerClaims); err != nil {
 		log.Printf("WARNING: Could not extract provider claims (%s): %v", cfg.Name, err)
@@ -131,6 +133,12 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 		h.providerInfo.IntrospectionEndpoint = cfg.IntrospectionURL
 	} else {
 		h.providerInfo.IntrospectionEndpoint = providerClaims.IntrospectionEndpoint
+	}
+	// Revocation: TOML override takes precedence over Discovery
+	if cfg.RevocationURL != "" {
+		h.providerInfo.RevocationEndpoint = cfg.RevocationURL
+	} else {
+		h.providerInfo.RevocationEndpoint = providerClaims.RevocationEndpoint
 	}
 
 	// Derive top-page URL from base_url
@@ -157,7 +165,7 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 		Timeout:   httpClient.Timeout,
 	}
 
-	var authURL, tokenURL, jwksURI, introspectionEndpoint string
+	var authURL, tokenURL, jwksURI, introspectionEndpoint, revocationEndpoint string
 	var discoveryRaw json.RawMessage
 
 	if cfg.Issuer != "" {
@@ -167,6 +175,7 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 			AuthorizationEndpoint string `json:"authorization_endpoint"`
 			TokenEndpoint         string `json:"token_endpoint"`
 			IntrospectionEndpoint string `json:"introspection_endpoint"`
+			RevocationEndpoint    string `json:"revocation_endpoint"`
 			JwksURI               string `json:"jwks_uri"`
 		}
 
@@ -227,6 +236,7 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 		tokenURL = asMetadata.TokenEndpoint
 		jwksURI = asMetadata.JwksURI
 		introspectionEndpoint = asMetadata.IntrospectionEndpoint
+		revocationEndpoint = asMetadata.RevocationEndpoint
 	} else {
 		// Manual endpoint configuration
 		authURL = cfg.AuthorizationURL
@@ -236,6 +246,10 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 	// TOML introspection_url overrides discovery
 	if cfg.IntrospectionURL != "" {
 		introspectionEndpoint = cfg.IntrospectionURL
+	}
+	// TOML revocation_url overrides discovery
+	if cfg.RevocationURL != "" {
+		revocationEndpoint = cfg.RevocationURL
 	}
 
 	oauth2Conf := &oauth2.Config{
@@ -283,6 +297,7 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 
 	h.providerInfo.JwksURI = jwksURI
 	h.providerInfo.IntrospectionEndpoint = introspectionEndpoint
+	h.providerInfo.RevocationEndpoint = revocationEndpoint
 
 	// Derive top-page URL from base_url
 	h.topPageURL = cfg.BaseURL + "/"
@@ -324,6 +339,7 @@ func buildEndpointRows(oauth2Config *oauth2.Config, providerInfo struct {
 	UserinfoEndpoint      string
 	JwksURI               string
 	IntrospectionEndpoint string
+	RevocationEndpoint    string
 }) []components.ClaimRow {
 	var rows []components.ClaimRow
 	endpoints := []struct{ key, value string }{
@@ -331,6 +347,7 @@ func buildEndpointRows(oauth2Config *oauth2.Config, providerInfo struct {
 		{"token_endpoint", oauth2Config.Endpoint.TokenURL},
 		{"userinfo_endpoint", providerInfo.UserinfoEndpoint},
 		{"introspection_endpoint", providerInfo.IntrospectionEndpoint},
+		{"revocation_endpoint", providerInfo.RevocationEndpoint},
 		{"jwks_uri", providerInfo.JwksURI},
 		{"end_session_endpoint", providerInfo.EndSessionEndpoint},
 	}
@@ -378,6 +395,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	}
 	if h.providerInfo.IntrospectionEndpoint != "" {
 		mux.HandleFunc("/introspection", h.handleIntrospection)
+	}
+	if h.providerInfo.RevocationEndpoint != "" {
+		mux.HandleFunc("/revocation", h.handleRevocation)
 	}
 	if h.isOAuth2 {
 		mux.HandleFunc("/resource", h.handleResource)
@@ -454,6 +474,12 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		if h.providerInfo.IntrospectionEndpoint != "" {
 			page.IntrospectionURL = h.basePath + "/introspection"
+		}
+		if h.providerInfo.RevocationEndpoint != "" {
+			page.RevokeAccessTokenURL = h.basePath + "/revocation?type=access_token"
+			if data.HasRefreshToken {
+				page.RevokeRefreshTokenURL = h.basePath + "/revocation?type=refresh_token"
+			}
 		}
 		if data.HasRefreshToken {
 			page.RefreshURL = h.basePath + "/refresh"
@@ -618,7 +644,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		if data.ErrorCode != "" || data.ErrorStatus != "" {
 			data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
 		}
-		if entry.AuthRequestURL != "" || data.TokenRequestURL != "" || data.UserInfoRequestURL != "" || data.ResourceRequestURL != "" {
+		if entry.AuthRequestURL != "" || data.TokenRequestURL != "" || data.UserInfoRequestURL != "" || data.RevocationRequestURL != "" || data.ResourceRequestURL != "" {
 			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 		}
 		return data
@@ -778,6 +804,22 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 	}
 
+	// Revocation Request
+	if entry.RevocationRequestURL != "" {
+		data.RevocationRequestURL = entry.RevocationRequestURL
+		orderedKeys := []string{"token", "token_type_hint"}
+		for _, k := range orderedKeys {
+			if v, ok := entry.RevocationRequestParams[k]; ok {
+				data.RevocationRequestParams = append(data.RevocationRequestParams, components.ClaimRow{Key: k, Value: v})
+			}
+		}
+	}
+	// Revocation Response
+	if entry.RevocationHTTPResponse != nil {
+		data.RevocationResponseStatusLine, data.RevocationResponseHeaders,
+			data.RevocationResponseBody, data.RevocationResponseBodyLang = buildHTTPResponseDisplay(entry.RevocationHTTPResponse)
+	}
+
 	// Resource Access
 	if entry.ResourceRequestURL != "" {
 		data.ResourceRequestURL = entry.ResourceRequestURL
@@ -864,6 +906,9 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	case entry.Type == "Introspection":
 		data.SidebarLabel = "Introspection"
 		data.SidebarDot = "introspection"
+	case entry.Type == "Revocation":
+		data.SidebarLabel = "Revocation"
+		data.SidebarDot = "revocation"
 	case strings.HasPrefix(entry.Type, "Resource"):
 		data.SidebarLabel = entry.Type
 		data.SidebarDot = "resource"
@@ -892,6 +937,12 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 		return data
 	}
+	if entry.Type == "Revocation" {
+		if entry.RevocationRequestURL != "" {
+			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
+		}
+		return data
+	}
 	if entry.Type == "Introspection" {
 		if len(data.IntrospectionClaims) > 0 {
 			data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Token Info"})
@@ -908,7 +959,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	if len(data.IDTokenSigRows) > 0 || len(data.AccessTokenSigRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
-	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.IntrospectionRequestURL != "" || entry.ResourceRequestURL != "" {
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.IntrospectionRequestURL != "" || entry.RevocationRequestURL != "" || entry.ResourceRequestURL != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
 	if entry.Type != "UserInfo" && entry.Type != "Introspection" && (entry.IDTokenRaw != "" || entry.AccessTokenRaw != "" || entry.RefreshTokenRaw != "") {
@@ -1601,6 +1652,115 @@ func (h *Handler) handleIntrospection(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode >= 300 {
 		entry.ErrorCode = "introspection_error"
 		entry.ErrorDetail = fmt.Sprintf("Introspection endpoint returned %d", resp.StatusCode)
+	}
+
+	h.saveDebugEntry(w, r, entry)
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+}
+
+// handleRevocation performs a token revocation (RFC 7009) for the specified token type.
+func (h *Handler) handleRevocation(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session_id")
+	if err != nil {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	session := h.sessions.GetByID(cookie.Value)
+	if session == nil {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	if h.providerInfo.RevocationEndpoint == "" {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	tokenType := r.URL.Query().Get("type")
+	var token, tokenTypeHint string
+	switch tokenType {
+	case "refresh_token":
+		token = session.RefreshTokenRaw
+		tokenTypeHint = "refresh_token"
+	default:
+		token = session.AccessTokenRaw
+		tokenTypeHint = "access_token"
+	}
+
+	if token == "" {
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+
+	revocationURL := h.providerInfo.RevocationEndpoint
+	reqParams := map[string]string{
+		"token":           token,
+		"token_type_hint": tokenTypeHint,
+	}
+	params := url.Values{
+		"token":           {token},
+		"token_type_hint": {tokenTypeHint},
+	}
+
+	req, err := http.NewRequest("POST", revocationURL, strings.NewReader(params.Encode()))
+	if err != nil {
+		log.Printf("Failed to create revocation request: %v", err)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth(h.oauth2Config.ClientID, h.oauth2Config.ClientSecret)
+
+	resp, err := h.httpClient.Do(req)
+
+	// Capture HTTP response
+	revocationCapture := h.capTransport.LastCapture()
+	var revocationHTTPResp *HTTPResponseInfo
+	if revocationCapture != nil {
+		revocationHTTPResp = &HTTPResponseInfo{
+			StatusCode: revocationCapture.StatusCode,
+			Headers:    revocationCapture.Headers,
+			Body:       string(revocationCapture.Body),
+		}
+	}
+
+	if err != nil {
+		log.Printf("Revocation request failed: %v", err)
+		errorEntry := ResultEntry{
+			Type:                    "Error: Revocation",
+			Timestamp:               time.Now(),
+			RevocationRequestURL:    revocationURL,
+			RevocationRequestParams: reqParams,
+			RevocationHTTPResponse:  revocationHTTPResp,
+			ErrorCode:               "connection_failed",
+			ErrorDetail:             err.Error(),
+		}
+		h.saveErrorEntry(w, r, errorEntry)
+		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+		return
+	}
+	defer resp.Body.Close()
+
+	// Read response body (RFC 7009: server responds with 200 on success)
+	io.ReadAll(resp.Body)
+
+	entryType := "Revocation"
+	if resp.StatusCode >= 300 {
+		entryType = "Error: Revocation"
+	}
+
+	entry := ResultEntry{
+		Type:                    entryType,
+		Timestamp:               time.Now(),
+		RevocationRequestURL:    revocationURL,
+		RevocationRequestParams: reqParams,
+		RevocationHTTPResponse:  revocationHTTPResp,
+	}
+
+	if resp.StatusCode >= 300 {
+		entry.ErrorCode = "revocation_error"
+		entry.ErrorDetail = fmt.Sprintf("Revocation endpoint returned %d", resp.StatusCode)
 	}
 
 	h.saveDebugEntry(w, r, entry)

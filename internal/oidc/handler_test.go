@@ -26,15 +26,17 @@ func TestBuildEndpointRows(t *testing.T) {
 			UserinfoEndpoint      string
 			JwksURI               string
 			IntrospectionEndpoint string
+			RevocationEndpoint    string
 		}{
 			EndSessionEndpoint:    "https://idp.example.com/logout",
 			UserinfoEndpoint:      "https://idp.example.com/userinfo",
 			JwksURI:               "https://idp.example.com/jwks",
 			IntrospectionEndpoint: "https://idp.example.com/introspect",
+			RevocationEndpoint:    "https://idp.example.com/revoke",
 		}
 		rows := buildEndpointRows(oauth2Cfg, providerInfo)
-		if len(rows) != 6 {
-			t.Errorf("got %d rows, want 6", len(rows))
+		if len(rows) != 7 {
+			t.Errorf("got %d rows, want 7", len(rows))
 		}
 	})
 
@@ -50,6 +52,7 @@ func TestBuildEndpointRows(t *testing.T) {
 			UserinfoEndpoint      string
 			JwksURI               string
 			IntrospectionEndpoint string
+			RevocationEndpoint    string
 		}{
 			UserinfoEndpoint: "https://idp.example.com/userinfo",
 		}

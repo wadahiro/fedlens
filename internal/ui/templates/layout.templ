@@ -38,8 +38,10 @@ type PageInfo struct {
 	LoginURL          string
 	LogoutURL         string
 	UserInfoURL       string
-	IntrospectionURL  string // Token Introspection URL (if endpoint available)
-	RefreshURL        string
+	IntrospectionURL      string // Token Introspection URL (if endpoint available)
+	RevokeAccessTokenURL  string // Revoke Access Token URL (if revocation endpoint available)
+	RevokeRefreshTokenURL string // Revoke Refresh Token URL (if revocation endpoint and refresh token available)
+	RefreshURL            string
 	ClearURL          string // path to clear debug results
 	ReauthItems          []ReauthItem
 	ResourceAccessItems  []ResourceAccessItem
@@ -60,6 +62,8 @@ func sidebarBadgeClass(dot string) string {
 		return "result-refresh"
 	case "resource":
 		return "result-refresh"
+	case "revocation":
+		return "result-revocation"
 	case "reauth":
 		return "result-reauth"
 	case "logout":
@@ -83,6 +87,8 @@ func sidebarBadgeLabel(dot string) string {
 		return "Introspection"
 	case "resource":
 		return "Resource"
+	case "revocation":
+		return "Revocation"
 	case "reauth":
 		return "Re-auth"
 	case "logout":
@@ -186,7 +192,7 @@ templ Layout(title string, page PageInfo) {
 											if tab.Protocol == "oidc" {
 												<kbd class="protocol-oidc">OIDC</kbd>
 											} else if tab.Protocol == "oauth2" {
-												<kbd class="protocol-oauth2">OAuth2</kbd>
+												<kbd class="protocol-oauth2">OAUTH2</kbd>
 											} else {
 												<kbd class="protocol-saml">SAML</kbd>
 											}
@@ -197,7 +203,7 @@ templ Layout(title string, page PageInfo) {
 											if tab.Protocol == "oidc" {
 												<kbd class="protocol-oidc">OIDC</kbd>
 											} else if tab.Protocol == "oauth2" {
-												<kbd class="protocol-oauth2">OAuth2</kbd>
+												<kbd class="protocol-oauth2">OAUTH2</kbd>
 											} else {
 												<kbd class="protocol-saml">SAML</kbd>
 											}
@@ -215,7 +221,7 @@ templ Layout(title string, page PageInfo) {
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
 									<li>
-										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-introspection", sec.Dot == "introspection"), templ.KV("sidebar-dot-resource", sec.Dot == "resource"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
+										<a href={ templ.SafeURL("#" + sec.ID) } class={ templ.KV("sidebar-dot-login", sec.Dot == "login"), templ.KV("sidebar-dot-refresh", sec.Dot == "refresh"), templ.KV("sidebar-dot-userinfo", sec.Dot == "userinfo"), templ.KV("sidebar-dot-reauth", sec.Dot == "reauth"), templ.KV("sidebar-dot-introspection", sec.Dot == "introspection"), templ.KV("sidebar-dot-resource", sec.Dot == "resource"), templ.KV("sidebar-dot-revocation", sec.Dot == "revocation"), templ.KV("sidebar-dot-logout", sec.Dot == "logout"), templ.KV("sidebar-dot-error", sec.Dot == "error") }>
 											<span class="sidebar-entry-content">
 												if sec.Timestamp != "" {
 													<small class="sidebar-timestamp">{ sec.Timestamp }</small>
@@ -259,6 +265,8 @@ templ Layout(title string, page PageInfo) {
 								<a href={ templ.SafeURL(tab.BaseURL + "/") } aria-current="page">
 									if tab.Protocol == "oidc" {
 										<kbd class="protocol-oidc">OIDC</kbd>
+									} else if tab.Protocol == "oauth2" {
+										<kbd class="protocol-oauth2">OAUTH2</kbd>
 									} else {
 										<kbd class="protocol-saml">SAML</kbd>
 									}
@@ -268,6 +276,8 @@ templ Layout(title string, page PageInfo) {
 								<a href={ templ.SafeURL(tab.BaseURL + "/") }>
 									if tab.Protocol == "oidc" {
 										<kbd class="protocol-oidc">OIDC</kbd>
+									} else if tab.Protocol == "oauth2" {
+										<kbd class="protocol-oauth2">OAUTH2</kbd>
 									} else {
 										<kbd class="protocol-saml">SAML</kbd>
 									}

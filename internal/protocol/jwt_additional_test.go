@@ -208,6 +208,8 @@ func TestFormatValue(t *testing.T) {
 		{"json.Number", json.Number("12345"), "12345"},
 		{"string", "hello", "hello"},
 		{"bool", true, "true"},
+		{"map", map[string]any{"active": true, "sub": "user1"}, `{"active":true,"sub":"user1"}`},
+		{"slice", []any{"a", "b"}, `["a","b"]`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

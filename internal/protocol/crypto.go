@@ -133,6 +133,7 @@ func FormatTimestamp(original string) string {
 }
 
 // FormatValue formats a value for display, handling numeric types.
+// Maps and slices are formatted as compact JSON to avoid Go's default map[...] output.
 func FormatValue(v any) string {
 	switch n := v.(type) {
 	case float64:
@@ -142,6 +143,11 @@ func FormatValue(v any) string {
 		return fmt.Sprintf("%g", n)
 	case json.Number:
 		return n.String()
+	case map[string]any, []any:
+		if b, err := json.Marshal(n); err == nil {
+			return string(b)
+		}
+		return fmt.Sprintf("%v", v)
 	default:
 		return fmt.Sprintf("%v", v)
 	}

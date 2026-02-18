@@ -41,6 +41,7 @@ type OIDCConfig struct {
 	ResponseMode    string            `toml:"response_mode"`
 	ExtraAuthParams map[string]string `toml:"extra_auth_params"`
 	IntrospectionURL  string            `toml:"introspection_url"`    // Token Introspection endpoint (optional, Discovery takes precedence)
+	RevocationURL     string            `toml:"revocation_url"`       // Token Revocation endpoint (optional, Discovery takes precedence)
 	Reauth            []ReauthConfig    `toml:"reauth"`
 	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
 
@@ -58,6 +59,7 @@ type OAuth2Config struct {
 	AuthorizationURL string            `toml:"authorization_url"` // Manual (required if no issuer)
 	TokenURL         string            `toml:"token_url"`         // Manual (required if no issuer)
 	IntrospectionURL string            `toml:"introspection_url"` // Token Introspection endpoint (optional)
+	RevocationURL    string            `toml:"revocation_url"`    // Token Revocation endpoint (optional)
 	ClientID         string            `toml:"client_id"`
 	ClientSecret     string            `toml:"client_secret"`
 	RedirectURI      string            `toml:"redirect_uri"`

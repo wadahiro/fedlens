@@ -67,6 +67,10 @@ type ResultEntry struct {
 	IntrospectionRequestParams map[string]string
 	IntrospectionResponse    json.RawMessage
 	IntrospectionHTTPResponse *HTTPResponseInfo
+	// Revocation fields
+	RevocationRequestURL    string
+	RevocationRequestParams map[string]string
+	RevocationHTTPResponse  *HTTPResponseInfo
 	// Resource Access fields
 	ResourceRequestURL    string
 	ResourceRequestMethod string

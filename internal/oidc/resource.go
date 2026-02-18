@@ -155,7 +155,7 @@ func (h *Handler) handleResourceAccess(w http.ResponseWriter, r *http.Request) {
 	var accessToken string
 	if cookie, err := r.Cookie("session_id"); err == nil {
 		if session := h.sessions.GetByID(cookie.Value); session != nil {
-			accessToken = accessToken
+			accessToken = session.AccessTokenRaw
 		}
 	}
 

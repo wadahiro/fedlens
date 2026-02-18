@@ -92,6 +92,13 @@ type OIDCResultEntryData struct {
 	IntrospectionResponseBody       string
 	IntrospectionResponseBodyLang   string
 	IntrospectionResponseConnError  string
+	// Revocation fields
+	RevocationRequestURL         string
+	RevocationRequestParams      []components.ClaimRow
+	RevocationResponseStatusLine string
+	RevocationResponseHeaders    string
+	RevocationResponseBody       string
+	RevocationResponseBodyLang   string
 	// Resource Access fields
 	ResourceRequestURL         string
 	ResourceRequestRaw         string // "GET <url>\nAuthorization: Bearer <token>"
@@ -158,7 +165,7 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 }
 
 templ oidcActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || page.IntrospectionURL != "" || len(page.ReauthItems) > 0 {
+	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || page.IntrospectionURL != "" || page.RevokeAccessTokenURL != "" || len(page.ReauthItems) > 0 {
 		<div class="action-bar">
 			if page.LoginURL != "" {
 				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
@@ -168,6 +175,12 @@ templ oidcActionBar(page PageInfo) {
 			}
 			if page.IntrospectionURL != "" {
 				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
+			}
+			if page.RevokeAccessTokenURL != "" {
+				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-at-btn">Revoke Access Token</a>
+			}
+			if page.RevokeRefreshTokenURL != "" {
+				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
 			}
 			if page.RefreshURL != "" {
 				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
@@ -208,6 +221,8 @@ func resultBadgeClass(entryType string) string {
 		return "result-refresh"
 	case entryType == "Resource":
 		return "result-refresh"
+	case entryType == "Revocation":
+		return "result-revocation"
 	case strings.HasPrefix(entryType, "Logout"):
 		return "result-logout"
 	case strings.HasPrefix(entryType, "Error"):
@@ -274,6 +289,8 @@ templ resultEntryContent(entry OIDCResultEntryData) {
 		@logoutEntryContent(entry)
 	} else if entry.Type == "Introspection" {
 		@oidcIntrospectionEntryContent(entry)
+	} else if entry.Type == "Revocation" {
+		@oidcRevocationEntryContent(entry)
 	} else {
 		@normalEntryContent(entry)
 	}
@@ -288,7 +305,7 @@ templ errorEntryContent(entry OIDCResultEntryData) {
 		</details>
 	}
 	<!-- Protocol Messages -->
-	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.ResourceRequestURL != "" {
+	if entry.AuthRequestURL != "" || entry.TokenRequestURL != "" || entry.UserInfoRequestURL != "" || entry.RevocationRequestURL != "" || entry.ResourceRequestURL != "" {
 		<details id={ entry.ID + "-protocol" } class="result-subsection">
 			<summary>Protocol Messages</summary>
 			@oidcProtocolMessages(entry)
@@ -326,6 +343,16 @@ templ oidcIntrospectionEntryContent(entry OIDCResultEntryData) {
 	<!-- Protocol Messages -->
 	if entry.IntrospectionRequestURL != "" {
 		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@oidcProtocolMessages(entry)
+		</details>
+	}
+}
+
+templ oidcRevocationEntryContent(entry OIDCResultEntryData) {
+	<!-- Protocol Messages -->
+	if entry.RevocationRequestURL != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection" open>
 			<summary>Protocol Messages</summary>
 			@oidcProtocolMessages(entry)
 		</details>
@@ -444,6 +471,14 @@ templ oidcProtocolMessages(entry OIDCResultEntryData) {
 		@components.HTTPResponseBlock("Introspection Response", entry.IntrospectionResponseStatusLine, entry.IntrospectionResponseHeaders, entry.IntrospectionResponseBody, entry.IntrospectionResponseBodyLang)
 	} else if entry.IntrospectionResponseConnError != "" {
 		@components.HTTPConnErrorBlock("Introspection Response", entry.IntrospectionResponseConnError)
+	}
+	// Revocation Request
+	if len(entry.RevocationRequestParams) > 0 {
+		@components.HTTPRequestBlock("Revocation Request (POST)", "POST " + entry.RevocationRequestURL, entry.RevocationRequestParams, "")
+	}
+	// Revocation Response
+	if entry.RevocationResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Revocation Response", entry.RevocationResponseStatusLine, entry.RevocationResponseHeaders, entry.RevocationResponseBody, entry.RevocationResponseBodyLang)
 	}
 	// Resource Request
 	if entry.ResourceRequestRaw != "" {

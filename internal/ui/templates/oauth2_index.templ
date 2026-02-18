@@ -47,13 +47,19 @@ templ OAuth2Index(page PageInfo, data OIDCPageData) {
 }
 
 templ oauth2ActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || len(page.ReauthItems) > 0 || len(page.ResourceAccessItems) > 0 {
+	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || page.RevokeAccessTokenURL != "" || len(page.ReauthItems) > 0 || len(page.ResourceAccessItems) > 0 {
 		<div class="action-bar">
 			if page.LoginURL != "" {
 				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
 			}
 			if page.IntrospectionURL != "" {
 				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
+			}
+			if page.RevokeAccessTokenURL != "" {
+				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-at-btn">Revoke Access Token</a>
+			}
+			if page.RevokeRefreshTokenURL != "" {
+				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
 			}
 			if len(page.ResourceAccessItems) > 0 {
 				if len(page.ResourceAccessItems) == 1 {
@@ -129,6 +135,8 @@ templ oauth2ResultEntryContent(entry OIDCResultEntryData) {
 		@oauth2LogoutEntryContent(entry)
 	} else if entry.Type == "Introspection" {
 		@oauth2IntrospectionEntryContent(entry)
+	} else if entry.Type == "Revocation" {
+		@oauth2RevocationEntryContent(entry)
 	} else if entry.Type == "Resource" {
 		@oauth2ResourceEntryContent(entry)
 	} else {
@@ -151,6 +159,16 @@ templ oauth2IntrospectionEntryContent(entry OIDCResultEntryData) {
 	<!-- Protocol Messages -->
 	if entry.IntrospectionRequestURL != "" {
 		<details id={ entry.ID + "-protocol" } class="result-subsection">
+			<summary>Protocol Messages</summary>
+			@oauth2ProtocolMessages(entry)
+		</details>
+	}
+}
+
+templ oauth2RevocationEntryContent(entry OIDCResultEntryData) {
+	<!-- Protocol Messages -->
+	if entry.RevocationRequestURL != "" {
+		<details id={ entry.ID + "-protocol" } class="result-subsection" open>
 			<summary>Protocol Messages</summary>
 			@oauth2ProtocolMessages(entry)
 		</details>
@@ -276,6 +294,14 @@ templ oauth2ProtocolMessages(entry OIDCResultEntryData) {
 		@components.HTTPResponseBlock("Introspection Response", entry.IntrospectionResponseStatusLine, entry.IntrospectionResponseHeaders, entry.IntrospectionResponseBody, entry.IntrospectionResponseBodyLang)
 	} else if entry.IntrospectionResponseConnError != "" {
 		@components.HTTPConnErrorBlock("Introspection Response", entry.IntrospectionResponseConnError)
+	}
+	// Revocation Request
+	if len(entry.RevocationRequestParams) > 0 {
+		@components.HTTPRequestBlock("Revocation Request (POST)", "POST " + entry.RevocationRequestURL, entry.RevocationRequestParams, "")
+	}
+	// Revocation Response
+	if entry.RevocationResponseStatusLine != "" {
+		@components.HTTPResponseBlock("Revocation Response", entry.RevocationResponseStatusLine, entry.RevocationResponseHeaders, entry.RevocationResponseBody, entry.RevocationResponseBodyLang)
 	}
 	// Resource Request (shown in error entries and protocol messages)
 	if entry.ResourceRequestRaw != "" {
