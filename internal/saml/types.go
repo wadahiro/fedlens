@@ -16,6 +16,11 @@ type SAMLResultEntry struct {
 	SAMLResponseXML string
 	SignatureInfos  []protocol.SAMLSignatureInfo
 	ResponseInfo    *protocol.SAMLResponseInfo
+	// RelayState fields
+	RelayStateSent     string // outgoing RelayState (sent with AuthnRequest)
+	RelayStateReceived string // incoming RelayState (received at ACS)
+	SAMLResponseBase64 string // raw base64-encoded SAMLResponse from ACS POST
+	AuthnRequestURL    string // full redirect URL (HTTP-Redirect binding only)
 	// Error fields
 	ErrorCode   string // SAML StatusCode (e.g. "urn:oasis:names:tc:SAML:2.0:status:Requester")
 	ErrorDetail string // Additional info

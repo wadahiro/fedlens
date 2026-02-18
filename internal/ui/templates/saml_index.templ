@@ -28,9 +28,16 @@ type SAMLResultEntryData struct {
 	Attributes      []components.ClaimRow
 	Signatures      []SAMLSignatureData
 	ResponseGroups  []components.RowGroup
-	AuthnRequestXML string
-	SAMLResponseXML string
-	SigVerifiedAll  bool
+	AssertionClaims    []components.ClaimRow // Assertion-level auth info (Issuer, Audience, AuthnContextClassRef, etc.)
+	ACSPostURL         string               // ACS endpoint URL (Destination from Response)
+	ACSResponseParams  []components.ClaimRow // POST form parameters (SAMLResponse, RelayState)
+	AuthnRequestXML    string
+	SAMLResponseXML    string
+	AuthnRequestURL    string // full redirect URL (HTTP-Redirect binding only)
+	AuthnRequestParams []components.ClaimRow
+	RelayStateSent     string
+	RelayStateReceived string
+	SigVerifiedAll     bool
 	SidebarLabel    string
 	SidebarDot      string // "login", "reauth", "logout", "error"
 	Children        []Section // sidebar sub-sections
@@ -48,14 +55,14 @@ type SAMLResultEntryData struct {
 
 // SAMLPageData holds all data for the SAML page.
 type SAMLPageData struct {
-	Name            string
-	Results         []SAMLResultEntryData // Reverse chronological
-	IDPMetadataXML  string
-	ACSPath         string
-	RequestBinding  string // "redirect" or "post"
-	ResponseBinding string // "redirect" or "post"
-	EndpointRows    []components.ClaimRow
-	IDPCertificates []SAMLCertificateData
+	Name              string
+	Results           []SAMLResultEntryData // Reverse chronological
+	IDPMetadataXML    string
+	ACSPath           string
+	RequestBinding    string // "redirect" or "post"
+	ResponseBinding   string // "redirect" or "post"
+	EndpointRows      []components.ClaimRow
+	IDPCertificates   []SAMLCertificateData
 }
 
 templ SAMLIndex(page PageInfo, data SAMLPageData) {
@@ -199,13 +206,17 @@ templ samlErrorEntryContent(entry SAMLResultEntryData) {
 		@components.ErrorTable(samlErrorRows(entry))
 	</details>
 	<!-- Protocol Messages -->
-	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" || entry.AuthnRequestURL != "" {
 		<details class="result-subsection">
 			<summary>Protocol Messages</summary>
-			if entry.AuthnRequestXML != "" {
+			if len(entry.AuthnRequestParams) > 0 {
+				@components.ParamsTableWithXML("AuthnRequest (Redirect Binding)", entry.AuthnRequestParams, "GET " + entry.AuthnRequestURL, entry.AuthnRequestXML)
+			} else if entry.AuthnRequestXML != "" {
 				@components.XMLCodeBlock("AuthnRequest", entry.AuthnRequestXML)
 			}
-			if entry.SAMLResponseXML != "" {
+			if len(entry.ACSResponseParams) > 0 {
+				@components.ParamsTableWithXML("SAML Response (POST Binding)", entry.ACSResponseParams, "POST " + entry.ACSPostURL, entry.SAMLResponseXML)
+			} else if entry.SAMLResponseXML != "" {
 				@components.XMLCodeBlock("SAML Response", entry.SAMLResponseXML)
 			}
 		</details>
@@ -268,20 +279,14 @@ templ samlLogoutEntryContent(entry SAMLResultEntryData) {
 
 templ samlNormalEntryContent(entry SAMLResultEntryData) {
 	<!-- Identity & Claims -->
-	if len(entry.Attributes) > 0 || entry.Subject != "" {
+	if len(entry.Attributes) > 0 || entry.Subject != "" || len(entry.AssertionClaims) > 0 {
 		<details id={ entry.ID + "-claims" } class="result-subsection" open>
 			<summary>Identity & Claims</summary>
 			if entry.Subject != "" {
 				@components.SubjectTable("Subject (NameID)", entry.Subject)
 			}
 			@components.ClaimsTable(entry.ID + "-attributes", "SAML Attributes", entry.Attributes)
-		</details>
-	}
-	<!-- SAML Response Details -->
-	if len(entry.ResponseGroups) > 0 {
-		<details id={ entry.ID + "-response" } class="result-subsection" open>
-			<summary>SAML Response Details</summary>
-			@components.GroupedTable(entry.ResponseGroups)
+			@components.ClaimsTable(entry.ID + "-assertion", "Assertion Claims", entry.AssertionClaims)
 		</details>
 	}
 	<!-- Signature Verification -->
@@ -301,13 +306,17 @@ templ samlNormalEntryContent(entry SAMLResultEntryData) {
 		</details>
 	}
 	<!-- Protocol Messages -->
-	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" || entry.AuthnRequestURL != "" {
 		<details id={ entry.ID + "-protocol" } class="result-subsection">
 			<summary>Protocol Messages</summary>
-			if entry.AuthnRequestXML != "" {
+			if len(entry.AuthnRequestParams) > 0 {
+				@components.ParamsTableWithXML("AuthnRequest (Redirect Binding)", entry.AuthnRequestParams, "GET " + entry.AuthnRequestURL, entry.AuthnRequestXML)
+			} else if entry.AuthnRequestXML != "" {
 				@components.XMLCodeBlock("AuthnRequest", entry.AuthnRequestXML)
 			}
-			if entry.SAMLResponseXML != "" {
+			if len(entry.ACSResponseParams) > 0 {
+				@components.ParamsTableWithXML("SAML Response (POST Binding)", entry.ACSResponseParams, "POST " + entry.ACSPostURL, entry.SAMLResponseXML)
+			} else if entry.SAMLResponseXML != "" {
 				@components.XMLCodeBlock("SAML Response", entry.SAMLResponseXML)
 			}
 		</details>

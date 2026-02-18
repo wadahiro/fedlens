@@ -406,13 +406,50 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 		data.ErrorDetail = entry.ErrorDetail
 		data.AuthnRequestXML = protocol.FormatXML(entry.AuthnRequestXML)
 		data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
+		data.RelayStateSent = entry.RelayStateSent
+		data.RelayStateReceived = entry.RelayStateReceived
+		data.AuthnRequestURL = entry.AuthnRequestURL
+		if entry.AuthnRequestURL != "" {
+			data.AuthnRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthnRequestURL))
+		}
+		// ACS Response POST parameters (for error entries that have a SAML Response)
+		if entry.SAMLResponseXML != "" {
+			samlResponseValue := entry.SAMLResponseBase64
+			if samlResponseValue == "" {
+				samlResponseValue = "(base64-encoded XML)"
+			}
+			data.ACSResponseParams = append(data.ACSResponseParams, components.ClaimRow{
+				Key:   "SAMLResponse",
+				Value: samlResponseValue,
+			})
+			if entry.RelayStateReceived != "" {
+				data.ACSResponseParams = append(data.ACSResponseParams, components.ClaimRow{
+					Key:   "RelayState",
+					Value: entry.RelayStateReceived,
+				})
+			}
+			// Extract ACSPostURL from ResponseInfo
+			if entry.ResponseInfo != nil {
+				for _, group := range entry.ResponseInfo.Groups {
+					if group.Name == "Response" {
+						for _, row := range group.Rows {
+							if row.Label == "Destination" {
+								data.ACSPostURL = row.Value
+								break
+							}
+						}
+						break
+					}
+				}
+			}
+		}
 		data.SidebarLabel = "Error"
 		data.SidebarDot = "error"
 		// Build sidebar children
 		if entry.ErrorCode != "" || entry.ErrorDetail != "" {
 			data.Children = append(data.Children, templates.Section{ID: id + "-error", Label: "Error Details"})
 		}
-		if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+		if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" || entry.AuthnRequestURL != "" {
 			data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 		}
 		return data
@@ -568,23 +605,69 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	}
 	data.SigVerifiedAll = sigVerifiedAll
 
-	// Response details
+	// Assertion Claims (extracted from ResponseInfo groups)
 	if entry.ResponseInfo != nil {
-		for _, group := range entry.ResponseInfo.Groups {
-			var rows []components.GroupedRow
-			for _, row := range group.Rows {
-				rows = append(rows, components.GroupedRow{Label: row.Label, Value: row.Value})
-			}
-			data.ResponseGroups = append(data.ResponseGroups, components.RowGroup{
-				Name: group.Name,
-				Rows: rows,
-			})
+		// Map of group name -> field labels to extract for Assertion Claims
+		wantFields := map[string]map[string]bool{
+			"Response":       {"Issuer": true},
+			"Subject":        {"NameID Format": true},
+			"Conditions":     {"Audience": true, "NotBefore": true, "NotOnOrAfter": true},
+			"AuthnStatement": {"AuthnInstant": true, "SessionIndex": true, "AuthnContextClassRef": true},
 		}
+		for _, group := range entry.ResponseInfo.Groups {
+			fields, ok := wantFields[group.Name]
+			if !ok {
+				continue
+			}
+			for _, row := range group.Rows {
+				if fields[row.Label] {
+					data.AssertionClaims = append(data.AssertionClaims, components.ClaimRow{
+						Key:   row.Label,
+						Value: row.Value,
+					})
+				}
+			}
+		}
+
+		// Extract ACSPostURL from Response group's Destination field
+		for _, group := range entry.ResponseInfo.Groups {
+			if group.Name == "Response" {
+				for _, row := range group.Rows {
+					if row.Label == "Destination" {
+						data.ACSPostURL = row.Value
+						break
+					}
+				}
+				break
+			}
+		}
+	}
+
+	// ACS Response POST parameters
+	samlResponseValue := entry.SAMLResponseBase64
+	if samlResponseValue == "" {
+		samlResponseValue = "(base64-encoded XML)"
+	}
+	data.ACSResponseParams = append(data.ACSResponseParams, components.ClaimRow{
+		Key:   "SAMLResponse",
+		Value: samlResponseValue,
+	})
+	if entry.RelayStateReceived != "" {
+		data.ACSResponseParams = append(data.ACSResponseParams, components.ClaimRow{
+			Key:   "RelayState",
+			Value: entry.RelayStateReceived,
+		})
 	}
 
 	// Protocol messages
 	data.AuthnRequestXML = protocol.FormatXML(entry.AuthnRequestXML)
 	data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
+	data.RelayStateSent = entry.RelayStateSent
+	data.RelayStateReceived = entry.RelayStateReceived
+	data.AuthnRequestURL = entry.AuthnRequestURL
+	if entry.AuthnRequestURL != "" {
+		data.AuthnRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.AuthnRequestURL))
+	}
 
 	// Sidebar label and dot
 	switch {
@@ -597,16 +680,13 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	}
 
 	// Build sidebar children (sub-sections)
-	if len(entry.Attributes) > 0 || entry.Subject != "" {
+	if len(entry.Attributes) > 0 || entry.Subject != "" || len(data.AssertionClaims) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
-	}
-	if entry.ResponseInfo != nil && len(entry.ResponseInfo.Groups) > 0 {
-		data.Children = append(data.Children, templates.Section{ID: id + "-response", Label: "Response Details"})
 	}
 	if len(entry.SignatureInfos) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-sigs", Label: "Signature Verification"})
 	}
-	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" {
+	if entry.AuthnRequestXML != "" || entry.SAMLResponseXML != "" || entry.AuthnRequestURL != "" || entry.RelayStateSent != "" {
 		data.Children = append(data.Children, templates.Section{ID: id + "-protocol", Label: "Protocol Messages"})
 	}
 
@@ -704,10 +784,23 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 		return
 	}
 
+	// Track request — use basePath so RelayState redirects back to the correct path
+	r2 := r.Clone(r.Context())
+	relayPath := h.basePath + "/"
+	r2.URL.Path = relayPath
+	r2.RequestURI = relayPath
+	relayState, err := h.sp.RequestTracker.TrackRequest(w, r2, authReq.ID)
+	if err != nil {
+		log.Printf("Failed to track request: %v", err)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
 	pendingEntry := SAMLResultEntry{
 		Type:            "pending",
 		Timestamp:       time.Now(),
 		AuthnRequestXML: string(xmlBytes),
+		RelayStateSent:  relayState,
 	}
 
 	// Reuse existing debug session if available (preserves timeline on re-auth)
@@ -741,17 +834,6 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 		})
 	}
 
-	// Track request
-	r2 := r.Clone(r.Context())
-	r2.URL.Path = "/"
-	r2.RequestURI = "/"
-	relayState, err := h.sp.RequestTracker.TrackRequest(w, r2, authReq.ID)
-	if err != nil {
-		log.Printf("Failed to track request: %v", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
 	// Redirect to IdP
 	if binding == samlpkg.HTTPRedirectBinding {
 		redirectURL, err := authReq.Redirect(relayState, &h.sp.ServiceProvider)
@@ -759,6 +841,12 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 			log.Printf("Failed to build redirect URL: %v", err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
+		}
+		// Save AuthnRequestURL in the pending entry for debug display
+		if debugID != "" {
+			if ds := h.debugSessions.GetByID(debugID); ds != nil && len(ds.Results) > 0 && ds.Results[0].Type == "pending" {
+				ds.Results[0].AuthnRequestURL = redirectURL.String()
+			}
 		}
 		w.Header().Add("Location", redirectURL.String())
 		w.WriteHeader(http.StatusFound)
@@ -805,15 +893,22 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 				resultType = "Re-auth: " + reauthName
 			}
 
+			// Capture received RelayState
+			relayStateReceived := r.PostForm.Get("RelayState")
+
 			var debugID string
 			c, cookieErr := r.Cookie("saml_debug_id")
 			if cookieErr == nil {
 				debugID = c.Value
 				if ds := h.debugSessions.GetByID(c.Value); ds != nil {
-					// Retrieve the AuthnRequest XML from the pending entry
+					// Retrieve fields from the pending entry
 					var authnRequestXML string
+					var relayStateSent string
+					var authnRequestURL string
 					if len(ds.Results) > 0 && ds.Results[0].Type == "pending" {
 						authnRequestXML = ds.Results[0].AuthnRequestXML
+						relayStateSent = ds.Results[0].RelayStateSent
+						authnRequestURL = ds.Results[0].AuthnRequestURL
 						// Remove the pending entry
 						ds.Results = ds.Results[1:]
 					}
@@ -822,14 +917,18 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
 
 					entry := SAMLResultEntry{
-						Type:            resultType,
-						Timestamp:       time.Now(),
-						Subject:         subject,
-						Attributes:      attributes,
-						AuthnRequestXML: authnRequestXML,
-						SAMLResponseXML: samlResponseXML,
-						SignatureInfos:  signatureInfos,
-						ResponseInfo:    responseInfo,
+						Type:               resultType,
+						Timestamp:          time.Now(),
+						Subject:            subject,
+						Attributes:         attributes,
+						AuthnRequestXML:    authnRequestXML,
+						SAMLResponseXML:    samlResponseXML,
+						SAMLResponseBase64: samlResponseB64,
+						SignatureInfos:     signatureInfos,
+						ResponseInfo:       responseInfo,
+						RelayStateSent:     relayStateSent,
+						RelayStateReceived: relayStateReceived,
+						AuthnRequestURL:    authnRequestURL,
 					}
 					ds.Results = append([]SAMLResultEntry{entry}, ds.Results...)
 				}
@@ -841,13 +940,14 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
 
 					entry := SAMLResultEntry{
-						Type:            resultType,
-						Timestamp:       time.Now(),
-						Subject:         subject,
-						Attributes:      attributes,
-						SAMLResponseXML: samlResponseXML,
-						SignatureInfos:  signatureInfos,
-						ResponseInfo:    responseInfo,
+						Type:               resultType,
+						Timestamp:          time.Now(),
+						Subject:            subject,
+						Attributes:         attributes,
+						SAMLResponseXML:    samlResponseXML,
+						SAMLResponseBase64: samlResponseB64,
+						SignatureInfos:     signatureInfos,
+						ResponseInfo:       responseInfo,
 					}
 					h.debugSessions.Set(debugID, &DebugSession{
 						Results: []SAMLResultEntry{entry},

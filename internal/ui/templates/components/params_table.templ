@@ -36,3 +36,47 @@ templ ParamsTable(title string, rows []ClaimRow, rawValue string) {
 		</div>
 	</article>
 }
+
+templ ParamsTableWithXML(title string, rows []ClaimRow, rawValue string, xmlContent string) {
+	<article>
+		<header>
+			{ title }
+		</header>
+		if rawValue != "" {
+			<div class="token-part-header">
+				<small class="token-part-label">Header</small>
+				<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+			</div>
+			<pre><code>{ rawValue }</code></pre>
+		}
+		<div class="token-part-header">
+			<small class="token-part-label">Parameters</small>
+			<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+		</div>
+		<div class="overflow-auto">
+			<table class="striped">
+				<thead>
+					<tr>
+						<th>Parameter</th>
+						<th>Value</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, row := range rows {
+						<tr>
+							<td>{ row.Key }</td>
+							<td data-testid={ row.Key }>{ row.Value }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		</div>
+		if xmlContent != "" {
+			<div class="token-part-header">
+				<small class="token-part-label">Decoded XML</small>
+				<button class="copy-btn outline secondary" onclick="copyTokenPart(this)">Copy</button>
+			</div>
+			<pre><code class="language-markup">{ xmlContent }</code></pre>
+		}
+	</article>
+}
