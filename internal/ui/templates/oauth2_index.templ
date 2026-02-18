@@ -55,15 +55,6 @@ templ oauth2ActionBar(page PageInfo) {
 			if page.LoginURL != "" {
 				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
 			}
-			if page.IntrospectionURL != "" {
-				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
-			}
-			if page.RevokeAccessTokenURL != "" {
-				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-at-btn">Revoke Access Token</a>
-			}
-			if page.RevokeRefreshTokenURL != "" {
-				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
-			}
 			if len(page.ResourceAccessItems) > 0 {
 				if len(page.ResourceAccessItems) == 1 {
 					<a href={ templ.SafeURL(page.ResourceAccessItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="resource-access-btn">Resource Access</a>
@@ -100,6 +91,15 @@ templ oauth2ActionBar(page PageInfo) {
 						</div>
 					</div>
 				}
+			}
+			if page.IntrospectionURL != "" {
+				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection (debug)</a>
+			}
+			if page.RevokeAccessTokenURL != "" {
+				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-at-btn">Revoke Access Token</a>
+			}
+			if page.RevokeRefreshTokenURL != "" {
+				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
 			}
 		</div>
 	}
@@ -290,7 +290,7 @@ templ oauth2ProtocolMessages(entry OIDCResultEntryData) {
 	}
 	// Introspection Request
 	if len(entry.IntrospectionRequestParams) > 0 {
-		@components.HTTPRequestBlock("Introspection Request (POST)", "POST " + entry.IntrospectionRequestURL, entry.IntrospectionRequestParams, "")
+		@components.HTTPRequestBlock("Introspection Request (POST)", entry.IntrospectionRequestLine, entry.IntrospectionRequestParams, "")
 	}
 	// Introspection Response
 	if entry.IntrospectionResponseStatusLine != "" {
@@ -300,7 +300,7 @@ templ oauth2ProtocolMessages(entry OIDCResultEntryData) {
 	}
 	// Revocation Request
 	if len(entry.RevocationRequestParams) > 0 {
-		@components.HTTPRequestBlock("Revocation Request (POST)", "POST " + entry.RevocationRequestURL, entry.RevocationRequestParams, "")
+		@components.HTTPRequestBlock("Revocation Request (POST)", entry.RevocationRequestLine, entry.RevocationRequestParams, "")
 	}
 	// Revocation Response
 	if entry.RevocationResponseStatusLine != "" {

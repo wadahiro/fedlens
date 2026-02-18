@@ -70,7 +70,9 @@ type OAuth2Config struct {
 	ResponseMode     string            `toml:"response_mode"`
 	ExtraAuthParams  map[string]string `toml:"extra_auth_params"`
 	Reauth           []ReauthConfig    `toml:"reauth"`
-	ResourceURLs     []string          `toml:"resource_urls"` // Custom resource server URLs to test
+	ResourceURLs               []string          `toml:"resource_urls"`                // Custom resource server URLs to test
+	ResourceServerClientID     string            `toml:"resource_server_client_id"`     // Client ID for built-in Resource Server (Token Introspection)
+	ResourceServerClientSecret string            `toml:"resource_server_client_secret"` // Client Secret for built-in Resource Server (Token Introspection)
 
 	// Computed fields (not from TOML)
 	ParsedHost string

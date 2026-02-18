@@ -120,6 +120,17 @@
       "attributes": {
         "access.token.signed.response.alg": "RS256"
       }
+    },
+    {
+      "clientId": "fedlens-rs",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "fedlens-rs-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": false
     }
   ],
   "users": [

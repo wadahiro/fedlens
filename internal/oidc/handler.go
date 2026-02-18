@@ -43,8 +43,10 @@ type Handler struct {
 		IntrospectionEndpoint string
 		RevocationEndpoint    string
 	}
-	isOAuth2     bool   // true = OAuth2 mode (skip ID Token / UserInfo)
-	protocol     string // "oidc" or "oauth2"
+	isOAuth2       bool   // true = OAuth2 mode (skip ID Token / UserInfo)
+	protocol       string // "oidc" or "oauth2"
+	rsClientID     string // Resource Server client ID for Token Introspection
+	rsClientSecret string // Resource Server client secret for Token Introspection
 	basePath     string
 	topPageURL   string
 	navTabs      []templates.NavTab
@@ -282,17 +284,19 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 	}
 
 	h := &Handler{
-		Config:        oidcCfg,
-		oauth2Cfg:     &cfg,
-		sessions:      NewSessionStore(),
-		debugSessions: NewDebugSessionStore(),
-		oauth2Config:  oauth2Conf,
-		httpClient:    capturedClient,
-		capTransport:  ct,
-		discoveryRaw:  discoveryRaw,
-		isOAuth2:      true,
-		protocol:      "oauth2",
-		basePath:      cfg.BasePath,
+		Config:         oidcCfg,
+		oauth2Cfg:      &cfg,
+		sessions:       NewSessionStore(),
+		debugSessions:  NewDebugSessionStore(),
+		oauth2Config:   oauth2Conf,
+		httpClient:     capturedClient,
+		capTransport:   ct,
+		discoveryRaw:   discoveryRaw,
+		isOAuth2:       true,
+		protocol:       "oauth2",
+		basePath:       cfg.BasePath,
+		rsClientID:     cfg.ResourceServerClientID,
+		rsClientSecret: cfg.ResourceServerClientSecret,
 	}
 
 	h.providerInfo.JwksURI = jwksURI
@@ -472,10 +476,10 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		if !h.isOAuth2 && h.providerInfo.UserinfoEndpoint != "" {
 			page.UserInfoURL = h.basePath + "/userinfo"
 		}
-		if h.providerInfo.IntrospectionEndpoint != "" {
+		if h.isOAuth2 && h.providerInfo.IntrospectionEndpoint != "" {
 			page.IntrospectionURL = h.basePath + "/introspection"
 		}
-		if h.providerInfo.RevocationEndpoint != "" {
+		if h.isOAuth2 && h.providerInfo.RevocationEndpoint != "" {
 			page.RevokeAccessTokenURL = h.basePath + "/revocation?type=access_token"
 			if data.HasRefreshToken {
 				page.RevokeRefreshTokenURL = h.basePath + "/revocation?type=refresh_token"
@@ -503,7 +507,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 
 	// Resource Access buttons (OAuth2 mode only, available regardless of session)
 	if h.isOAuth2 {
-		if h.providerInfo.IntrospectionEndpoint != "" {
+		if h.rsClientID != "" && h.providerInfo.IntrospectionEndpoint != "" {
 			page.ResourceAccessItems = append(page.ResourceAccessItems, templates.ResourceAccessItem{
 				Label: "Built-in Resource",
 				URL:   h.basePath + "/resource-access",
@@ -778,6 +782,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	// Introspection Request
 	if entry.IntrospectionRequestURL != "" {
 		data.IntrospectionRequestURL = entry.IntrospectionRequestURL
+		data.IntrospectionRequestLine = "POST " + entry.IntrospectionRequestURL + "\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic ***"
 		orderedKeys := []string{"token", "token_type_hint"}
 		for _, k := range orderedKeys {
 			if v, ok := entry.IntrospectionRequestParams[k]; ok {
@@ -807,6 +812,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	// Revocation Request
 	if entry.RevocationRequestURL != "" {
 		data.RevocationRequestURL = entry.RevocationRequestURL
+		data.RevocationRequestLine = "POST " + entry.RevocationRequestURL + "\nContent-Type: application/x-www-form-urlencoded\nAuthorization: Basic ***"
 		orderedKeys := []string{"token", "token_type_hint"}
 		for _, k := range orderedKeys {
 			if v, ok := entry.RevocationRequestParams[k]; ok {

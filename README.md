@@ -199,6 +199,8 @@ Each `[[oauth2]]` block defines a separate OAuth2 Client. Uses the same handler 
 | `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path |
 | `extra_auth_params` | No | | Extra auth parameters |
+| `resource_server_client_id` | No | | Client ID for built-in Resource Server (Token Introspection) |
+| `resource_server_client_secret` | No | | Client Secret for built-in Resource Server (Token Introspection) |
 
 \* Either `issuer` (for RFC 8414 Discovery) or both `authorization_url` + `token_url` (manual) are required.
 

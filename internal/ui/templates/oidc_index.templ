@@ -83,6 +83,7 @@ type OIDCResultEntryData struct {
 	HasIntrospection    bool   // true when introspection endpoint is configured
 	// Introspection fields
 	IntrospectionRequestURL    string
+	IntrospectionRequestLine   string // request line + headers for display
 	IntrospectionRequestParams []components.ClaimRow
 	IntrospectionClaims        []components.ClaimRow // parsed introspection response as table rows
 	IntrospectionResponseJSON  string // pretty-printed JSON
@@ -94,6 +95,7 @@ type OIDCResultEntryData struct {
 	IntrospectionResponseConnError  string
 	// Revocation fields
 	RevocationRequestURL         string
+	RevocationRequestLine        string // request line + headers for display
 	RevocationRequestParams      []components.ClaimRow
 	RevocationResponseStatusLine string
 	RevocationResponseHeaders    string
@@ -465,7 +467,7 @@ templ oidcProtocolMessages(entry OIDCResultEntryData) {
 	}
 	// Introspection Request
 	if len(entry.IntrospectionRequestParams) > 0 {
-		@components.HTTPRequestBlock("Introspection Request (POST)", "POST " + entry.IntrospectionRequestURL, entry.IntrospectionRequestParams, "")
+		@components.HTTPRequestBlock("Introspection Request (POST)", entry.IntrospectionRequestLine, entry.IntrospectionRequestParams, "")
 	}
 	// Introspection Response
 	if entry.IntrospectionResponseStatusLine != "" {
@@ -475,7 +477,7 @@ templ oidcProtocolMessages(entry OIDCResultEntryData) {
 	}
 	// Revocation Request
 	if len(entry.RevocationRequestParams) > 0 {
-		@components.HTTPRequestBlock("Revocation Request (POST)", "POST " + entry.RevocationRequestURL, entry.RevocationRequestParams, "")
+		@components.HTTPRequestBlock("Revocation Request (POST)", entry.RevocationRequestLine, entry.RevocationRequestParams, "")
 	}
 	// Revocation Response
 	if entry.RevocationResponseStatusLine != "" {

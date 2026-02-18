@@ -55,7 +55,15 @@ func (h *Handler) handleResource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 3. Check Introspection endpoint configured
+	// 3. Check Resource Server credentials and Introspection endpoint configured
+	if h.rsClientID == "" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":             "server_error",
+			"error_description": "Resource server credentials not configured",
+		})
+		return
+	}
 	if h.providerInfo.IntrospectionEndpoint == "" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 		json.NewEncoder(w).Encode(map[string]string{
@@ -128,7 +136,7 @@ func (h *Handler) performIntrospection(token string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("create introspection request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.SetBasicAuth(h.oauth2Config.ClientID, h.oauth2Config.ClientSecret)
+	req.SetBasicAuth(h.rsClientID, h.rsClientSecret)
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
