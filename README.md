@@ -3,82 +3,82 @@
 </p>
 
 <p align="center">
-  A federation protocol debug tool for OIDC and SAML.<br>
+  A federation protocol debug tool for <strong>OIDC</strong> and <strong>SAML</strong>.<br>
   Also supports <strong>OAuth2</strong> as a closely related authorization framework.<br>
-  fedlens acts as an <strong>OpenID Connect Relying Party</strong>, <strong>OAuth2 Client</strong>, and <strong>SAML Service Provider</strong>,<br>
+  fedlens acts as an <strong>OpenID Connect Relying Party</strong>, <strong>OAuth2 Client</strong>, <strong>OAuth2 Resource Server</strong>, and <strong>SAML Service Provider</strong>,<br>
   displaying raw protocol details at every step in a single web UI.
 </p>
 
 ## Screenshots
 
-**OIDC** -- ID Token Claims and Signature Verification:
+**OIDC** — ID Token Claims and Signature Verification:
 
 ![OIDC post-login view showing decoded ID Token claims](docs/screenshots/oidc-post-login.png)
 
-**OAuth2** -- Access Token Claims and Token Introspection:
+**OAuth2** — Access Token Claims and Token Introspection:
 
-<!-- TODO: add oauth2-post-login.png -->
+![OAuth2 post-login view showing Access Token claims and Token Introspection](docs/screenshots/oauth2-post-login.png)
 
-**SAML** -- Attributes and Response Details:
+**SAML** — SAML Attributes and Signature Verification:
 
-![SAML post-login view showing SAML attributes and response details](docs/screenshots/saml-post-login.png)
+![SAML post-login view showing SAML attributes and signature verification](docs/screenshots/saml-post-login.png)
 
 ## Features
 
 ### OIDC (OpenID Connect)
 
 - **Authorization Code Flow** with optional **PKCE** support (S256 / plain)
-- **ID Token Claims** table with timestamp formatting
-- **Access Token Claims** table (when JWT)
-- **UserInfo Claims** table
-- **Signature Verification** details (algorithm, key ID, JWKS key info)
-- **Token Refresh Flow** with before/after comparison
-- **Token Introspection** (RFC 7662) with HTTP request/response capture
-- **Token Revocation** (RFC 7009) for Access Token and Refresh Token
+- **ID Token Claims** and **Access Token Claims** tables with timestamp formatting and boolean highlighting
+- **UserInfo** endpoint response display
+- **Signature Verification** for ID Token and Access Token (algorithm, key ID, JWKS key matching)
+- **Token Refresh Flow** with refresh token rotation detection
 - **Logout Flow** with configurable `id_token_hint`
-- **Re-authentication Profiles** for step-up authentication
+- **Re-authentication Profiles** for step-up authentication with custom parameters
 - **Custom Scopes**, **Response Mode**, and **Extra Auth Parameters**
-- Authorization Request / Response, Token Response, JWKS, Discovery metadata display
-- **Sequence Diagram** showing the Authorization Code Flow
-
-### SAML
-
-- **SP-initiated SSO** (HTTP-Redirect and HTTP-POST bindings)
-- **IdP-initiated SSO** support
-- **Attributes** table
-- **Signature Verification** details for Response and Assertion
-- **Single Logout (SLO)** support
-- **Re-authentication Profiles** with `ForceAuthn` and `AuthnContextClassRef`
-- **External Certificate** support (load from file) or auto-generated self-signed cert
-- AuthnRequest XML, SAML Response XML, IdP Metadata display
-- **Sequence Diagram** showing the SP-Initiated SSO flow
+- **Protocol Messages** — Authorization Request/Response, Token Request/Response, UserInfo Request/Response with full HTTP capture
+- **Raw Tokens** — JWT structure display (Header / Payload / Signature) and opaque token display
+- **Reference** — Authorization Code Flow sequence diagram, OpenID Provider endpoints, JWKS public keys, Discovery metadata
+- **Results Timeline** — reverse-chronological log of all protocol interactions
 
 ### OAuth2
 
-OAuth2 is an authorization framework, not a federation protocol. fedlens includes OAuth2 Client support to debug Authorization Server interactions — token issuance, introspection, revocation, and resource access — alongside OIDC and SAML flows.
+OAuth2 is an authorization framework, not a federation protocol. fedlens includes OAuth2 support to debug Authorization Server interactions — token issuance, introspection, revocation, and resource access — alongside OIDC and SAML flows.
 
 - **Authorization Code Flow** with optional **PKCE** support (S256 / plain)
-- **RFC 8414 Discovery** (OAuth2 Authorization Server Metadata) or manual endpoint configuration
-- **Access Token Claims** table (when JWT) with **Signature Verification**
-- **Token Refresh Flow**
+- **RFC 8414 Discovery** (Authorization Server Metadata) or manual endpoint configuration
+- **Access Token Claims** table (when JWT) with boolean highlighting, opaque token detection with introspection guidance
+- **Signature Verification** for Access Token (algorithm, key ID, JWKS key matching)
+- **Token Refresh Flow** with refresh token rotation detection
 - **Token Introspection** (RFC 7662) with HTTP request/response capture
-- **Token Revocation** (RFC 7009) for Access Token and Refresh Token
-- **Resource Access** with built-in Resource Server (separate RS credentials) and RFC 9728 metadata
+- **Token Revocation** (RFC 7009) for Access Token and Refresh Token independently
+- **Resource Access** — built-in Resource Server with separate RS credentials, custom resource URL testing, RFC 9728 Protected Resource Metadata
 - **Re-authentication Profiles** for custom authorization parameters
-- Authorization Request / Response, Token Request / Response display
-- **Sequence Diagram** showing the OAuth2 Authorization Code Flow
+- **Protocol Messages** — Authorization Request/Response, Token Request/Response, Introspection/Revocation Request/Response, Resource Request/Response with full HTTP capture
+- **Raw Tokens** — JWT structure display (Header / Payload / Signature) and opaque token display
+- **Reference** — Authorization Code Flow and Protected Resource Access sequence diagrams, AS endpoints, JWKS public keys, AS metadata
+- **Results Timeline** — reverse-chronological log of all protocol interactions
+
+### SAML
+
+- **SP-Initiated SSO** with HTTP-Redirect and HTTP-POST bindings
+- **IdP-Initiated SSO** support (configurable)
+- **Identity & Claims** — Subject (NameID), SAML Attributes, and Assertion Claims (Issuer, Audience, AuthnContextClassRef, validity period)
+- **Signature Verification** at both Response and Assertion levels
+- **Single Logout (SLO)** — SP-initiated and IdP-initiated with redirect/POST binding support
+- **Re-authentication Profiles** with `ForceAuthn` and custom `AuthnContextClassRef`
+- **External Certificate** support (load from file) or auto-generated self-signed cert
+- **Protocol Messages** — AuthnRequest (URL parameters + decoded XML), SAML Response (POST parameters + decoded XML), LogoutRequest/LogoutResponse with binding details
+- **Reference** — SP-Initiated SSO and IdP-Initiated SSO sequence diagrams, IdP endpoints, IdP certificates with PEM, IdP Metadata XML
+- **Results Timeline** — reverse-chronological log of all protocol interactions
 
 ### General
 
-- **Token Introspection** (RFC 7662) support for OIDC and OAuth2
-- **Token Revocation** (RFC 7009) support for OIDC and OAuth2
-- **Boolean value highlighting** in claims tables (true=green, false=red)
-- **Multiple SP/RP** support via TOML configuration
-- **Tab Navigation** to switch between multiple OIDC RPs, OAuth2 Clients, and SAML SPs
+- **Multiple SP/RP** support via TOML configuration with **Tab Navigation**
+- **Host-based and Path-based Routing** — multiple instances on same or different hosts
 - **TLS Support** with self-signed cert auto-generation or external certificates
-- **Dark Mode** toggle with system preference detection
-- **Theme Configuration** (`light` / `dark` / `auto`)
+- **Dark Mode** toggle with system preference detection (`light` / `dark` / `auto`)
 - **Timezone Configuration** for timestamp display (IANA format)
+- **Boolean Value Highlighting** in claims tables (true=green, false=red)
 - **Syntax Highlighting** for JSON and XML (Prism.js)
 - **Copy Buttons** on all code blocks
 - **Collapsible Sections** with state persistence
@@ -165,8 +165,6 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
 | `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
-| `introspection_url` | No | | Token Introspection endpoint URL (optional, Discovery takes precedence) |
-| `revocation_url` | No | | Token Revocation endpoint URL (optional, Discovery takes precedence) |
 | `logout_id_token_hint` | No | `true` | Send `id_token_hint` in logout request |
 
 ##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
