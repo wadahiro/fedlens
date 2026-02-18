@@ -132,7 +132,7 @@ templ samlActionBar(page PageInfo) {
 				}
 			}
 			if page.LogoutURL != "" {
-				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline action-btn" data-testid="logout-btn">Logout</a>
+				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="logout-btn">Logout</a>
 			}
 		</div>
 	}

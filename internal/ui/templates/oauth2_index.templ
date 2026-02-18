@@ -96,10 +96,10 @@ templ oauth2ActionBar(page PageInfo) {
 				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection (debug)</a>
 			}
 			if page.RevokeAccessTokenURL != "" {
-				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-at-btn">Revoke Access Token</a>
+				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="revoke-at-btn">Revoke Access Token</a>
 			}
 			if page.RevokeRefreshTokenURL != "" {
-				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
+				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
 			}
 		</div>
 	}

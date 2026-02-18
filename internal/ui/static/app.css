@@ -679,6 +679,15 @@ kbd.sidebar-badge {
   font-size: 0.8125rem !important;
   margin: 0 !important;
 }
+.action-btn-danger {
+  --pico-color: var(--pico-del-color) !important;
+  --pico-border-color: var(--pico-del-color) !important;
+}
+.action-btn-danger:hover {
+  --pico-color: var(--pico-del-color) !important;
+  --pico-border-color: var(--pico-del-color) !important;
+  background-color: color-mix(in srgb, var(--pico-del-color) 10%, transparent) !important;
+}
 
 /* === Dropdown === */
 .dropdown {

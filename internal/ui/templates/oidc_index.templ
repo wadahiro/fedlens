@@ -180,10 +180,10 @@ templ oidcActionBar(page PageInfo) {
 				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection</a>
 			}
 			if page.RevokeAccessTokenURL != "" {
-				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-at-btn">Revoke Access Token</a>
+				<a href={ templ.SafeURL(page.RevokeAccessTokenURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="revoke-at-btn">Revoke Access Token</a>
 			}
 			if page.RevokeRefreshTokenURL != "" {
-				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
+				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
 			}
 			if page.RefreshURL != "" {
 				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
@@ -206,7 +206,7 @@ templ oidcActionBar(page PageInfo) {
 				}
 			}
 			if page.LogoutURL != "" {
-				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="outline action-btn" data-testid="logout-btn">Logout</a>
+				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="logout-btn">Logout</a>
 			}
 		</div>
 	}
