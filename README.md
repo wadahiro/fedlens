@@ -3,20 +3,25 @@
 </p>
 
 <p align="center">
-  A federation protocol debug tool for OIDC, OAuth2, and SAML.<br>
+  A federation protocol debug tool for OIDC and SAML.<br>
+  Also supports <strong>OAuth2</strong> as a closely related authorization framework.<br>
   fedlens acts as an <strong>OpenID Connect Relying Party</strong>, <strong>OAuth2 Client</strong>, and <strong>SAML Service Provider</strong>,<br>
-  displaying the raw protocol details at every layer in a single web UI.
+  displaying raw protocol details at every step in a single web UI.
 </p>
 
 ## Screenshots
 
 **OIDC** -- ID Token Claims and Signature Verification:
 
-![OIDC post-login view showing decoded ID Token claims](docs/screenshots/oidc-post-login.jpg)
+![OIDC post-login view showing decoded ID Token claims](docs/screenshots/oidc-post-login.png)
+
+**OAuth2** -- Access Token Claims and Token Introspection:
+
+<!-- TODO: add oauth2-post-login.png -->
 
 **SAML** -- Attributes and Response Details:
 
-![SAML post-login view showing SAML attributes and response details](docs/screenshots/saml-post-login.jpg)
+![SAML post-login view showing SAML attributes and response details](docs/screenshots/saml-post-login.png)
 
 ## Features
 
@@ -50,13 +55,15 @@
 
 ### OAuth2
 
+OAuth2 is an authorization framework, not a federation protocol. fedlens includes OAuth2 Client support to debug Authorization Server interactions — token issuance, introspection, revocation, and resource access — alongside OIDC and SAML flows.
+
 - **Authorization Code Flow** with optional **PKCE** support (S256 / plain)
 - **RFC 8414 Discovery** (OAuth2 Authorization Server Metadata) or manual endpoint configuration
 - **Access Token Claims** table (when JWT) with **Signature Verification**
 - **Token Refresh Flow**
 - **Token Introspection** (RFC 7662) with HTTP request/response capture
 - **Token Revocation** (RFC 7009) for Access Token and Refresh Token
-- **Resource Access** with built-in Resource Server and RFC 9728 metadata
+- **Resource Access** with built-in Resource Server (separate RS credentials) and RFC 9728 metadata
 - **Re-authentication Profiles** for custom authorization parameters
 - Authorization Request / Response, Token Request / Response display
 - **Sequence Diagram** showing the OAuth2 Authorization Code Flow
@@ -179,7 +186,7 @@ extra_auth_params = { acr_values = "urn:example:mfa" }
 
 #### OAuth2 Client (`[[oauth2]]`)
 
-Each `[[oauth2]]` block defines a separate OAuth2 Client. Uses the same handler as OIDC but skips ID Token verification and UserInfo.
+Each `[[oauth2]]` block defines a separate OAuth2 Client. Unlike OIDC, there is no ID Token or UserInfo — the focus is on Access Token issuance and AS interactions.
 
 | Key | Required | Default | Description |
 |---|---|---|---|
@@ -199,6 +206,7 @@ Each `[[oauth2]]` block defines a separate OAuth2 Client. Uses the same handler 
 | `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path |
 | `extra_auth_params` | No | | Extra auth parameters |
+| `resource_urls` | No | | Custom Resource Server URLs to test (e.g. `["https://api.example.com/me"]`) |
 | `resource_server_client_id` | No | | Client ID for built-in Resource Server (Token Introspection) |
 | `resource_server_client_secret` | No | | Client Secret for built-in Resource Server (Token Introspection) |
 
@@ -420,7 +428,7 @@ The action bar buttons have fixed `data-testid` attributes. Visibility depends o
 | `introspection-btn` | Introspection button | OIDC / OAuth2 | Active session + Introspection endpoint configured |
 | `revoke-at-btn` | Revoke Access Token button | OIDC / OAuth2 | Active session + Revocation endpoint configured |
 | `revoke-rt-btn` | Revoke Refresh Token button | OIDC / OAuth2 | Active session + Revocation endpoint + refresh token present |
-| `resource-access-btn` | Resource Access button | OAuth2 | Active session + Resource Server configured |
+| `resource-access-btn` | Resource Access button | OAuth2 | Resource Server configured (built-in RS requires `resource_server_client_id`) |
 | `refresh-btn` | Refresh Token button | OIDC / OAuth2 | Active session + refresh token present |
 | `reauth-btn` | Re-authenticate (default) | OIDC / OAuth2 / SAML | Active session + `[[*.reauth]]` configured |
 | `reauth-more-btn` | "More ▾" dropdown trigger | OIDC / OAuth2 / SAML | 2+ reauth profiles configured |

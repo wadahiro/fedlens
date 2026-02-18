@@ -1,6 +1,6 @@
 # fedlens
 
-A federation protocol debug tool for OIDC, OAuth2, and SAML.
+A federation protocol debug tool for OIDC and SAML. Also supports OAuth2 as a closely related authorization framework.
 
 ## Project Overview
 
