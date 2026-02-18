@@ -10,20 +10,21 @@ type SequenceStep struct {
 
 templ OIDCSequence(callbackPath string) {
 	<div class="sequence-diagram">
-		<svg viewBox="0 0 700 420" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px">
+		<svg viewBox="0 0 700 496" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:700px">
 			<!-- Actors -->
 			<text x="100" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">Browser</text>
-			<line x1="100" y1="34" x2="100" y2="400" stroke="currentColor" stroke-dasharray="4"/>
+			<line x1="100" y1="34" x2="100" y2="476" stroke="currentColor" stroke-dasharray="4"/>
 			<text x="350" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">RP (fedlens)</text>
-			<line x1="350" y1="34" x2="350" y2="400" stroke="currentColor" stroke-dasharray="4"/>
+			<line x1="350" y1="34" x2="350" y2="476" stroke="currentColor" stroke-dasharray="4"/>
 			<text x="600" y="22" text-anchor="middle" font-weight="bold" fill="currentColor" font-size="16">OpenID Provider</text>
-			<line x1="600" y1="34" x2="600" y2="400" stroke="currentColor" stroke-dasharray="4"/>
+			<line x1="600" y1="34" x2="600" y2="476" stroke="currentColor" stroke-dasharray="4"/>
 			<!-- 1. Authentication Request -->
 			<line x1="100" y1="68" x2="345" y2="68" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="222" y="62" text-anchor="middle" font-size="13" fill="currentColor">1. GET /login</text>
-			<!-- 2. Redirect to IdP -->
+			<!-- 2. Redirect to OP -->
 			<line x1="350" y1="106" x2="105" y2="106" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="222" y="100" text-anchor="middle" font-size="13" fill="currentColor">2. 302 Redirect</text>
+			<!-- 3. Authentication Request -->
 			<line x1="100" y1="144" x2="595" y2="144" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="350" y="138" text-anchor="middle" font-size="13" fill="currentColor">3. Authentication Request</text>
 			<!-- 4. User authenticates (bidirectional) -->
@@ -35,14 +36,21 @@ templ OIDCSequence(callbackPath string) {
 			<!-- 6. Callback -->
 			<line x1="100" y1="258" x2="345" y2="258" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="222" y="252" text-anchor="middle" font-size="13" fill="currentColor">{ "6. GET " + callbackPath }</text>
-			<!-- 7. Token Exchange -->
+			<!-- 7. Token Request -->
 			<line x1="350" y1="296" x2="595" y2="296" stroke="currentColor" marker-end="url(#arrow)"/>
 			<text x="475" y="290" text-anchor="middle" font-size="13" fill="currentColor">7. Token Request</text>
+			<!-- 8. Token Response (ID Token + Access Token) -->
 			<line x1="600" y1="334" x2="355" y2="334" stroke="currentColor" marker-end="url(#arrow)"/>
-			<text x="475" y="328" text-anchor="middle" font-size="13" fill="currentColor">8. Token Response</text>
-			<!-- 9. Display -->
-			<line x1="350" y1="372" x2="105" y2="372" stroke="currentColor" marker-end="url(#arrow)"/>
-			<text x="222" y="366" text-anchor="middle" font-size="13" fill="currentColor">9. Display Claims</text>
+			<text x="475" y="328" text-anchor="middle" font-size="13" fill="currentColor">8. Token Response (ID Token + Access Token)</text>
+			<!-- 9. UserInfo Request -->
+			<line x1="350" y1="372" x2="595" y2="372" stroke="currentColor" marker-end="url(#arrow)"/>
+			<text x="475" y="366" text-anchor="middle" font-size="13" fill="currentColor">9. UserInfo Request</text>
+			<!-- 10. UserInfo Response -->
+			<line x1="600" y1="410" x2="355" y2="410" stroke="currentColor" marker-end="url(#arrow)"/>
+			<text x="475" y="404" text-anchor="middle" font-size="13" fill="currentColor">10. UserInfo Response</text>
+			<!-- 11. Display Claims -->
+			<line x1="350" y1="448" x2="105" y2="448" stroke="currentColor" marker-end="url(#arrow)"/>
+			<text x="222" y="442" text-anchor="middle" font-size="13" fill="currentColor">11. Display Claims</text>
 			<!-- Arrow markers -->
 			<defs>
 				<marker id="arrow" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
@@ -121,9 +129,9 @@ templ OAuth2ResourceAccessSequence() {
 			<!-- 1. GET /resource-access -->
 			<line x1="80" y1="68" x2="275" y2="68" stroke="currentColor" marker-end="url(#arrow4)"/>
 			<text x="180" y="62" text-anchor="middle" font-size="13" fill="currentColor">1. GET /resource-access</text>
-			<!-- 2. GET /resource (Bearer Token) -->
+			<!-- 2. GET /resource (Access Token) -->
 			<line x1="280" y1="106" x2="495" y2="106" stroke="currentColor" marker-end="url(#arrow4)"/>
-			<text x="390" y="100" text-anchor="middle" font-size="13" fill="currentColor">2. GET /resource (Bearer Token)</text>
+			<text x="390" y="100" text-anchor="middle" font-size="13" fill="currentColor">2. GET /resource (Access Token)</text>
 			<!-- 3. Token Introspection -->
 			<line x1="500" y1="144" x2="715" y2="144" stroke="currentColor" marker-end="url(#arrow4)"/>
 			<text x="610" y="138" text-anchor="middle" font-size="13" fill="currentColor">3. Token Introspection</text>
