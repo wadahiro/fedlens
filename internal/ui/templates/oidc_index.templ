@@ -142,6 +142,7 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 		<!-- REFERENCE -->
 		<h2 class="body-section-heading">Reference</h2>
 		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			<h6>Authorization Code Flow</h6>
 			@components.OIDCSequence(data.CallbackPath)
 		}
 		@components.Collapsible("sec-provider", "OpenID Provider", true) {

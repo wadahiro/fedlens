@@ -63,6 +63,7 @@ type SAMLPageData struct {
 	ResponseBinding   string // "redirect" or "post"
 	EndpointRows      []components.ClaimRow
 	IDPCertificates   []SAMLCertificateData
+	AllowIDPInitiated bool
 }
 
 templ SAMLIndex(page PageInfo, data SAMLPageData) {
@@ -81,7 +82,12 @@ templ SAMLIndex(page PageInfo, data SAMLPageData) {
 		<!-- REFERENCE -->
 		<h2 class="body-section-heading">Reference</h2>
 		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			<h6>SP-Initiated SSO</h6>
 			@components.SAMLSequence(data.ACSPath, data.RequestBinding, data.ResponseBinding)
+			if data.AllowIDPInitiated {
+				<h6>IdP-Initiated SSO</h6>
+				@components.SAMLIdPInitiatedSequence(data.ACSPath)
+			}
 		}
 		@components.Collapsible("sec-idp", "Identity Provider", true) {
 			if len(data.EndpointRows) > 0 {

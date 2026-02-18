@@ -22,7 +22,10 @@ templ OAuth2Index(page PageInfo, data OIDCPageData) {
 		<!-- REFERENCE -->
 		<h2 class="body-section-heading">Reference</h2>
 		@components.Collapsible("sec-flow", "Flow Diagram", true) {
+			<h6>Authorization Code Flow</h6>
 			@components.OAuth2Sequence(data.CallbackPath)
+			<h6>Protected Resource Access</h6>
+			@components.OAuth2ResourceAccessSequence()
 		}
 		@components.Collapsible("sec-provider", "Authorization Server", true) {
 			if len(data.EndpointRows) > 0 {

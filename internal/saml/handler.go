@@ -331,14 +331,15 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := templates.SAMLPageData{
-		Name:            h.Config.Name,
-		Results:         results,
-		IDPMetadataXML:  protocol.FormatXML(h.idpMetadataRaw),
-		ACSPath:         h.Config.ACSPath,
-		RequestBinding:  h.requestBinding,
-		ResponseBinding: h.responseBinding,
-		EndpointRows:    h.endpointRows,
-		IDPCertificates: h.idpCertificates,
+		Name:              h.Config.Name,
+		Results:           results,
+		IDPMetadataXML:    protocol.FormatXML(h.idpMetadataRaw),
+		ACSPath:           h.Config.ACSPath,
+		RequestBinding:    h.requestBinding,
+		ResponseBinding:   h.responseBinding,
+		EndpointRows:      h.endpointRows,
+		IDPCertificates:   h.idpCertificates,
+		AllowIDPInitiated: h.Config.AllowIDPInitiated,
 	}
 
 	page := templates.PageInfo{
