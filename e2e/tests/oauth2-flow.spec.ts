@@ -17,7 +17,7 @@ test.describe("OAuth2 Flow", () => {
     await expect(page.locator("#sec-provider")).toBeVisible();
   });
 
-  test("login → token display → clear", async ({ page }) => {
+  test("login → token display → revoke access token", async ({ page }) => {
     await page.goto(OAUTH2_URL);
 
     // Click Login
@@ -43,11 +43,43 @@ test.describe("OAuth2 Flow", () => {
     // Should NOT show Logout button (OAuth2 has no logout spec)
     await expect(page.getByTestId("logout-btn")).not.toBeVisible();
 
-    // Click Clear to reset results
-    await page.getByTestId("clear-btn").click();
+    // Revoke Access Token
+    await page.getByTestId("revoke-at-btn").click();
 
-    // Should still show Active Session (Clear only removes results)
+    // Should still show Active Session after revoking AT
     await expect(page.locator(".status-indicator")).toHaveText("Active Session");
+
+    // Resource access should fail with revoked AT
+    await page.getByTestId("resource-access-btn").click();
+    await expect(
+      page.locator("summary:has-text('Error Details')").first()
+    ).toBeVisible();
+
+    // Refresh Token should still work (only AT was revoked)
+    await page.getByTestId("refresh-btn").click();
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
+  });
+
+  test("revoke refresh token", async ({ page }) => {
+    await page.goto(OAUTH2_URL);
+
+    // Login
+    await page.getByTestId("login-btn").click();
+    await expect(page.locator("#kc-login")).toBeVisible();
+    await keycloakLogin(page);
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
+
+    // Revoke Refresh Token
+    await page.getByTestId("revoke-rt-btn").click();
+
+    // Should still show Active Session after revoking RT
+    await expect(page.locator(".status-indicator")).toHaveText("Active Session");
+
+    // Refresh Token should fail (RT revoked)
+    await page.getByTestId("refresh-btn").click();
+    await expect(
+      page.locator("summary:has-text('Error Details')").first()
+    ).toBeVisible();
   });
 
   test("token refresh flow", async ({ page }) => {
@@ -69,9 +101,6 @@ test.describe("OAuth2 Flow", () => {
         "Active Session"
       );
     }
-
-    // Cleanup: clear results
-    await page.getByTestId("clear-btn").click();
   });
 
   test("token introspection flow", async ({ page }) => {
@@ -98,9 +127,6 @@ test.describe("OAuth2 Flow", () => {
         page.locator("summary:has-text('Token Info')").first()
       ).toBeVisible();
     }
-
-    // Cleanup: clear results
-    await page.getByTestId("clear-btn").click();
   });
 
   test("resource access flow", async ({ page }) => {
@@ -128,9 +154,6 @@ test.describe("OAuth2 Flow", () => {
       );
       await expect(resourceResult.first()).toBeVisible();
     }
-
-    // Cleanup: clear results
-    await page.getByTestId("clear-btn").click();
   });
 
   test("RFC 9728 protected resource metadata", async ({ page }) => {
