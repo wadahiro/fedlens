@@ -46,6 +46,11 @@ type OIDCConfig struct {
 	Reauth            []ReauthConfig    `toml:"reauth"`
 	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
 
+	// AuthRequestMaxAge is how long a sent authorization request stays valid,
+	// i.e. how long the user may spend on the IdP login screen before the state
+	// and PKCE verifier cookies expire. Accepts a duration string such as "30m".
+	AuthRequestMaxAge time.Duration `toml:"auth_request_max_age"`
+
 	// Computed fields (not from TOML)
 	ParsedHost string // host:port extracted from base_url
 	BasePath   string // path prefix extracted from base_url (empty for host-based routing)
@@ -74,6 +79,11 @@ type OAuth2Config struct {
 	ResourceURLs               []string          `toml:"resource_urls"`                // Custom resource server URLs to test
 	ResourceServerClientID     string            `toml:"resource_server_client_id"`     // Client ID for built-in Resource Server (Token Introspection)
 	ResourceServerClientSecret string            `toml:"resource_server_client_secret"` // Client Secret for built-in Resource Server (Token Introspection)
+
+	// AuthRequestMaxAge is how long a sent authorization request stays valid,
+	// i.e. how long the user may spend on the AS login screen before the state
+	// and PKCE verifier cookies expire. Accepts a duration string such as "30m".
+	AuthRequestMaxAge time.Duration `toml:"auth_request_max_age"`
 
 	// Computed fields (not from TOML)
 	ParsedHost string
@@ -257,6 +267,11 @@ func applyOIDCDefaults(c *OIDCConfig) {
 	if c.CallbackPath == "" {
 		c.CallbackPath = "/callback"
 	}
+	// A non-positive value would expire the state and PKCE verifier cookies
+	// immediately, so treat it the same as unset.
+	if c.AuthRequestMaxAge <= 0 {
+		c.AuthRequestMaxAge = DefaultAuthRequestMaxAge
+	}
 }
 
 // TLSEnabled returns true if TLS is configured (self-signed or cert files).
@@ -274,6 +289,11 @@ func applyOAuth2Defaults(c *OAuth2Config) {
 	}
 	if c.CallbackPath == "" {
 		c.CallbackPath = "/callback"
+	}
+	// A non-positive value would expire the state and PKCE verifier cookies
+	// immediately, so treat it the same as unset.
+	if c.AuthRequestMaxAge <= 0 {
+		c.AuthRequestMaxAge = DefaultAuthRequestMaxAge
 	}
 }
 
@@ -303,6 +323,11 @@ func assignDefinitionOrder(data []byte, cfg *Config) {
 		}
 	}
 }
+
+// DefaultAuthRequestMaxAge is the default lifetime of a pending OIDC/OAuth2
+// authorization request. The cookies holding the state and the PKCE verifier
+// must outlive the time the user spends on the IdP login screen.
+const DefaultAuthRequestMaxAge = 30 * time.Minute
 
 // DefaultAuthnRequestMaxAge is the default lifetime of a pending AuthnRequest.
 // samlsp defaults to saml.MaxIssueDelay (90s), which expires while the user is

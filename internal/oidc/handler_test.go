@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/wadahiro/fedlens/internal/config"
 	"github.com/wadahiro/fedlens/internal/protocol"
 )
 
@@ -333,5 +334,25 @@ func TestFormatSidebarTimestamp(t *testing.T) {
 	result := formatSidebarTimestamp(now)
 	if result != "01/15 10:30:45" {
 		t.Errorf("result = %q, want '01/15 10:30:45'", result)
+	}
+}
+
+func TestAuthRequestMaxAgeSeconds(t *testing.T) {
+	tests := []struct {
+		name   string
+		maxAge time.Duration
+		want   int
+	}{
+		{"configured value", 15 * time.Minute, 900},
+		{"zero falls back to default", 0, int(config.DefaultAuthRequestMaxAge.Seconds())},
+		{"negative falls back to default", -time.Minute, int(config.DefaultAuthRequestMaxAge.Seconds())},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &Handler{Config: config.OIDCConfig{AuthRequestMaxAge: tt.maxAge}}
+			if got := h.authRequestMaxAgeSeconds(); got != tt.want {
+				t.Errorf("authRequestMaxAgeSeconds() = %d, want %d", got, tt.want)
+			}
+		})
 	}
 }

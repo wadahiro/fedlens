@@ -797,7 +797,6 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 			Name:     "saml_reauth_name",
 			Value:    reauthName,
 			Path:     h.cookiePath(),
-			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
 			SameSite: sameSiteMode(r),
@@ -853,11 +852,13 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 		h.debugSessions.Set(debugID, &DebugSession{
 			Results: []SAMLResultEntry{pendingEntry},
 		})
+		// No MaxAge: the debug timeline is the product of this tool, so the cookie
+		// lasts as long as the browser session rather than expiring mid-login and
+		// stranding the timeline. Matches the OIDC handler.
 		http.SetCookie(w, &http.Cookie{
 			Name:     "saml_debug_id",
 			Value:    debugID,
 			Path:     h.cookiePath(),
-			MaxAge:   600,
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
 			SameSite: sameSiteMode(r),
@@ -986,7 +987,6 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 						Name:     "saml_debug_id",
 						Value:    debugID,
 						Path:     h.cookiePath(),
-						MaxAge:   600,
 						HttpOnly: true,
 						Secure:   isHTTPS(r),
 						SameSite: sameSiteMode(r),
@@ -1179,7 +1179,6 @@ func (h *Handler) saveLogoutEntry(w http.ResponseWriter, r *http.Request, entry 
 		Name:     "saml_debug_id",
 		Value:    debugID,
 		Path:     h.cookiePath(),
-		MaxAge:   600,
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		SameSite: sameSiteMode(r),
@@ -1188,6 +1187,28 @@ func (h *Handler) saveLogoutEntry(w http.ResponseWriter, r *http.Request, entry 
 
 // handleSAMLError is a custom error handler for samlsp.Middleware.
 // It captures SAML validation errors in the debug timeline instead of returning a bare 403.
+// explainNoTrackedRequest returns an explanation to append to an InResponseTo
+// validation failure when the failure was caused by there being no tracked
+// AuthnRequest at all, rather than by a genuine mismatch. crewjam reports both
+// with the same message, and the empty candidate list it prints ("expected []")
+// gives no hint as to why the request went missing.
+func (h *Handler) explainNoTrackedRequest(r *http.Request, errorDetail string) string {
+	if !strings.Contains(errorDetail, "InResponseTo") {
+		return ""
+	}
+	if len(h.sp.RequestTracker.GetTrackedRequests(r)) > 0 {
+		// Candidates existed, so this is a real mismatch. Nothing to add.
+		return ""
+	}
+	return fmt.Sprintf(
+		" -- fedlens: no tracked AuthnRequest was found, so there was nothing to compare against. "+
+			"The tracking cookie was either missing or expired. Common causes: the login took "+
+			"longer than authn_request_max_age (currently %s); or the cookie was dropped on the "+
+			"cross-site POST from the IdP, which needs SameSite=None and therefore HTTPS when the "+
+			"IdP is on a different site (this SP is configured as %s).",
+		h.Config.AuthnRequestMaxAge, h.rootURLStr)
+}
+
 func (h *Handler) handleSAMLError(w http.ResponseWriter, r *http.Request, err error) {
 	errorCode := "saml_validation_failed"
 	errorDetail := err.Error()
@@ -1195,6 +1216,7 @@ func (h *Handler) handleSAMLError(w http.ResponseWriter, r *http.Request, err er
 	if parseErr, ok := err.(*samlpkg.InvalidResponseError); ok {
 		errorDetail = parseErr.PrivateErr.Error()
 	}
+	errorDetail += h.explainNoTrackedRequest(r, errorDetail)
 
 	// Get debug ID from context (set by handleACS) or from cookie
 	var debugID string

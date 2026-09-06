@@ -2,19 +2,21 @@ package oidc
 
 import (
 	"net/http"
-	"sync"
+
+	"github.com/wadahiro/fedlens/internal/store"
 )
 
-// SessionStore is a per-SP in-memory auth session store.
+// SessionStore is a per-SP in-memory auth session store. Entries expire after a
+// period of inactivity so that abandoned sessions do not hold their tokens for
+// the life of the process.
 type SessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*Session
+	entries *store.TTLMap[*Session]
 }
 
 // NewSessionStore creates a new session store.
 func NewSessionStore() *SessionStore {
 	return &SessionStore{
-		sessions: make(map[string]*Session),
+		entries: store.NewTTLMap[*Session](store.DefaultTTL),
 	}
 }
 
@@ -24,42 +26,43 @@ func (s *SessionStore) Get(r *http.Request) *Session {
 	if err != nil {
 		return nil
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[cookie.Value]
+	return s.GetByID(cookie.Value)
 }
 
 // Set stores a session with the given ID.
 func (s *SessionStore) Set(id string, session *Session) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[id] = session
+	s.entries.Set(id, session)
 }
 
 // GetByID retrieves a session by ID.
 func (s *SessionStore) GetByID(id string) *Session {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[id]
+	session, ok := s.entries.Get(id)
+	if !ok {
+		return nil
+	}
+	return session
 }
 
 // Delete removes a session by ID.
 func (s *SessionStore) Delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
+	s.entries.Delete(id)
 }
 
-// DebugSessionStore is a per-SP in-memory debug session store.
+// Len reports how many sessions are held. Used by tests.
+func (s *SessionStore) Len() int {
+	return s.entries.Len()
+}
+
+// DebugSessionStore is a per-SP in-memory debug session store. Entries expire on
+// the same terms as SessionStore.
 type DebugSessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*DebugSession
+	entries *store.TTLMap[*DebugSession]
 }
 
 // NewDebugSessionStore creates a new debug session store.
 func NewDebugSessionStore() *DebugSessionStore {
 	return &DebugSessionStore{
-		sessions: make(map[string]*DebugSession),
+		entries: store.NewTTLMap[*DebugSession](store.DefaultTTL),
 	}
 }
 
@@ -69,28 +72,29 @@ func (s *DebugSessionStore) Get(r *http.Request) *DebugSession {
 	if err != nil {
 		return nil
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[c.Value]
+	return s.GetByID(c.Value)
 }
 
 // GetByID retrieves a debug session by ID.
 func (s *DebugSessionStore) GetByID(id string) *DebugSession {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[id]
+	session, ok := s.entries.Get(id)
+	if !ok {
+		return nil
+	}
+	return session
 }
 
 // Set stores a debug session with the given ID.
 func (s *DebugSessionStore) Set(id string, session *DebugSession) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[id] = session
+	s.entries.Set(id, session)
 }
 
 // Delete removes a debug session by ID.
 func (s *DebugSessionStore) Delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
+	s.entries.Delete(id)
+}
+
+// Len reports how many debug sessions are held. Used by tests.
+func (s *DebugSessionStore) Len() int {
+	return s.entries.Len()
 }

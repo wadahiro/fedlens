@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"syscall"
@@ -29,6 +30,43 @@ import (
 	"github.com/wadahiro/fedlens/internal/ui/templates"
 )
 
+// version is stamped at build time with -ldflags "-X main.version=...". Left
+// empty it falls back to the VCS information the Go toolchain embeds, so a
+// binary built with a plain `go build` still identifies itself.
+var version = ""
+
+// versionString returns the build version, preferring the linker-stamped value.
+func versionString() string {
+	if version != "" {
+		return version
+	}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "unknown"
+	}
+	var revision, dirty string
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			revision = setting.Value
+		case "vcs.modified":
+			if setting.Value == "true" {
+				dirty = "-dirty"
+			}
+		}
+	}
+	if revision != "" {
+		if len(revision) > 12 {
+			revision = revision[:12]
+		}
+		return revision + dirty
+	}
+	if info.Main.Version != "" {
+		return info.Main.Version
+	}
+	return "unknown"
+}
+
 type routeEntry struct {
 	host     string
 	basePath string
@@ -37,6 +75,11 @@ type routeEntry struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Println("fedlens " + versionString())
+		os.Exit(0)
+	}
+
 	if len(os.Args) > 1 && os.Args[1] == "-healthcheck" {
 		healthURL := os.Getenv("HEALTHCHECK_URL")
 		if healthURL == "" {
@@ -70,6 +113,8 @@ func main() {
 
 	// Setup structured logging
 	setupLogger(cfg.LogLevel)
+
+	slog.Info("Starting fedlens", "version", versionString())
 
 	// Setup display timezone
 	if cfg.Timezone != "" && cfg.Timezone != "UTC" {

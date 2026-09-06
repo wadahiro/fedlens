@@ -646,3 +646,90 @@ root_url = "http://saml.test:3000"
 		})
 	}
 }
+
+func TestLoadAuthRequestMaxAge(t *testing.T) {
+	tests := []struct {
+		name    string
+		toml    string
+		want    time.Duration
+		getFrom func(*Config) time.Duration
+	}{
+		{
+			name: "oidc unset falls back to default",
+			toml: `
+[[oidc]]
+name = "OIDC"
+base_url = "http://oidc.test:3000"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oidc.test:3000/callback"
+`,
+			want:    DefaultAuthRequestMaxAge,
+			getFrom: func(c *Config) time.Duration { return c.OIDC[0].AuthRequestMaxAge },
+		},
+		{
+			name: "oidc duration string",
+			toml: `
+[[oidc]]
+name = "OIDC"
+base_url = "http://oidc.test:3000"
+issuer = "https://idp.test"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oidc.test:3000/callback"
+auth_request_max_age = "15m"
+`,
+			want:    15 * time.Minute,
+			getFrom: func(c *Config) time.Duration { return c.OIDC[0].AuthRequestMaxAge },
+		},
+		{
+			name: "oauth2 zero is treated as unset",
+			toml: `
+[[oauth2]]
+name = "OAuth2"
+base_url = "http://oauth2.test:3000"
+authorization_url = "https://as.test/auth"
+token_url = "https://as.test/token"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+auth_request_max_age = "0s"
+`,
+			want:    DefaultAuthRequestMaxAge,
+			getFrom: func(c *Config) time.Duration { return c.OAuth2[0].AuthRequestMaxAge },
+		},
+		{
+			name: "oauth2 duration string",
+			toml: `
+[[oauth2]]
+name = "OAuth2"
+base_url = "http://oauth2.test:3000"
+authorization_url = "https://as.test/auth"
+token_url = "https://as.test/token"
+client_id = "c"
+client_secret = "s"
+redirect_uri = "http://oauth2.test:3000/callback"
+auth_request_max_age = "45m"
+`,
+			want:    45 * time.Minute,
+			getFrom: func(c *Config) time.Duration { return c.OAuth2[0].AuthRequestMaxAge },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(tt.toml), 0644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			if got := tt.getFrom(cfg); got != tt.want {
+				t.Errorf("AuthRequestMaxAge = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

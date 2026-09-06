@@ -1,5 +1,7 @@
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 ARG TARGETARCH
+# Version stamped into the binary; the workflow passes the git tag.
+ARG VERSION=""
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -11,7 +13,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 RUN templ generate
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -o fedlens .
+    CGO_ENABLED=0 GOARCH=${TARGETARCH} go build -ldflags "-X main.version=${VERSION}" -o fedlens .
 
 FROM gcr.io/distroless/static-debian12
 COPY --from=builder /app/fedlens /fedlens

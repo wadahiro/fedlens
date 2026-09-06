@@ -1,0 +1,82 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Generate templ templates
+        run: make generate
+
+      - name: Check gofmt
+        run: |
+          unformatted=$(gofmt -l $(git ls-files '*.go' | grep -v '_templ\.go$'))
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test -race ./...
+
+  e2e:
+    name: E2E tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Install e2e dependencies
+        working-directory: e2e
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: pnpm exec playwright install --with-deps
+
+      - name: Start fedlens and Keycloak
+        run: docker compose up -d --build --wait
+
+      - name: Run Playwright tests
+        working-directory: e2e
+        run: pnpm exec playwright test
+
+      - name: Collect container logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7
+
+      - name: Stop containers
+        if: always()
+        run: docker compose down -v

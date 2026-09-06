@@ -2,9 +2,14 @@
 
 BINARY := fedlens
 
+# Version stamped into the binary. Falls back to the embedded VCS info when git
+# is unavailable (see versionString in main.go).
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+LDFLAGS := $(if $(VERSION),-ldflags "-X main.version=$(VERSION)")
+
 # Generate templ files and build binary
 build: generate
-	CGO_ENABLED=0 go build -o $(BINARY) .
+	CGO_ENABLED=0 go build $(LDFLAGS) -o $(BINARY) .
 
 # Generate templ templates
 generate:

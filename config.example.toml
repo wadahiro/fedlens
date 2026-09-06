@@ -22,6 +22,7 @@ scopes = ["openid", "profile", "email"]
 # response_mode = ""                # query, fragment, form_post
 # callback_path = "/callback"       # IdP redirect-back path (default: /callback)
 # extra_auth_params = { prompt = "consent" }
+# auth_request_max_age = "30m"      # How long a sent authorization request stays valid (default: 30m)
 
 # Path-based routing example (multiple apps on the same host):
 # [[oidc]]
@@ -48,6 +49,7 @@ redirect_uri = "http://oauth2.example.com:3000/callback"
 scopes = ["profile", "email"]
 resource_server_client_id = "fedlens-rs"
 resource_server_client_secret = "fedlens-rs-secret"
+# auth_request_max_age = "30m"      # How long a sent authorization request stays valid (default: 30m)
 
 # With RFC 8414 Discovery:
 # [[oauth2]]

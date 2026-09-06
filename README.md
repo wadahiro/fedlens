@@ -166,6 +166,7 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
 | `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
 | `logout_id_token_hint` | No | `true` | Send `id_token_hint` in logout request |
+| `auth_request_max_age` | No | `"30m"` | How long a sent authorization request stays valid, i.e. how long you may spend on the IdP login screen before the `state` and PKCE verifier cookies expire |
 
 ##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
 
@@ -207,6 +208,7 @@ Each `[[oauth2]]` block defines a separate OAuth2 Client. Unlike OIDC, there is 
 | `resource_urls` | No | | Custom Resource Server URLs to test (e.g. `["https://api.example.com/me"]`) |
 | `resource_server_client_id` | No | | Client ID for built-in Resource Server (Token Introspection) |
 | `resource_server_client_secret` | No | | Client Secret for built-in Resource Server (Token Introspection) |
+| `auth_request_max_age` | No | `"30m"` | How long a sent authorization request stays valid, i.e. how long you may spend on the IdP login screen before the `state` and PKCE verifier cookies expire |
 
 \* Either `issuer` (for RFC 8414 Discovery) or both `authorization_url` + `token_url` (manual) are required.
 
@@ -230,7 +232,7 @@ Each `[[saml]]` block defines a separate SAML Service Provider.
 | `metadata_path` | No | `/saml/metadata` | SP Metadata endpoint path |
 | `cert_path` | No | (auto-generated) | Path to SP certificate PEM file |
 | `key_path` | No | (auto-generated) | Path to SP private key PEM file |
-| `allow_idp_initiated` | No | `false` | Allow IdP-Initiated SSO (skips InResponseTo validation) |
+| `allow_idp_initiated` | No | `false` | Allow IdP-Initiated SSO. Disables InResponseTo validation entirely: any value is accepted, not just an absent one, and the `SubjectConfirmationData` check is skipped as well |
 | `authn_request_max_age` | No | `"30m"` | How long a sent AuthnRequest stays valid for InResponseTo validation, i.e. how long you may spend on the IdP login screen |
 
 ##### SAML Re-authentication Profiles (`[[saml.reauth]]`)
@@ -504,10 +506,10 @@ const oidcError = page.locator('#result-0-error');
 await expect(oidcError.getByTestId('error')).toHaveText('invalid_grant');
 await expect(oidcError.getByTestId('error_description')).toContainText('expired');
 
-// SAML
+// SAML (test IDs follow each protocol's own naming, so SAML rows are CamelCase)
 const samlError = page.locator('#result-0-error');
-await expect(samlError.getByTestId('status_code')).toHaveText('saml_validation_failed');
-await expect(samlError.getByTestId('detail')).toContainText('InResponseTo');
+await expect(samlError.getByTestId('StatusCode')).toHaveText('saml_validation_failed');
+await expect(samlError.getByTestId('Detail')).toContainText('InResponseTo');
 ```
 
 ### Tech Stack

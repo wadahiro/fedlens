@@ -282,6 +282,9 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 		ParsedHost:      cfg.ParsedHost,
 		BasePath:        cfg.BasePath,
 	}
+	// Carried over so the shared handler applies the configured lifetime in
+	// OAuth2 mode too; without this the cookies fall back to the default.
+	oidcCfg.AuthRequestMaxAge = cfg.AuthRequestMaxAge
 
 	h := &Handler{
 		Config:         oidcCfg,
@@ -1027,7 +1030,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		Name:     "oidc_state",
 		Value:    state,
 		Path:     h.cookiePath(),
-		MaxAge:   300,
+		MaxAge:   h.authRequestMaxAgeSeconds(),
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		SameSite: sameSiteMode(r),
@@ -1039,7 +1042,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 			Name:     "oidc_reauth_name",
 			Value:    reauthName,
 			Path:     h.cookiePath(),
-			MaxAge:   300,
+			MaxAge:   h.authRequestMaxAgeSeconds(),
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
 			SameSite: sameSiteMode(r),
@@ -1063,7 +1066,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 			Name:     "oidc_pkce_verifier",
 			Value:    verifier,
 			Path:     h.cookiePath(),
-			MaxAge:   300,
+			MaxAge:   h.authRequestMaxAgeSeconds(),
 			HttpOnly: true,
 			Secure:   isHTTPS(r),
 			SameSite: sameSiteMode(r),
@@ -1106,7 +1109,7 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		Name:     "oidc_auth_request_url",
 		Value:    authURL,
 		Path:     h.cookiePath(),
-		MaxAge:   300,
+		MaxAge:   h.authRequestMaxAgeSeconds(),
 		HttpOnly: true,
 		Secure:   isHTTPS(r),
 		SameSite: sameSiteMode(r),
@@ -1460,6 +1463,17 @@ func isHTTPS(r *http.Request) bool {
 		return true
 	}
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+// authRequestMaxAgeSeconds returns the cookie Max-Age for the cookies holding a
+// pending authorization request. They must outlive the time the user spends on
+// the IdP login screen; the SAML side had the same defect with a 90s default.
+func (h *Handler) authRequestMaxAgeSeconds() int {
+	maxAge := h.Config.AuthRequestMaxAge
+	if maxAge <= 0 {
+		maxAge = config.DefaultAuthRequestMaxAge
+	}
+	return int(maxAge.Seconds())
 }
 
 func sameSiteMode(r *http.Request) http.SameSite {

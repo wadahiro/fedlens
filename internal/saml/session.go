@@ -2,19 +2,21 @@ package saml
 
 import (
 	"net/http"
-	"sync"
+
+	"github.com/wadahiro/fedlens/internal/store"
 )
 
-// DebugSessionStore is a per-SP in-memory debug session store.
+// DebugSessionStore is a per-SP in-memory debug session store. Entries expire
+// after a period of inactivity so that abandoned flows — a closed browser, an
+// expired cookie — do not hold their SAML XML for the life of the process.
 type DebugSessionStore struct {
-	mu       sync.RWMutex
-	sessions map[string]*DebugSession
+	entries *store.TTLMap[*DebugSession]
 }
 
 // NewDebugSessionStore creates a new debug session store.
 func NewDebugSessionStore() *DebugSessionStore {
 	return &DebugSessionStore{
-		sessions: make(map[string]*DebugSession),
+		entries: store.NewTTLMap[*DebugSession](store.DefaultTTL),
 	}
 }
 
@@ -24,28 +26,29 @@ func (s *DebugSessionStore) Get(r *http.Request) *DebugSession {
 	if err != nil {
 		return nil
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[c.Value]
+	return s.GetByID(c.Value)
 }
 
 // GetByID retrieves a debug session by ID.
 func (s *DebugSessionStore) GetByID(id string) *DebugSession {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.sessions[id]
+	session, ok := s.entries.Get(id)
+	if !ok {
+		return nil
+	}
+	return session
 }
 
 // Set stores a debug session with the given ID.
 func (s *DebugSessionStore) Set(id string, session *DebugSession) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.sessions[id] = session
+	s.entries.Set(id, session)
 }
 
 // Delete removes a debug session by ID.
 func (s *DebugSessionStore) Delete(id string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.sessions, id)
+	s.entries.Delete(id)
+}
+
+// Len reports how many debug sessions are held. Used by tests.
+func (s *DebugSessionStore) Len() int {
+	return s.entries.Len()
 }
