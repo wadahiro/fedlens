@@ -1,9 +1,12 @@
 package saml
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/crewjam/saml/samlsp"
 
 	"github.com/wadahiro/fedlens/internal/protocol"
 )
@@ -177,5 +180,51 @@ func TestFormatSidebarTimestamp_SAML(t *testing.T) {
 	result := formatSidebarTimestamp(now)
 	if result != "03/20 14:30:45" {
 		t.Errorf("result = %q, want '03/20 14:30:45'", result)
+	}
+}
+
+func TestSameSiteModeForScheme(t *testing.T) {
+	tests := []struct {
+		scheme string
+		want   http.SameSite
+	}{
+		{"https", http.SameSiteNoneMode},
+		{"HTTPS", http.SameSiteNoneMode},
+		{"http", http.SameSiteLaxMode},
+		{"", http.SameSiteLaxMode},
+	}
+	for _, tt := range tests {
+		if got := sameSiteModeForScheme(tt.scheme); got != tt.want {
+			t.Errorf("sameSiteModeForScheme(%q) = %v, want %v", tt.scheme, got, tt.want)
+		}
+	}
+}
+
+func TestSetRequestTrackerMaxAge(t *testing.T) {
+	sp := &samlsp.Middleware{
+		RequestTracker: samlsp.CookieRequestTracker{
+			NamePrefix: "saml_",
+			Codec:      samlsp.JWTTrackedRequestCodec{MaxAge: 90 * time.Second},
+			MaxAge:     90 * time.Second,
+		},
+	}
+
+	setRequestTrackerMaxAge(sp, 30*time.Minute)
+
+	tracker, ok := sp.RequestTracker.(samlsp.CookieRequestTracker)
+	if !ok {
+		t.Fatalf("RequestTracker is %T, want samlsp.CookieRequestTracker", sp.RequestTracker)
+	}
+	if tracker.MaxAge != 30*time.Minute {
+		t.Errorf("cookie MaxAge = %v, want %v", tracker.MaxAge, 30*time.Minute)
+	}
+	// The JWT carried by the cookie must be widened too, otherwise the cookie
+	// survives but GetTrackedRequests skips it once the JWT expires.
+	codec, ok := tracker.Codec.(samlsp.JWTTrackedRequestCodec)
+	if !ok {
+		t.Fatalf("Codec is %T, want samlsp.JWTTrackedRequestCodec", tracker.Codec)
+	}
+	if codec.MaxAge != 30*time.Minute {
+		t.Errorf("codec MaxAge = %v, want %v", codec.MaxAge, 30*time.Minute)
 	}
 }

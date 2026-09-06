@@ -231,6 +231,7 @@ Each `[[saml]]` block defines a separate SAML Service Provider.
 | `cert_path` | No | (auto-generated) | Path to SP certificate PEM file |
 | `key_path` | No | (auto-generated) | Path to SP private key PEM file |
 | `allow_idp_initiated` | No | `false` | Allow IdP-Initiated SSO (skips InResponseTo validation) |
+| `authn_request_max_age` | No | `"30m"` | How long a sent AuthnRequest stays valid for InResponseTo validation, i.e. how long you may spend on the IdP login screen |
 
 ##### SAML Re-authentication Profiles (`[[saml.reauth]]`)
 

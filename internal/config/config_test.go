@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestLoadNonExistent(t *testing.T) {
@@ -604,5 +605,44 @@ resource_urls = ["https://api.example.com/resource", "https://api2.example.com/d
 	}
 	if oa.ResourceURLs[1] != "https://api2.example.com/data" {
 		t.Errorf("ResourceURLs[1] = %q", oa.ResourceURLs[1])
+	}
+}
+
+func TestLoadSAMLAuthnRequestMaxAge(t *testing.T) {
+	tests := []struct {
+		name    string
+		setting string
+		want    time.Duration
+	}{
+		{"unset falls back to default", "", DefaultAuthnRequestMaxAge},
+		{"duration string", `authn_request_max_age = "10m"`, 10 * time.Minute},
+		{"zero is treated as unset", `authn_request_max_age = "0s"`, DefaultAuthnRequestMaxAge},
+		{"negative is treated as unset", `authn_request_max_age = "-1m"`, DefaultAuthnRequestMaxAge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toml := `
+[[saml]]
+name = "SAML"
+base_url = "http://saml.test:3000"
+idp_metadata_url = "http://idp.test/descriptor"
+entity_id = "http://saml.test:3000/saml/metadata"
+root_url = "http://saml.test:3000"
+` + tt.setting + "\n"
+
+			path := filepath.Join(t.TempDir(), "config.toml")
+			if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
+				t.Fatal(err)
+			}
+
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load failed: %v", err)
+			}
+			if got := cfg.SAML[0].AuthnRequestMaxAge; got != tt.want {
+				t.Errorf("AuthnRequestMaxAge = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

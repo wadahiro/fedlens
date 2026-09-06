@@ -6,6 +6,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
@@ -100,6 +101,11 @@ type SAMLConfig struct {
 	KeyPath           string             `toml:"key_path"`
 	AllowIDPInitiated bool               `toml:"allow_idp_initiated"`
 	Reauth            []SAMLReauthConfig `toml:"reauth"`
+
+	// AuthnRequestMaxAge is how long a sent AuthnRequest stays valid for
+	// InResponseTo validation, i.e. how long the user may spend on the IdP login
+	// screen. Accepts a duration string such as "30m".
+	AuthnRequestMaxAge time.Duration `toml:"authn_request_max_age"`
 
 	// Computed fields (not from TOML)
 	ParsedHost string // host:port extracted from base_url
@@ -298,6 +304,12 @@ func assignDefinitionOrder(data []byte, cfg *Config) {
 	}
 }
 
+// DefaultAuthnRequestMaxAge is the default lifetime of a pending AuthnRequest.
+// samlsp defaults to saml.MaxIssueDelay (90s), which expires while the user is
+// still on the IdP login screen; 30 minutes is in the same range as a typical
+// IdP login timeout.
+const DefaultAuthnRequestMaxAge = 30 * time.Minute
+
 func applySAMLDefaults(c *SAMLConfig) {
 	if c.ACSPath == "" {
 		c.ACSPath = "/saml/acs"
@@ -307,5 +319,10 @@ func applySAMLDefaults(c *SAMLConfig) {
 	}
 	if c.MetadataPath == "" {
 		c.MetadataPath = "/saml/metadata"
+	}
+	// A non-positive value would make every AuthnRequest expire immediately, so
+	// treat it the same as unset.
+	if c.AuthnRequestMaxAge <= 0 {
+		c.AuthnRequestMaxAge = DefaultAuthnRequestMaxAge
 	}
 }

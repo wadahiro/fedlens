@@ -83,6 +83,7 @@ root_url = "http://saml.example.com:3000"
 # cert_path = "/path/to/cert.pem"   # omit for auto-generated self-signed cert
 # key_path = "/path/to/key.pem"
 # allow_idp_initiated = true       # Allow IdP-Initiated SSO (default: false)
+# authn_request_max_age = "30m"    # How long a sent AuthnRequest stays valid for InResponseTo validation (default: 30m)
 
 # Path-based routing example:
 # [[saml]]

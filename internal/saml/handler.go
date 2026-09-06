@@ -99,16 +99,22 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		}
 	}
 
-	sp, err := samlsp.New(samlsp.Options{
+	spOptions := samlsp.Options{
 		URL:               *rootURL,
 		Key:               keyPair.Key,
 		Certificate:       keyPair.Cert,
 		IDPMetadata:       idpMetadata,
 		EntityID:          cfg.EntityID,
-		SignRequest:        false,
+		SignRequest:       false,
 		AllowIDPInitiated: cfg.AllowIDPInitiated,
 		LogoutBindings:    []string{samlpkg.HTTPPostBinding, samlpkg.HTTPRedirectBinding},
-	})
+		// The IdP posts the SAML Response cross-site, and a Lax cookie is not sent
+		// on a cross-site POST. samlsp leaves SameSite unset (browsers default to
+		// Lax), so set it explicitly for both the tracking and session cookies.
+		CookieSameSite: sameSiteModeForScheme(rootURL.Scheme),
+	}
+
+	sp, err := samlsp.New(spOptions)
 	if err != nil {
 		return nil, fmt.Errorf("create SAML SP: %w", err)
 	}
@@ -126,6 +132,8 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 	metadataURL := *rootURL
 	metadataURL.Path = path.Join(rootURL.Path, cfg.MetadataPath)
 	sp.ServiceProvider.MetadataURL = metadataURL
+
+	setRequestTrackerMaxAge(sp, cfg.AuthnRequestMaxAge)
 
 	// Determine request binding (same logic as handleLogin)
 	reqBinding := "redirect"
@@ -158,6 +166,27 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 	h.idpSigningCerts = extractIdPSigningCerts(idpMetadata)
 
 	return h, nil
+}
+
+// setRequestTrackerMaxAge widens the lifetime of samlsp's request tracking, which
+// defaults to saml.MaxIssueDelay (90s) and expires while the user is still on the
+// IdP login screen. Both the cookie and the JWT it carries must be widened: an
+// expired JWT is skipped by GetTrackedRequests just as a missing cookie is, and
+// either case leaves the ACS with no request ID to validate InResponseTo against.
+func setRequestTrackerMaxAge(sp *samlsp.Middleware, maxAge time.Duration) {
+	tracker, ok := sp.RequestTracker.(samlsp.CookieRequestTracker)
+	if !ok {
+		return
+	}
+	if maxAge <= 0 {
+		maxAge = config.DefaultAuthnRequestMaxAge
+	}
+	tracker.MaxAge = maxAge
+	if codec, ok := tracker.Codec.(samlsp.JWTTrackedRequestCodec); ok {
+		codec.MaxAge = maxAge
+		tracker.Codec = codec
+	}
+	sp.RequestTracker = tracker
 }
 
 func buildSAMLEndpointRows(sp *samlpkg.ServiceProvider) []components.ClaimRow {
@@ -1192,6 +1221,16 @@ func isHTTPS(r *http.Request) bool {
 		return true
 	}
 	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
+// sameSiteModeForScheme returns the SameSite mode for cookies that must survive
+// the cross-site POST from the IdP. SameSite=None is rejected by browsers unless
+// the cookie is also Secure, so plain HTTP falls back to Lax.
+func sameSiteModeForScheme(scheme string) http.SameSite {
+	if strings.EqualFold(scheme, "https") {
+		return http.SameSiteNoneMode
+	}
+	return http.SameSiteLaxMode
 }
 
 func sameSiteMode(r *http.Request) http.SameSite {
