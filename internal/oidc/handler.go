@@ -47,13 +47,13 @@ type Handler struct {
 	protocol       string // "oidc" or "oauth2"
 	rsClientID     string // Resource Server client ID for Token Introspection
 	rsClientSecret string // Resource Server client secret for Token Introspection
-	basePath     string
-	topPageURL   string
-	navTabs      []templates.NavTab
-	defaultTheme string
-	endpointRows []components.ClaimRow
-	jwksRaw      json.RawMessage
-	jwksKeys     []templates.JWKSKeyData
+	basePath       string
+	topPageURL     string
+	navTabs        []templates.NavTab
+	defaultTheme   string
+	endpointRows   []components.ClaimRow
+	jwksRaw        json.RawMessage
+	jwksKeys       []templates.JWKSKeyData
 }
 
 // NewHandler creates and initializes an OIDC handler for the given config.
@@ -1369,17 +1369,17 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		AuthResponseRedirectURI: h.oauth2Config.RedirectURL,
 		TokenRequestURL:         h.oauth2Config.Endpoint.TokenURL,
 		TokenRequestParams:      tokenRequestParams,
-		TokenResponse:      tokenResponseJSON,
-		TokenHTTPResponse:    tokenHTTPResp,
-		UserInfoHTTPResponse: userInfoHTTPResp,
-		IDTokenRaw:           rawIDToken,
-		AccessTokenRaw:       token.AccessToken,
-		RefreshTokenRaw:      refreshTokenRaw,
-		UserInfoResponse:     userInfoResponse,
-		UserInfoError:        userInfoErr,
-		IDTokenSigInfo:       idTokenSigInfo,
-		AccessTokenSigInfo:   accessTokenSigInfo,
-		JWKSResponse:         jwksRaw,
+		TokenResponse:           tokenResponseJSON,
+		TokenHTTPResponse:       tokenHTTPResp,
+		UserInfoHTTPResponse:    userInfoHTTPResp,
+		IDTokenRaw:              rawIDToken,
+		AccessTokenRaw:          token.AccessToken,
+		RefreshTokenRaw:         refreshTokenRaw,
+		UserInfoResponse:        userInfoResponse,
+		UserInfoError:           userInfoErr,
+		IDTokenSigInfo:          idTokenSigInfo,
+		AccessTokenSigInfo:      accessTokenSigInfo,
+		JWKSResponse:            jwksRaw,
 	}
 
 	// Record UserInfo Request info (OIDC mode only)
@@ -1633,13 +1633,13 @@ func (h *Handler) handleIntrospection(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("Introspection request failed: %v", err)
 		errorEntry := ResultEntry{
-			Type:                      "Error: Introspection",
-			Timestamp:                 time.Now(),
-			IntrospectionRequestURL:   introspectionURL,
+			Type:                       "Error: Introspection",
+			Timestamp:                  time.Now(),
+			IntrospectionRequestURL:    introspectionURL,
 			IntrospectionRequestParams: map[string]string{"token": session.AccessTokenRaw, "token_type_hint": "access_token"},
-			IntrospectionHTTPResponse: introspectionHTTPResp,
-			ErrorCode:                 "connection_failed",
-			ErrorDetail:               err.Error(),
+			IntrospectionHTTPResponse:  introspectionHTTPResp,
+			ErrorCode:                  "connection_failed",
+			ErrorDetail:                err.Error(),
 		}
 		h.saveErrorEntry(w, r, errorEntry)
 		http.Redirect(w, r, h.basePath+"/", http.StatusFound)
@@ -1660,13 +1660,13 @@ func (h *Handler) handleIntrospection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	entry := ResultEntry{
-		Type:                      entryType,
-		Timestamp:                 time.Now(),
-		IntrospectionRequestURL:   introspectionURL,
+		Type:                       entryType,
+		Timestamp:                  time.Now(),
+		IntrospectionRequestURL:    introspectionURL,
 		IntrospectionRequestParams: map[string]string{"token": session.AccessTokenRaw, "token_type_hint": "access_token"},
-		IntrospectionResponse:     json.RawMessage(body),
-		IntrospectionHTTPResponse: introspectionHTTPResp,
-		AccessTokenRaw:            session.AccessTokenRaw,
+		IntrospectionResponse:      json.RawMessage(body),
+		IntrospectionHTTPResponse:  introspectionHTTPResp,
+		AccessTokenRaw:             session.AccessTokenRaw,
 	}
 
 	if resp.StatusCode >= 300 {

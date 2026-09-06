@@ -6,12 +6,12 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	xmlpkg "encoding/xml"
 	"fmt"
 	"io"
 	"log"
 	"strings"
 	"time"
-	xmlpkg "encoding/xml"
 
 	"github.com/beevik/etree"
 	dsig "github.com/russellhaering/goxmldsig"

@@ -28,21 +28,21 @@ type Config struct {
 
 // OIDCConfig defines a single OIDC RP instance.
 type OIDCConfig struct {
-	Name            string            `toml:"name"`
-	BaseURL         string            `toml:"base_url"`
-	Issuer          string            `toml:"issuer"`
-	ClientID        string            `toml:"client_id"`
-	ClientSecret    string            `toml:"client_secret"`
-	RedirectURI     string            `toml:"redirect_uri"`
-	CallbackPath    string            `toml:"callback_path"`
-	Scopes          []string          `toml:"scopes"`
-	PKCE            bool              `toml:"pkce"`
-	PKCEMethod      string            `toml:"pkce_method"`
-	ResponseType    string            `toml:"response_type"`
-	ResponseMode    string            `toml:"response_mode"`
-	ExtraAuthParams map[string]string `toml:"extra_auth_params"`
-	IntrospectionURL  string            `toml:"introspection_url"`    // Token Introspection endpoint (optional, Discovery takes precedence)
-	RevocationURL     string            `toml:"revocation_url"`       // Token Revocation endpoint (optional, Discovery takes precedence)
+	Name              string            `toml:"name"`
+	BaseURL           string            `toml:"base_url"`
+	Issuer            string            `toml:"issuer"`
+	ClientID          string            `toml:"client_id"`
+	ClientSecret      string            `toml:"client_secret"`
+	RedirectURI       string            `toml:"redirect_uri"`
+	CallbackPath      string            `toml:"callback_path"`
+	Scopes            []string          `toml:"scopes"`
+	PKCE              bool              `toml:"pkce"`
+	PKCEMethod        string            `toml:"pkce_method"`
+	ResponseType      string            `toml:"response_type"`
+	ResponseMode      string            `toml:"response_mode"`
+	ExtraAuthParams   map[string]string `toml:"extra_auth_params"`
+	IntrospectionURL  string            `toml:"introspection_url"` // Token Introspection endpoint (optional, Discovery takes precedence)
+	RevocationURL     string            `toml:"revocation_url"`    // Token Revocation endpoint (optional, Discovery takes precedence)
 	Reauth            []ReauthConfig    `toml:"reauth"`
 	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
 
@@ -59,24 +59,24 @@ type OIDCConfig struct {
 
 // OAuth2Config defines a single OAuth2 Client instance.
 type OAuth2Config struct {
-	Name             string            `toml:"name"`
-	BaseURL          string            `toml:"base_url"`
-	Issuer           string            `toml:"issuer"`            // RFC 8414 Discovery (optional)
-	AuthorizationURL string            `toml:"authorization_url"` // Manual (required if no issuer)
-	TokenURL         string            `toml:"token_url"`         // Manual (required if no issuer)
-	IntrospectionURL string            `toml:"introspection_url"` // Token Introspection endpoint (optional)
-	RevocationURL    string            `toml:"revocation_url"`    // Token Revocation endpoint (optional)
-	ClientID         string            `toml:"client_id"`
-	ClientSecret     string            `toml:"client_secret"`
-	RedirectURI      string            `toml:"redirect_uri"`
-	CallbackPath     string            `toml:"callback_path"`
-	Scopes           []string          `toml:"scopes"`
-	PKCE             bool              `toml:"pkce"`
-	PKCEMethod       string            `toml:"pkce_method"`
-	ResponseMode     string            `toml:"response_mode"`
-	ExtraAuthParams  map[string]string `toml:"extra_auth_params"`
-	Reauth           []ReauthConfig    `toml:"reauth"`
-	ResourceURLs               []string          `toml:"resource_urls"`                // Custom resource server URLs to test
+	Name                       string            `toml:"name"`
+	BaseURL                    string            `toml:"base_url"`
+	Issuer                     string            `toml:"issuer"`            // RFC 8414 Discovery (optional)
+	AuthorizationURL           string            `toml:"authorization_url"` // Manual (required if no issuer)
+	TokenURL                   string            `toml:"token_url"`         // Manual (required if no issuer)
+	IntrospectionURL           string            `toml:"introspection_url"` // Token Introspection endpoint (optional)
+	RevocationURL              string            `toml:"revocation_url"`    // Token Revocation endpoint (optional)
+	ClientID                   string            `toml:"client_id"`
+	ClientSecret               string            `toml:"client_secret"`
+	RedirectURI                string            `toml:"redirect_uri"`
+	CallbackPath               string            `toml:"callback_path"`
+	Scopes                     []string          `toml:"scopes"`
+	PKCE                       bool              `toml:"pkce"`
+	PKCEMethod                 string            `toml:"pkce_method"`
+	ResponseMode               string            `toml:"response_mode"`
+	ExtraAuthParams            map[string]string `toml:"extra_auth_params"`
+	Reauth                     []ReauthConfig    `toml:"reauth"`
+	ResourceURLs               []string          `toml:"resource_urls"`                 // Custom resource server URLs to test
 	ResourceServerClientID     string            `toml:"resource_server_client_id"`     // Client ID for built-in Resource Server (Token Introspection)
 	ResourceServerClientSecret string            `toml:"resource_server_client_secret"` // Client Secret for built-in Resource Server (Token Introspection)
 
@@ -125,9 +125,9 @@ type SAMLConfig struct {
 
 // SAMLReauthConfig defines a SAML re-authentication profile.
 type SAMLReauthConfig struct {
-	Name                  string `toml:"name"`
-	AuthnContextClassRef  string `toml:"authn_context_class_ref"`
-	ForceAuthn            bool   `toml:"force_authn"`
+	Name                 string `toml:"name"`
+	AuthnContextClassRef string `toml:"authn_context_class_ref"`
+	ForceAuthn           bool   `toml:"force_authn"`
 }
 
 // Load reads the configuration from a TOML file.
@@ -278,7 +278,6 @@ func applyOIDCDefaults(c *OIDCConfig) {
 func (c *Config) TLSEnabled() bool {
 	return c.TLSSelfSigned || (c.TLSCertPath != "" && c.TLSKeyPath != "")
 }
-
 
 func applyOAuth2Defaults(c *OAuth2Config) {
 	if len(c.Scopes) == 0 {

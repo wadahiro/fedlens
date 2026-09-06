@@ -192,8 +192,8 @@ func (h *Handler) handleResourceAccess(w http.ResponseWriter, r *http.Request) {
 				ErrorCode: "connection_failed",
 				Detail:    err.Error(),
 			},
-			ErrorCode:   "connection_failed",
-			ErrorDetail: err.Error(),
+			ErrorCode:      "connection_failed",
+			ErrorDetail:    err.Error(),
 			AccessTokenRaw: accessToken,
 		}
 		h.saveErrorEntry(w, r, errorEntry)
@@ -230,8 +230,8 @@ func (h *Handler) handleResourceAccess(w http.ResponseWriter, r *http.Request) {
 				ErrorCode: "connection_failed",
 				Detail:    err.Error(),
 			},
-			ErrorCode:   "connection_failed",
-			ErrorDetail: err.Error(),
+			ErrorCode:      "connection_failed",
+			ErrorDetail:    err.Error(),
 			AccessTokenRaw: accessToken,
 		}
 		h.saveErrorEntry(w, r, errorEntry)

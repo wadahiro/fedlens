@@ -8,7 +8,7 @@ import (
 
 // SAMLResultEntry holds data from a single SAML authentication event.
 type SAMLResultEntry struct {
-	Type            string    // "Login", "Re-auth: <name>", "Logout", "Error"
+	Type            string // "Login", "Re-auth: <name>", "Logout", "Error"
 	Timestamp       time.Time
 	Subject         string
 	Attributes      map[string][]string

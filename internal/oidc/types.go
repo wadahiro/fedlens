@@ -37,22 +37,22 @@ type UserInfoError struct {
 
 // ResultEntry holds data from a single authentication event (Login, Refresh, Re-auth, Logout, Error).
 type ResultEntry struct {
-	Type               string    // "Login", "Refresh", "Re-auth: <name>", "Logout", "Error"
-	Timestamp          time.Time
-	Claims             map[string]any
-	AuthRequestURL     string          // Login/Re-auth/Error
+	Type                    string // "Login", "Refresh", "Re-auth: <name>", "Logout", "Error"
+	Timestamp               time.Time
+	Claims                  map[string]any
+	AuthRequestURL          string // Login/Re-auth/Error
 	AuthResponseCode        string // Login/Re-auth only
 	AuthResponseRaw         string // Login/Re-auth/Error
 	AuthResponseRedirectURI string // Login/Re-auth/Error — redirect URI for display
-	TokenResponse      json.RawMessage
-	IDTokenRaw         string
-	AccessTokenRaw     string
-	RefreshTokenRaw    string
-	UserInfoResponse   json.RawMessage // Login/Re-auth only
-	IDTokenSigInfo     *protocol.JWTSignatureInfo
-	AccessTokenSigInfo *protocol.JWTSignatureInfo
-	JWKSResponse       json.RawMessage // Login/Re-auth only
-	UserInfoError *UserInfoError // non-nil when UserInfo endpoint returned an error
+	TokenResponse           json.RawMessage
+	IDTokenRaw              string
+	AccessTokenRaw          string
+	RefreshTokenRaw         string
+	UserInfoResponse        json.RawMessage // Login/Re-auth only
+	IDTokenSigInfo          *protocol.JWTSignatureInfo
+	AccessTokenSigInfo      *protocol.JWTSignatureInfo
+	JWKSResponse            json.RawMessage // Login/Re-auth only
+	UserInfoError           *UserInfoError  // non-nil when UserInfo endpoint returned an error
 	// HTTP Response capture
 	TokenHTTPResponse    *HTTPResponseInfo // Token endpoint HTTP response (success & error)
 	UserInfoHTTPResponse *HTTPResponseInfo // UserInfo endpoint HTTP response (success & error)
@@ -63,10 +63,10 @@ type ResultEntry struct {
 	UserInfoRequestURL    string
 	UserInfoRequestMethod string // "GET"
 	// Introspection fields
-	IntrospectionRequestURL  string
+	IntrospectionRequestURL    string
 	IntrospectionRequestParams map[string]string
-	IntrospectionResponse    json.RawMessage
-	IntrospectionHTTPResponse *HTTPResponseInfo
+	IntrospectionResponse      json.RawMessage
+	IntrospectionHTTPResponse  *HTTPResponseInfo
 	// Revocation fields
 	RevocationRequestURL    string
 	RevocationRequestParams map[string]string
