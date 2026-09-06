@@ -58,6 +58,40 @@ test.describe("SAML Flow", () => {
     await expect(page.locator(".status-indicator")).toHaveText("No Session");
   });
 
+  test("InResponseTo failure explains that no AuthnRequest was tracked", async ({ page, context }) => {
+    await page.goto(SAML_URL);
+    await page.getByTestId("login-btn").click();
+    await expect(page.locator("#kc-login")).toBeVisible();
+
+    // Drop samlsp's request-tracking cookie while we are "on the login screen".
+    // That is what an expired cookie, or one the browser withheld from the
+    // cross-site POST, looks like to the ACS: a SAML Response arrives with no
+    // AuthnRequest ID to validate InResponseTo against.
+    const tracking = (await context.cookies()).filter(
+      (c) =>
+        c.name.startsWith("saml_") &&
+        c.name !== "saml_debug_id" &&
+        c.name !== "saml_reauth_name",
+    );
+    expect(tracking.length).toBeGreaterThan(0);
+    for (const cookie of tracking) {
+      await context.clearCookies({ name: cookie.name });
+    }
+
+    await keycloakLogin(page);
+
+    // The login itself succeeds at the IdP; fedlens rejects the response.
+    const error = page.locator("#result-0-error");
+    await expect(error.getByTestId("StatusCode")).toHaveText("saml_validation_failed");
+
+    // crewjam's own message is kept...
+    const detail = error.getByTestId("Detail");
+    await expect(detail).toContainText("InResponseTo");
+    // ...and fedlens explains which of the two causes this was.
+    await expect(detail).toContainText("no tracked AuthnRequest was found");
+    await expect(detail).toContainText("authn_request_max_age");
+  });
+
   test("navigation tabs are displayed", async ({ page }) => {
     await page.goto(SAML_URL);
 
