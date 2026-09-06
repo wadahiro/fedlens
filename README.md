@@ -366,6 +366,27 @@ server {
 }
 ```
 
+### Deployment: single instance only
+
+fedlens keeps the debug timeline and the OIDC/OAuth2 tokens in memory, keyed by
+the `saml_debug_id`, `oidc_debug_id` and `session_id` cookies. **Run exactly one
+instance**, or pin each browser to one instance with session affinity.
+
+Login itself survives being spread across instances — `state`, the PKCE
+verifier, the SAML request tracker and the SAML session are all carried in
+cookies, so authentication completes wherever the request lands. What breaks is
+everything that reads the in-memory state:
+
+| Behaviour with more than one instance | |
+|---|---|
+| OIDC/SAML login, `InResponseTo` validation | Works — cookie-based |
+| Debug timeline | Fragments; the SAML ACS falls back to treating the response as IdP-initiated and starts a new timeline |
+| Token Refresh / Introspection / Revocation / UserInfo | Fail silently — the handler finds no session and redirects back to the index, so the button appears to do nothing |
+
+If you must scale out, enable session affinity on those cookies — on an AWS ALB
+that is target group stickiness with `app_cookie`. Note that affinity does not
+survive a deployment: replacing the tasks discards every timeline.
+
 ## Development
 
 ```bash
@@ -391,7 +412,7 @@ E2E tests use [Playwright](https://playwright.dev/) and run against Chromium, Fi
 
 ```bash
 # Setup (first time)
-cd e2e && npm install && npx playwright install && cd ..
+cd e2e && pnpm install && pnpm exec playwright install && cd ..
 
 # Run all E2E tests
 make e2e
@@ -400,6 +421,10 @@ make e2e
 #### Playwright Selectors
 
 The HTML is designed for easy E2E testing. Use the `id` attributes to scope into a specific result entry or section, then use `getByTestId()` to select value cells.
+
+These selectors are a **stable contract**: fedlens is meant to be driven from your own Playwright suite to test your IdP, so the `id` and `data-testid` values below are treated as public API and will not be renamed without a major version bump.
+
+One deliberate inconsistency: each protocol's rows are named the way that protocol names them. OIDC and OAuth2 errors use the OAuth 2.0 parameter names (`error`, `error_description`), while SAML errors use the SAML element names (`StatusCode`, `Detail`). Rows rendered through `toTestID()` — Signature Verification and Response Details — are always snake_case regardless of protocol.
 
 **Scoping by `id`**
 
@@ -444,7 +469,7 @@ All value `<td>` elements have `data-testid` attributes for direct access:
 | Claims / Attributes | IdP key as-is | `sub`, `email`, `preferred_username`, `urn:oid:1.2.840.113549.1.9.1` |
 | Subject | Fixed | `subject` |
 | Error (OIDC) | OAuth 2.0 parameter names | `error`, `error_description`, `error_uri`, `detail` |
-| Error (SAML) | snake_case | `status_code`, `detail` |
+| Error (SAML) | SAML element names, as-is | `StatusCode`, `Detail` |
 | Signature | Label → `toTestID()` | `verified`, `algorithm`, `key_id_kid`, `key_type_kty` |
 | Response Details | Label → `toTestID()` | `issuer`, `status_code`, `destination` |
 | Params | Parameter key as-is | `redirect_uri`, `scope`, `response_type` |
