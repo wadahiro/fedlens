@@ -48,7 +48,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 10
+          version: 11
 
       - name: Install e2e dependencies
         working-directory: e2e
