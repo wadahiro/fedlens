@@ -31,6 +31,12 @@ func ApplyExportPage(page *templates.PageInfo) {
 	page.ExportURL = ""
 	page.ReauthItems = nil
 	page.ResourceAccessItems = nil
+
+	// The app tabs link to the other SP/RP entries on this server. An export is
+	// scoped to one of them and travels to other machines, so those links would
+	// be dead — or worse, point at someone else's running instance. The header
+	// still names the entry via ActiveTab.
+	page.Tabs = nil
 }
 
 // ExportDisposition builds the Content-Disposition header for an export. The

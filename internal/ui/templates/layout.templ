@@ -203,7 +203,9 @@ templ Layout(title string, page PageInfo) {
 				<!-- Sidebar (PC only) -->
 				<aside class="sidebar">
 					<nav>
-						<p class="sidebar-heading">APPS</p>
+						if len(page.Tabs) > 0 {
+							<p class="sidebar-heading">APPS</p>
+						}
 						<ul>
 							for _, tab := range page.Tabs {
 								<li>
@@ -236,12 +238,14 @@ templ Layout(title string, page PageInfo) {
 						if len(page.Sections) > 0 {
 							<div class="sidebar-results-header">
 								<p class="sidebar-heading">RESULTS</p>
-								if page.ClearURL != "" {
-									<a href={ templ.SafeURL(page.ClearURL) } class="clear-btn" onclick="return confirm('Clear all results?')">Clear</a>
-								}
-								if page.ExportURL != "" {
-									<a href={ templ.SafeURL(page.ExportURL) } class="clear-btn" data-testid="export-btn" download>Export</a>
-								}
+								<div class="sidebar-results-actions">
+									if page.ExportURL != "" {
+										<a href={ templ.SafeURL(page.ExportURL) } class="results-btn" data-testid="export-btn" download>Export</a>
+									}
+									if page.ClearURL != "" {
+										<a href={ templ.SafeURL(page.ClearURL) } class="results-btn results-btn-danger" onclick="return confirm('Clear all results?')">Clear</a>
+									}
+								</div>
 							</div>
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {
@@ -283,8 +287,8 @@ templ Layout(title string, page PageInfo) {
 				</aside>
 				<!-- Main Content -->
 				<main class="main-content">
-					<!-- Mobile tabs (hidden on PC) -->
-					<div class="mobile-tabs">
+					<!-- Mobile tabs (hidden on PC); omitted in an export, where the links are dead -->
+					<div class={ "mobile-tabs", templ.KV("is-hidden", len(page.Tabs) == 0) }>
 						for _, tab := range page.Tabs {
 							if tab.Active {
 								<a href={ templ.SafeURL(tab.BaseURL + "/") } aria-current="page">
