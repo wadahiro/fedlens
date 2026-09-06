@@ -46,6 +46,14 @@ type PageInfo struct {
 	ReauthItems          []ReauthItem
 	ResourceAccessItems  []ResourceAccessItem
 	Sections             []Section // debug results (RESULTS)
+
+	// Export fields. When InlineCSS is non-empty the page is being rendered as a
+	// standalone file: assets are inlined instead of linked, and controls that
+	// would post back to a server are omitted.
+	InlineCSS  string
+	InlineJS   string
+	ExportedAt string // RFC 3339 timestamp shown in the export banner
+	ExportURL  string // path to download the standalone export; empty while exporting
 	References        []Section // reference info (REFERENCE)
 	DefaultTheme      string    // "light", "dark", or "auto"
 }
@@ -107,11 +115,16 @@ templ Layout(title string, page PageInfo) {
 			<meta charset="utf-8"/>
 			<meta name="viewport" content="width=device-width, initial-scale=1"/>
 			<title>{ title } - fedlens</title>
-			<link rel="stylesheet" href="/static/pico.min.css"/>
-			<link rel="stylesheet" href="/static/prism.min.css"/>
-			<link rel="stylesheet" href="/static/app.css"/>
-			<script src="/static/htmx.min.js"></script>
-			<script src="/static/prism.min.js"></script>
+			if page.InlineCSS != "" {
+				@templ.Raw("<style>" + page.InlineCSS + "</style>")
+				@templ.Raw("<script>" + page.InlineJS + "</script>")
+			} else {
+				<link rel="stylesheet" href="/static/pico.min.css"/>
+				<link rel="stylesheet" href="/static/prism.min.css"/>
+				<link rel="stylesheet" href="/static/app.css"/>
+				<script src="/static/htmx.min.js"></script>
+				<script src="/static/prism.min.js"></script>
+			}
 			<script>
 				// Apply theme immediately to prevent FOUC
 				(function() {
@@ -130,6 +143,13 @@ templ Layout(title string, page PageInfo) {
 			</script>
 		</head>
 		<body>
+			if page.ExportedAt != "" {
+				<div class="export-banner">
+					<strong>Exported from fedlens</strong> at { page.ExportedAt } — a standalone copy of the debug timeline.
+					Interactive controls are omitted. <strong>This file contains the credentials shown below,
+					including access and refresh tokens.</strong> Treat it as a secret before attaching it to a ticket or sharing it.
+				</div>
+			}
 			<!-- Sticky Header -->
 			<header class="site-header">
 				<div class="header-content">
@@ -216,7 +236,12 @@ templ Layout(title string, page PageInfo) {
 						if len(page.Sections) > 0 {
 							<div class="sidebar-results-header">
 								<p class="sidebar-heading">RESULTS</p>
-								<a href={ templ.SafeURL(page.ClearURL) } class="clear-btn" onclick="return confirm('Clear all results?')">Clear</a>
+								if page.ClearURL != "" {
+									<a href={ templ.SafeURL(page.ClearURL) } class="clear-btn" onclick="return confirm('Clear all results?')">Clear</a>
+								}
+								if page.ExportURL != "" {
+									<a href={ templ.SafeURL(page.ExportURL) } class="clear-btn" data-testid="export-btn" download>Export</a>
+								}
 							</div>
 							<ul class="sidebar-section-list">
 								for _, sec := range page.Sections {

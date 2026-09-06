@@ -366,6 +366,25 @@ server {
 }
 ```
 
+### Exporting a flow
+
+Once a timeline has entries, an **Export** link appears above them in the
+sidebar. It downloads `GET {base_url}/export`: the same page rendered as a
+standalone HTML file, with the stylesheets and syntax highlighter inlined and
+every interactive control removed. One file, no accompanying directory, opens
+from the filesystem on any machine — which browser "Save As" does not reliably
+give you.
+
+Use it to hand a colleague the exact protocol exchange: the raw SAML XML, the
+decoded tokens, the signature verification results, and the whole timeline,
+exactly as fedlens rendered them.
+
+> **The exported file contains live credentials** — access tokens, refresh
+> tokens, and the full assertion — because that is what you were looking at. The
+> file carries a banner saying so. Refresh tokens in particular can stay valid
+> for days or months, so treat the file as a secret before attaching it to a
+> ticket.
+
 ### Deployment: single instance only
 
 fedlens keeps the debug timeline and the OIDC/OAuth2 tokens in memory, keyed by

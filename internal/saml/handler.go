@@ -294,6 +294,7 @@ func (h *Handler) cookiePath() string {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/", h.handleIndex)
 	mux.HandleFunc("/login", h.handleLogin)
+	mux.HandleFunc("/export", h.handleExport)
 	mux.HandleFunc(h.Config.ACSPath, h.handleACS)
 	mux.HandleFunc(h.Config.MetadataPath, h.sp.ServeMetadata)
 	mux.HandleFunc(h.Config.SLOPath, h.handleSLO)
@@ -317,7 +318,18 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	h.renderIndex(w, r, false)
+}
 
+// handleExport serves the same page as a standalone file: assets inlined,
+// interactive controls omitted, downloaded rather than displayed.
+func (h *Handler) handleExport(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Disposition", protocol.ExportDisposition(h.Config.Name))
+	h.renderIndex(w, r, true)
+}
+
+func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, export bool) {
 	session, _ := h.sp.Session.GetSession(r)
 	debugSession := h.debugSessions.Get(r)
 
@@ -413,6 +425,12 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 			Dot:       re.SidebarDot,
 			Children:  re.Children,
 		})
+	}
+
+	if export {
+		protocol.ApplyExportPage(&page)
+	} else if len(page.Sections) > 0 {
+		page.ExportURL = h.basePath + "/export"
 	}
 
 	templates.SAMLIndex(page, data).Render(r.Context(), w)
