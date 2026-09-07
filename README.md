@@ -320,7 +320,9 @@ On startup, fedlens fetches OIDC discovery metadata, OAuth2 authorization server
 
 ### `base_url` and TLS Deployment Patterns
 
-The `base_url` field specifies the **externally visible URL** (scheme + host + optional path). The scheme in `base_url` does not affect how fedlens listens — it is used for routing, navigation links, and cookie scoping.
+The `base_url` field specifies the **externally visible URL** (scheme + host + optional path). The scheme in `base_url` does not affect how fedlens listens — it is used for routing, navigation links, and cookie flags.
+
+Behind a TLS-terminating proxy, `base_url` must therefore say `https://`, not the plain HTTP that fedlens itself receives. Cookie `Secure` and `SameSite` are derived from it rather than from `X-Forwarded-Proto`, so an `http://` base URL behind an HTTPS front makes fedlens mark its cookies as insecure and `SameSite=Lax` — and the browser will then drop them on the cross-site POST that carries a SAML Response or a `form_post` callback. The same setting also determines the ACS URL published in the SP metadata and the OIDC `redirect_uri`, so getting it wrong breaks more than cookies.
 
 #### Pattern 1: Plain HTTP (development)
 

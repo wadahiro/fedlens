@@ -49,6 +49,7 @@ type Handler struct {
 	rsClientSecret string // Resource Server client secret for Token Introspection
 	basePath       string
 	topPageURL     string
+	secure         bool // base_url is https; drives cookie Secure and SameSite
 	navTabs        []templates.NavTab
 	defaultTheme   string
 	endpointRows   []components.ClaimRow
@@ -114,6 +115,7 @@ func NewHandler(cfg config.OIDCConfig, httpClient *http.Client) (*Handler, error
 		isOAuth2:      false,
 		protocol:      "oidc",
 		basePath:      cfg.BasePath,
+		secure:        config.IsSecureBaseURL(cfg.BaseURL),
 	}
 
 	// Extract provider claims
@@ -298,6 +300,7 @@ func NewOAuth2Handler(cfg config.OAuth2Config, httpClient *http.Client) (*Handle
 		isOAuth2:       true,
 		protocol:       "oauth2",
 		basePath:       cfg.BasePath,
+		secure:         config.IsSecureBaseURL(cfg.BaseURL),
 		rsClientID:     cfg.ResourceServerClientID,
 		rsClientSecret: cfg.ResourceServerClientSecret,
 	}
@@ -1050,8 +1053,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		Path:     h.cookiePath(),
 		MaxAge:   h.authRequestMaxAgeSeconds(),
 		HttpOnly: true,
-		Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+		Secure:   h.secure,
+		SameSite: h.sameSite(),
 	})
 
 	// Store reauth name in cookie if this is a re-auth flow
@@ -1062,8 +1065,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 			Path:     h.cookiePath(),
 			MaxAge:   h.authRequestMaxAgeSeconds(),
 			HttpOnly: true,
-			Secure:   isHTTPS(r),
-			SameSite: sameSiteMode(r),
+			Secure:   h.secure,
+			SameSite: h.sameSite(),
 		})
 	}
 
@@ -1086,8 +1089,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 			Path:     h.cookiePath(),
 			MaxAge:   h.authRequestMaxAgeSeconds(),
 			HttpOnly: true,
-			Secure:   isHTTPS(r),
-			SameSite: sameSiteMode(r),
+			Secure:   h.secure,
+			SameSite: h.sameSite(),
 		})
 
 		if h.Config.PKCEMethod == "plain" {
@@ -1129,8 +1132,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		Path:     h.cookiePath(),
 		MaxAge:   h.authRequestMaxAgeSeconds(),
 		HttpOnly: true,
-		Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+		Secure:   h.secure,
+		SameSite: h.sameSite(),
 	})
 
 	http.Redirect(w, r, authURL, http.StatusFound)
@@ -1442,8 +1445,8 @@ func (h *Handler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Value:    sessionID,
 		Path:     h.cookiePath(),
 		HttpOnly: true,
-		Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+		Secure:   h.secure,
+		SameSite: h.sameSite(),
 	})
 
 	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
@@ -1467,8 +1470,8 @@ func (h *Handler) saveDebugEntry(w http.ResponseWriter, r *http.Request, entry R
 			Value:    debugID,
 			Path:     h.cookiePath(),
 			HttpOnly: true,
-			Secure:   isHTTPS(r),
-			SameSite: sameSiteMode(r),
+			Secure:   h.secure,
+			SameSite: h.sameSite(),
 		})
 	}
 
@@ -1476,11 +1479,15 @@ func (h *Handler) saveDebugEntry(w http.ResponseWriter, r *http.Request, entry R
 	h.debugSessions.Set(debugID, debugSession)
 }
 
-func isHTTPS(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
+// sameSite returns the SameSite mode for cookies that must survive a cross-site
+// POST from the IdP (form_post response mode). SameSite=None is rejected by
+// browsers unless the cookie is also Secure, so a plain-HTTP deployment falls
+// back to Lax and cannot support a cross-site IdP.
+func (h *Handler) sameSite() http.SameSite {
+	if h.secure {
+		return http.SameSiteNoneMode
 	}
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+	return http.SameSiteLaxMode
 }
 
 // authRequestMaxAgeSeconds returns the cookie Max-Age for the cookies holding a
@@ -1492,13 +1499,6 @@ func (h *Handler) authRequestMaxAgeSeconds() int {
 		maxAge = config.DefaultAuthRequestMaxAge
 	}
 	return int(maxAge.Seconds())
-}
-
-func sameSiteMode(r *http.Request) http.SameSite {
-	if isHTTPS(r) {
-		return http.SameSiteNoneMode
-	}
-	return http.SameSiteLaxMode
 }
 
 // saveErrorEntry saves an error result entry to the debug session.

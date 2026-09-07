@@ -40,6 +40,7 @@ type Handler struct {
 	idpMetadataRaw  string
 	basePath        string
 	rootURLStr      string
+	secure          bool // base_url is https; drives cookie Secure and SameSite
 	navTabs         []templates.NavTab
 	defaultTheme    string
 	requestBinding  string // "redirect" or "post"
@@ -111,7 +112,7 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		// The IdP posts the SAML Response cross-site, and a Lax cookie is not sent
 		// on a cross-site POST. samlsp leaves SameSite unset (browsers default to
 		// Lax), so set it explicitly for both the tracking and session cookies.
-		CookieSameSite: sameSiteModeForScheme(rootURL.Scheme),
+		CookieSameSite: sameSiteFor(config.IsSecureBaseURL(cfg.BaseURL)),
 	}
 
 	sp, err := samlsp.New(spOptions)
@@ -149,6 +150,7 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 		idpMetadataRaw:  idpMetadataRaw,
 		basePath:        cfg.BasePath,
 		rootURLStr:      cfg.RootURL,
+		secure:          config.IsSecureBaseURL(cfg.BaseURL),
 		requestBinding:  reqBinding,
 		responseBinding: "post", // SAML Response is always HTTP-POST binding
 	}
@@ -816,8 +818,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 			Value:    reauthName,
 			Path:     h.cookiePath(),
 			HttpOnly: true,
-			Secure:   isHTTPS(r),
-			SameSite: sameSiteMode(r),
+			Secure:   h.secure,
+			SameSite: h.sameSite(),
 		})
 	}
 
@@ -878,8 +880,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 			Value:    debugID,
 			Path:     h.cookiePath(),
 			HttpOnly: true,
-			Secure:   isHTTPS(r),
-			SameSite: sameSiteMode(r),
+			Secure:   h.secure,
+			SameSite: h.sameSite(),
 		})
 	}
 
@@ -1006,8 +1008,8 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 						Value:    debugID,
 						Path:     h.cookiePath(),
 						HttpOnly: true,
-						Secure:   isHTTPS(r),
-						SameSite: sameSiteMode(r),
+						Secure:   h.secure,
+						SameSite: h.sameSite(),
 					})
 				}
 			}
@@ -1198,8 +1200,8 @@ func (h *Handler) saveLogoutEntry(w http.ResponseWriter, r *http.Request, entry 
 		Value:    debugID,
 		Path:     h.cookiePath(),
 		HttpOnly: true,
-		Secure:   isHTTPS(r),
-		SameSite: sameSiteMode(r),
+		Secure:   h.secure,
+		SameSite: h.sameSite(),
 	})
 }
 
@@ -1256,28 +1258,19 @@ func (h *Handler) handleSAMLError(w http.ResponseWriter, r *http.Request, err er
 	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
 
-func isHTTPS(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	return strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
-}
-
-// sameSiteModeForScheme returns the SameSite mode for cookies that must survive
-// the cross-site POST from the IdP. SameSite=None is rejected by browsers unless
-// the cookie is also Secure, so plain HTTP falls back to Lax.
-func sameSiteModeForScheme(scheme string) http.SameSite {
-	if strings.EqualFold(scheme, "https") {
+// sameSiteFor returns the SameSite mode for cookies that must survive the
+// cross-site POST from the IdP. SameSite=None is rejected by browsers unless the
+// cookie is also Secure, so a plain-HTTP deployment falls back to Lax and simply
+// cannot support a cross-site IdP.
+func sameSiteFor(secure bool) http.SameSite {
+	if secure {
 		return http.SameSiteNoneMode
 	}
 	return http.SameSiteLaxMode
 }
 
-func sameSiteMode(r *http.Request) http.SameSite {
-	if isHTTPS(r) {
-		return http.SameSiteNoneMode
-	}
-	return http.SameSiteLaxMode
+func (h *Handler) sameSite() http.SameSite {
+	return sameSiteFor(h.secure)
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {

@@ -183,20 +183,22 @@ func TestFormatSidebarTimestamp_SAML(t *testing.T) {
 	}
 }
 
-func TestSameSiteModeForScheme(t *testing.T) {
-	tests := []struct {
-		scheme string
-		want   http.SameSite
-	}{
-		{"https", http.SameSiteNoneMode},
-		{"HTTPS", http.SameSiteNoneMode},
-		{"http", http.SameSiteLaxMode},
-		{"", http.SameSiteLaxMode},
+func TestSameSiteFor(t *testing.T) {
+	// SameSite=None requires Secure, so it is only ever emitted for an https
+	// base_url; anything else has to settle for Lax.
+	if got := sameSiteFor(true); got != http.SameSiteNoneMode {
+		t.Errorf("sameSiteFor(true) = %v, want None", got)
 	}
-	for _, tt := range tests {
-		if got := sameSiteModeForScheme(tt.scheme); got != tt.want {
-			t.Errorf("sameSiteModeForScheme(%q) = %v, want %v", tt.scheme, got, tt.want)
-		}
+	if got := sameSiteFor(false); got != http.SameSiteLaxMode {
+		t.Errorf("sameSiteFor(false) = %v, want Lax", got)
+	}
+
+	// The handler method reads the flag decided at construction from base_url.
+	if got := (&Handler{secure: true}).sameSite(); got != http.SameSiteNoneMode {
+		t.Errorf("(secure).sameSite() = %v, want None", got)
+	}
+	if got := (&Handler{secure: false}).sameSite(); got != http.SameSiteLaxMode {
+		t.Errorf("(insecure).sameSite() = %v, want Lax", got)
 	}
 }
 

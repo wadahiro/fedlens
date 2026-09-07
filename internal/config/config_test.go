@@ -733,3 +733,24 @@ auth_request_max_age = "45m"
 		})
 	}
 }
+
+func TestIsSecureBaseURL(t *testing.T) {
+	tests := []struct {
+		baseURL string
+		want    bool
+	}{
+		{"https://oidc.example.com", true},
+		{"HTTPS://oidc.example.com", true},
+		{"https://localhost:3000/myapp", true},
+		{"http://oidc.example.com:3000", false},
+		{"http://localhost:3000/myapp", false},
+		{"", false},
+		// Not a prefix match on the host: only the scheme decides.
+		{"http://https.example.com", false},
+	}
+	for _, tt := range tests {
+		if got := IsSecureBaseURL(tt.baseURL); got != tt.want {
+			t.Errorf("IsSecureBaseURL(%q) = %v, want %v", tt.baseURL, got, tt.want)
+		}
+	}
+}

@@ -323,6 +323,16 @@ func assignDefinitionOrder(data []byte, cfg *Config) {
 	}
 }
 
+// IsSecureBaseURL reports whether an externally visible base URL is served over
+// TLS. Cookie Secure and SameSite flags derive from this rather than from the
+// incoming request: base_url is the authoritative statement of how browsers
+// reach fedlens, and deciding per-request would let a misconfigured base_url
+// half-work — some cookies adapting to X-Forwarded-Proto while the ones handed
+// to samlsp at startup cannot.
+func IsSecureBaseURL(baseURL string) bool {
+	return strings.HasPrefix(strings.ToLower(baseURL), "https://")
+}
+
 // DefaultAuthRequestMaxAge is the default lifetime of a pending OIDC/OAuth2
 // authorization request. The cookies holding the state and the PKCE verifier
 // must outlive the time the user spends on the IdP login screen.
