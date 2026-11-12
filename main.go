@@ -113,6 +113,9 @@ func main() {
 
 	// Setup structured logging
 	setupLogger(cfg.LogLevel)
+	for _, w := range cfg.Warnings {
+		slog.Warn("Config", "warning", w)
+	}
 
 	slog.Info("Starting fedlens", "version", versionString())
 

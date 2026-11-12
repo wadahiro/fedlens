@@ -24,6 +24,11 @@ type Config struct {
 	OIDC               []OIDCConfig   `toml:"oidc"`
 	SAML               []SAMLConfig   `toml:"saml"`
 	OAuth2             []OAuth2Config `toml:"oauth2"`
+
+	// Warnings are problems found while loading that do not stop startup, such as
+	// deprecated keys. Load runs before the logger is configured, so main logs
+	// them afterwards.
+	Warnings []string `toml:"-"`
 }
 
 // OIDCConfig defines a single OIDC RP instance.
@@ -46,6 +51,12 @@ type OIDCConfig struct {
 	Reauth            []ReauthConfig    `toml:"reauth"`
 	LogoutIDTokenHint *bool             `toml:"logout_id_token_hint"` // default: true
 
+	// AuthRequest is the [oidc.auth_request] table. Scopes, PKCE, PKCEMethod,
+	// ResponseType, ResponseMode and ExtraAuthParams above are the effective
+	// values: Load copies the table (or the deprecated direct keys) into them, so
+	// handlers read only those.
+	AuthRequest OIDCAuthRequestConfig `toml:"auth_request"`
+
 	// AuthRequestMaxAge is how long a sent authorization request stays valid,
 	// i.e. how long the user may spend on the IdP login screen before the state
 	// and PKCE verifier cookies expire. Accepts a duration string such as "30m".
@@ -59,26 +70,27 @@ type OIDCConfig struct {
 
 // OAuth2Config defines a single OAuth2 Client instance.
 type OAuth2Config struct {
-	Name                       string            `toml:"name"`
-	BaseURL                    string            `toml:"base_url"`
-	Issuer                     string            `toml:"issuer"`            // RFC 8414 Discovery (optional)
-	AuthorizationURL           string            `toml:"authorization_url"` // Manual (required if no issuer)
-	TokenURL                   string            `toml:"token_url"`         // Manual (required if no issuer)
-	IntrospectionURL           string            `toml:"introspection_url"` // Token Introspection endpoint (optional)
-	RevocationURL              string            `toml:"revocation_url"`    // Token Revocation endpoint (optional)
-	ClientID                   string            `toml:"client_id"`
-	ClientSecret               string            `toml:"client_secret"`
-	RedirectURI                string            `toml:"redirect_uri"`
-	CallbackPath               string            `toml:"callback_path"`
-	Scopes                     []string          `toml:"scopes"`
-	PKCE                       bool              `toml:"pkce"`
-	PKCEMethod                 string            `toml:"pkce_method"`
-	ResponseMode               string            `toml:"response_mode"`
-	ExtraAuthParams            map[string]string `toml:"extra_auth_params"`
-	Reauth                     []ReauthConfig    `toml:"reauth"`
-	ResourceURLs               []string          `toml:"resource_urls"`                 // Custom resource server URLs to test
-	ResourceServerClientID     string            `toml:"resource_server_client_id"`     // Client ID for built-in Resource Server (Token Introspection)
-	ResourceServerClientSecret string            `toml:"resource_server_client_secret"` // Client Secret for built-in Resource Server (Token Introspection)
+	Name                       string                  `toml:"name"`
+	BaseURL                    string                  `toml:"base_url"`
+	Issuer                     string                  `toml:"issuer"`            // RFC 8414 Discovery (optional)
+	AuthorizationURL           string                  `toml:"authorization_url"` // Manual (required if no issuer)
+	TokenURL                   string                  `toml:"token_url"`         // Manual (required if no issuer)
+	IntrospectionURL           string                  `toml:"introspection_url"` // Token Introspection endpoint (optional)
+	RevocationURL              string                  `toml:"revocation_url"`    // Token Revocation endpoint (optional)
+	ClientID                   string                  `toml:"client_id"`
+	ClientSecret               string                  `toml:"client_secret"`
+	RedirectURI                string                  `toml:"redirect_uri"`
+	CallbackPath               string                  `toml:"callback_path"`
+	Scopes                     []string                `toml:"scopes"`
+	PKCE                       bool                    `toml:"pkce"`
+	PKCEMethod                 string                  `toml:"pkce_method"`
+	ResponseMode               string                  `toml:"response_mode"`
+	ExtraAuthParams            map[string]string       `toml:"extra_auth_params"`
+	Reauth                     []ReauthConfig          `toml:"reauth"`
+	AuthRequest                OAuth2AuthRequestConfig `toml:"auth_request"`                  // see OIDCConfig.AuthRequest
+	ResourceURLs               []string                `toml:"resource_urls"`                 // Custom resource server URLs to test
+	ResourceServerClientID     string                  `toml:"resource_server_client_id"`     // Client ID for built-in Resource Server (Token Introspection)
+	ResourceServerClientSecret string                  `toml:"resource_server_client_secret"` // Client Secret for built-in Resource Server (Token Introspection)
 
 	// AuthRequestMaxAge is how long a sent authorization request stays valid,
 	// i.e. how long the user may spend on the AS login screen before the state
@@ -112,6 +124,10 @@ type SAMLConfig struct {
 	AllowIDPInitiated bool               `toml:"allow_idp_initiated"`
 	Reauth            []SAMLReauthConfig `toml:"reauth"`
 
+	// AuthRequest holds the defaults for every AuthnRequest; a reauth profile
+	// overlays its own values on top (see SAMLAuthRequestConfig.Overlay).
+	AuthRequest SAMLAuthRequestConfig `toml:"auth_request"`
+
 	// AuthnRequestMaxAge is how long a sent AuthnRequest stays valid for
 	// InResponseTo validation, i.e. how long the user may spend on the IdP login
 	// screen. Accepts a duration string such as "30m".
@@ -125,9 +141,8 @@ type SAMLConfig struct {
 
 // SAMLReauthConfig defines a SAML re-authentication profile.
 type SAMLReauthConfig struct {
-	Name                 string `toml:"name"`
-	AuthnContextClassRef string `toml:"authn_context_class_ref"`
-	ForceAuthn           bool   `toml:"force_authn"`
+	Name string `toml:"name"`
+	SAMLAuthRequestConfig
 }
 
 // Load reads the configuration from a TOML file.
@@ -142,8 +157,15 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
-	if err := toml.Unmarshal(data, cfg); err != nil {
+	md, err := toml.Decode(string(data), cfg)
+	if err != nil {
 		return nil, fmt.Errorf("parse config file: %w", err)
+	}
+	cfg.Warnings = append(cfg.Warnings, undecodedWarnings(md)...)
+
+	// Must precede the defaults: a default is indistinguishable from a user value.
+	if err := resolveAuthRequests(data, cfg); err != nil {
+		return nil, err
 	}
 
 	// Assign definition order based on TOML section header positions

@@ -774,7 +774,8 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := h.Config.Reauth[step]
-	h.startAuthFlow(w, r, rc.Name, rc.AuthnContextClassRef, rc.ForceAuthn)
+	req := h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig)
+	h.startAuthFlow(w, r, rc.Name, req.AuthnContextClassRef, req.ForceAuthn != nil && *req.ForceAuthn)
 }
 
 // startAuthFlow initiates a SAML AuthnRequest with optional RequestedAuthnContext and ForceAuthn.
