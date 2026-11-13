@@ -407,6 +407,8 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, export boo
 		page.StatusLabel = "Active Session"
 		page.LogoutURL = h.basePath + "/logout"
 		page.ReauthOptions = h.reauthOptions()
+		subject, sessionIndex := sessionNameID(session)
+		page.LogoutOptions = h.logoutOptions(h.logoutDefaultsFor(r, subject, sessionIndex))
 	} else {
 		// Not logged in
 		page.Status = "disconnected"
@@ -1278,15 +1280,9 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Get NameID from current session before deleting it
 	var nameID, sessionIndex string
 	if session, err := h.sp.Session.GetSession(r); err == nil && session != nil {
-		if claims, ok := session.(samlsp.JWTSessionClaims); ok {
-			nameID = claims.Subject
-			sessionIndex = claims.Attributes.Get("SessionIndex")
-		}
+		nameID, sessionIndex = sessionNameID(session)
 	}
-	var received *protocol.SAMLNameID
-	if c, err := r.Cookie("saml_debug_id"); err == nil {
-		received = receivedNameID(h.debugSessions.GetByID(c.Value))
-	}
+	defaults := h.logoutDefaultsFor(r, nameID, sessionIndex)
 
 	// Build Logout entry
 	logoutEntry := SAMLResultEntry{
@@ -1297,7 +1293,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Build SLO redirect URL
 	if nameID != "" {
 		if sloURL := h.sp.ServiceProvider.GetSLOBindingLocation(samlpkg.HTTPRedirectBinding); sloURL != "" {
-			logoutReq, err := makeLogoutRequest(&h.sp.ServiceProvider, sloURL, nameID, received, sessionIndex)
+			logoutReq, err := makeLogoutRequest(&h.sp.ServiceProvider, sloURL, parseLogoutParams(r.URL.Query(), defaults))
 			if err == nil {
 				logoutEntry.LogoutRequestURL = logoutReq.Redirect(h.rootURLStr + "/").String()
 				logoutEntry.LogoutRequestSentXML = logoutRequestXML(logoutReq)
@@ -1381,4 +1377,21 @@ func formatSidebarTimestamp(t time.Time) string {
 		t = t.In(protocol.DisplayLocation)
 	}
 	return t.Format("01/02 15:04:05")
+}
+
+// sessionNameID reads the principal and SAML session index the login stored in the session.
+func sessionNameID(session samlsp.Session) (nameID, sessionIndex string) {
+	if claims, ok := session.(samlsp.JWTSessionClaims); ok {
+		return claims.Subject, claims.Attributes.Get("SessionIndex")
+	}
+	return "", ""
+}
+
+// logoutDefaultsFor are what a correct SP would put in this user's LogoutRequest.
+func (h *Handler) logoutDefaultsFor(r *http.Request, subject, sessionIndex string) logoutParams {
+	var received *protocol.SAMLNameID
+	if c, err := r.Cookie("saml_debug_id"); err == nil {
+		received = receivedNameID(h.debugSessions.GetByID(c.Value))
+	}
+	return logoutDefaults(&h.sp.ServiceProvider, subject, sessionIndex, received)
 }

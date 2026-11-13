@@ -458,7 +458,8 @@ templ Layout(title string, page PageInfo) {
 						var configFlag = label.querySelector(".ro-flag-config"), profileFlag = label.querySelector(".ro-flag-profile");
 						if (configFlag) {
 							configFlag.hidden = !(changed && initial !== "");
-							configFlag.textContent = blank ? "config removed" : "overrides config";
+							var origin = form.dataset.roOrigin || "config";
+							configFlag.textContent = blank ? origin + " removed" : "overrides " + origin;
 						}
 						if (profileFlag) {
 							profileFlag.hidden = inherited === null;

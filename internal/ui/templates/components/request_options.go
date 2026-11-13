@@ -53,6 +53,9 @@ type RequestOptions struct {
 	// of the parameters but what they are applied on top of.
 	Preset *RequestField
 	Fields []RequestField
+	// Origin names where the fields' starting values come from, so a field typed over
+	// one can say what it overrides. Empty means the config.
+	Origin string
 	// ExtraName names a textarea of free-form "key=value" lines for parameters
 	// the form has no field for. Empty disables it.
 	ExtraName string
@@ -151,4 +154,20 @@ func SplitClass(style string) string {
 		return "split-btn split-filled"
 	}
 	return "split-btn"
+}
+
+// OriginName is the Origin with its default applied.
+func (o RequestOptions) OriginName() string {
+	if o.Origin == "" {
+		return "config"
+	}
+	return o.Origin
+}
+
+// StartNote is the summary line shown while nothing has been changed.
+func (o RequestOptions) StartNote() string {
+	if o.Origin == "" {
+		return "Fields start with your config. A blank field sends nothing, or the faint value if there is one."
+	}
+	return "Fields start with the " + o.Origin + "'s values. A blank field is left out of the request."
 }

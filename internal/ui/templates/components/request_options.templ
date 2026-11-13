@@ -43,10 +43,10 @@ templ RequestOptionsArea(sets []RequestOptions) {
 templ requestOptionsBody(o RequestOptions) {
 	<div id={ PanelID(o.ID) } class="ro-body" hidden data-ro-id={ o.ID } data-label={ o.Label } data-danger={ DangerAttr(o.Style) } data-testid={ TestID(o.ID, "panel") }>
 		<div class="ro-body-head">
-			<span class="ro-summary" data-testid={ TestID(o.ID, "summary") }>Fields start with your config. A blank field sends nothing, or the faint value if there is one.</span>
+			<span class="ro-summary" data-testid={ TestID(o.ID, "summary") }>{ o.StartNote() }</span>
 			<button type="button" class="secondary outline ro-reset" hidden data-ro-id={ o.ID } data-testid={ TestID(o.ID, "reset") }>Reset</button>
 		</div>
-				<form id={ FormID(o.ID) } method="get" action={ templ.SafeURL(o.Action) } class="request-options-form" data-ro-id={ o.ID } autocomplete="off">
+				<form id={ FormID(o.ID) } method="get" action={ templ.SafeURL(o.Action) } class="request-options-form" data-ro-id={ o.ID } data-ro-origin={ o.OriginName() } autocomplete="off">
 			if o.Preset != nil {
 				<div class="ro-preset">
 					@requestField(o.ID, *o.Preset)
