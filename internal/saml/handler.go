@@ -136,6 +136,12 @@ func NewHandler(cfg config.SAMLConfig, httpClient *http.Client) (*Handler, error
 
 	setRequestTrackerMaxAge(sp, cfg.AuthnRequestMaxAge)
 
+	// Keep the NameIDFormat advertised in SP metadata equal to the one requested
+	// by default. Per-login overrides from the UI deliberately leave metadata alone.
+	if cfg.AuthRequest.NameIDFormat != "" {
+		sp.ServiceProvider.AuthnNameIDFormat = samlpkg.NameIDFormat(cfg.AuthRequest.NameIDFormat)
+	}
+
 	// Determine request binding (same logic as handleLogin)
 	reqBinding := "redirect"
 	if sp.ServiceProvider.GetSSOBindingLocation(samlpkg.HTTPRedirectBinding) == "" {
@@ -744,7 +750,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	h.startAuthFlow(w, r, "", "", false)
+	h.startAuthFlow(w, r, "", h.Config.AuthRequest)
 }
 
 func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
@@ -764,7 +770,7 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 
 	// step=-1 is the default re-authenticate (no extra params)
 	if step == -1 {
-		h.startAuthFlow(w, r, "__default__", "", false)
+		h.startAuthFlow(w, r, "__default__", h.Config.AuthRequest)
 		return
 	}
 
@@ -774,12 +780,11 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := h.Config.Reauth[step]
-	req := h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig)
-	h.startAuthFlow(w, r, rc.Name, req.AuthnContextClassRef, req.ForceAuthn != nil && *req.ForceAuthn)
+	h.startAuthFlow(w, r, rc.Name, h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig))
 }
 
-// startAuthFlow initiates a SAML AuthnRequest with optional RequestedAuthnContext and ForceAuthn.
-func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthName string, authnContextClassRef string, forceAuthn bool) {
+// startAuthFlow initiates a SAML AuthnRequest shaped by opts.
+func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthName string, opts config.SAMLAuthRequestConfig) {
 	// Determine binding
 	binding := samlpkg.HTTPRedirectBinding
 	bindingLocation := h.sp.ServiceProvider.GetSSOBindingLocation(binding)
@@ -798,19 +803,11 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 		return
 	}
 
-	// Apply RequestedAuthnContext if specified
-	if authnContextClassRef != "" {
-		authReq.RequestedAuthnContext = &samlpkg.RequestedAuthnContext{
-			Comparison:           "exact",
-			AuthnContextClassRef: authnContextClassRef,
-		}
-	}
-
-	// Apply ForceAuthn if specified
-	if forceAuthn {
-		forceAuthnVal := true
-		authReq.ForceAuthn = &forceAuthnVal
-	}
+	// Mutating after MakeAuthenticationRequest is safe only while requests are
+	// unsigned (SignRequest is false). Once signing is supported, an embedded
+	// POST-binding signature would no longer cover these changes and the request
+	// has to be re-signed after this call.
+	applyAuthRequest(authReq, opts)
 
 	// Store reauth name in cookie
 	if reauthName != "" {

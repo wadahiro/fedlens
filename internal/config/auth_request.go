@@ -40,13 +40,24 @@ type OAuth2AuthRequestConfig struct {
 // the top-level [saml.auth_request] values. Booleans are tri-state so a profile
 // can turn off something the default turned on, and so an attribute can be
 // omitted from the request entirely rather than sent as false.
+//
+// Unset NameIDPolicy values keep the library default (Format transient,
+// AllowCreate true) so existing setups send the same request as before.
+// OmitNameIDPolicy drops the whole element, which is how to see what an IdP does
+// when the SP states no preference.
 type SAMLAuthRequestConfig struct {
 	NameIDFormat         string `toml:"name_id_format"`
 	AllowCreate          *bool  `toml:"allow_create"`
 	SPNameQualifier      string `toml:"sp_name_qualifier"`
+	OmitNameIDPolicy     *bool  `toml:"omit_name_id_policy"`
 	ForceAuthn           *bool  `toml:"force_authn"`
 	IsPassive            *bool  `toml:"is_passive"`
 	AuthnContextClassRef string `toml:"authn_context_class_ref"`
+
+	// SubjectNameID adds a Subject/NameID to the request as a hint about who is
+	// logging in (the SAML counterpart of OIDC login_hint).
+	SubjectNameID       string `toml:"subject_name_id"`
+	SubjectNameIDFormat string `toml:"subject_name_id_format"`
 }
 
 // Overlay returns a copy of c in which every value set in o replaces the one in c.
@@ -59,6 +70,15 @@ func (c SAMLAuthRequestConfig) Overlay(o SAMLAuthRequestConfig) SAMLAuthRequestC
 	}
 	if o.SPNameQualifier != "" {
 		c.SPNameQualifier = o.SPNameQualifier
+	}
+	if o.OmitNameIDPolicy != nil {
+		c.OmitNameIDPolicy = o.OmitNameIDPolicy
+	}
+	if o.SubjectNameID != "" {
+		c.SubjectNameID = o.SubjectNameID
+	}
+	if o.SubjectNameIDFormat != "" {
+		c.SubjectNameIDFormat = o.SubjectNameIDFormat
 	}
 	if o.ForceAuthn != nil {
 		c.ForceAuthn = o.ForceAuthn

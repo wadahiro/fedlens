@@ -197,3 +197,22 @@ func TestSAMLAuthRequestUnsetStaysNil(t *testing.T) {
 		t.Errorf("unset booleans must stay nil so they are omitted from the request: %+v", ar)
 	}
 }
+
+func TestSAMLOverlayNameIDAndSubjectFields(t *testing.T) {
+	yes, no := true, false
+	base := SAMLAuthRequestConfig{
+		NameIDFormat:     "urn:base",
+		OmitNameIDPolicy: &yes,
+		SubjectNameID:    "base@example.com",
+	}
+	got := base.Overlay(SAMLAuthRequestConfig{
+		OmitNameIDPolicy:    &no,
+		SubjectNameIDFormat: "urn:fmt",
+	})
+	if got.OmitNameIDPolicy == nil || *got.OmitNameIDPolicy {
+		t.Errorf("OmitNameIDPolicy = %v, want explicit false from override", got.OmitNameIDPolicy)
+	}
+	if got.NameIDFormat != "urn:base" || got.SubjectNameID != "base@example.com" || got.SubjectNameIDFormat != "urn:fmt" {
+		t.Errorf("overlay result wrong: %+v", got)
+	}
+}
