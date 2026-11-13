@@ -33,6 +33,7 @@ type PageInfo struct {
 	StatusLabel       string // "Active Session" or "No Session"
 	LoginURL          string
 	LoginOptions      *components.RequestOptions // optional request options for the Login button
+	RefreshOptions    *components.RequestOptions // ... for the Refresh Token button
 	ReauthOptions     *components.RequestOptions // ... for the default Re-authenticate button
 	LogoutOptions     *components.RequestOptions // ... for the Logout button
 	LogoutURL         string
@@ -60,7 +61,7 @@ type PageInfo struct {
 // order the buttons appear.
 func (p PageInfo) OptionSets() []components.RequestOptions {
 	var sets []components.RequestOptions
-	for _, o := range []*components.RequestOptions{p.LoginOptions, p.ReauthOptions, p.LogoutOptions} {
+	for _, o := range []*components.RequestOptions{p.LoginOptions, p.RefreshOptions, p.ReauthOptions, p.LogoutOptions} {
 		if o != nil {
 			sets = append(sets, *o)
 		}
@@ -491,9 +492,8 @@ templ Layout(title string, page PageInfo) {
 						var shown = open && id === active;
 						var body = card.querySelector('.ro-body[data-ro-id="' + id + '"]');
 						body.hidden = !shown;
-						body.querySelector(".ro-summary").textContent = modified
-							? changes.length + " modified: " + changes.join(", ")
-							: "Fields start with your config. A blank field sends nothing, or the faint value if there is one.";
+						var summary = body.querySelector(".ro-summary");
+						summary.textContent = modified ? changes.length + " modified: " + changes.join(", ") : summary.dataset.note;
 						body.querySelector(".ro-reset").hidden = !modified;
 						var caret = document.querySelector('[data-testid="' + id + '-options-toggle"]');
 						if (caret) {

@@ -505,6 +505,7 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, export boo
 		}
 		if data.HasRefreshToken {
 			page.RefreshURL = h.basePath + "/refresh"
+			page.RefreshOptions = h.refreshOptions()
 		}
 		page.ReauthOptions = h.reauthOptions()
 		if !h.isOAuth2 && h.providerInfo.EndSessionEndpoint != "" {
@@ -588,12 +589,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 		}
 		// Token Request (for "Error: Refresh", "Error: Login" etc.)
 		if entry.TokenRequestURL != "" {
-			orderedKeys := []string{"grant_type", "code", "redirect_uri", "client_id", "client_secret", "code_verifier", "refresh_token"}
-			for _, k := range orderedKeys {
-				if v, ok := entry.TokenRequestParams[k]; ok {
-					data.TokenRequestParams = append(data.TokenRequestParams, components.ClaimRow{Key: k, Value: v})
-				}
-			}
+			data.TokenRequestParams = tokenRequestRows(entry.TokenRequestParams)
 			data.TokenRequestURL = entry.TokenRequestURL
 			data.TokenRequestRaw = buildTokenRequestRaw("POST "+entry.TokenRequestURL, data.TokenRequestParams)
 		}
@@ -772,12 +768,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 	}
 	// Token Request
 	if entry.TokenRequestURL != "" {
-		orderedKeys := []string{"grant_type", "code", "redirect_uri", "client_id", "client_secret", "code_verifier", "refresh_token"}
-		for _, k := range orderedKeys {
-			if v, ok := entry.TokenRequestParams[k]; ok {
-				data.TokenRequestParams = append(data.TokenRequestParams, components.ClaimRow{Key: k, Value: v})
-			}
-		}
+		data.TokenRequestParams = tokenRequestRows(entry.TokenRequestParams)
 		data.TokenRequestURL = entry.TokenRequestURL
 		data.TokenRequestRaw = buildTokenRequestRaw("POST "+entry.TokenRequestURL, data.TokenRequestParams)
 	}
@@ -1813,7 +1804,15 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenCtx := context.WithValue(r.Context(), oauth2.HTTPClient, h.httpClient)
+	extra := parseRefreshParams(r.URL.Query())
+	tokenClient := h.httpClient
+	if len(extra) > 0 {
+		tokenClient = &http.Client{
+			Transport: &formParamsTransport{base: h.httpClient.Transport, params: extra},
+			Timeout:   h.httpClient.Timeout,
+		}
+	}
+	tokenCtx := context.WithValue(r.Context(), oauth2.HTTPClient, tokenClient)
 	tokenSource := h.oauth2Config.TokenSource(tokenCtx, &oauth2.Token{
 		RefreshToken: session.RefreshTokenRaw,
 	})
@@ -1823,6 +1822,9 @@ func (h *Handler) handleRefresh(w http.ResponseWriter, r *http.Request) {
 		"grant_type":    "refresh_token",
 		"refresh_token": session.RefreshTokenRaw,
 		"client_id":     h.oauth2Config.ClientID,
+	}
+	for k, v := range extra {
+		refreshTokenRequestParams[k] = v
 	}
 	if h.oauth2Config.ClientSecret != "" {
 		refreshTokenRequestParams["client_secret"] = "*******"

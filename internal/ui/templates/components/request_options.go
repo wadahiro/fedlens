@@ -56,6 +56,8 @@ type RequestOptions struct {
 	// Origin names where the fields' starting values come from, so a field typed over
 	// one can say what it overrides. Empty means the config.
 	Origin string
+	// Note replaces the summary line shown while nothing has been changed.
+	Note string
 	// ExtraName names a textarea of free-form "key=value" lines for parameters
 	// the form has no field for. Empty disables it.
 	ExtraName string
@@ -166,6 +168,9 @@ func (o RequestOptions) OriginName() string {
 
 // StartNote is the summary line shown while nothing has been changed.
 func (o RequestOptions) StartNote() string {
+	if o.Note != "" {
+		return o.Note
+	}
 	if o.Origin == "" {
 		return "Fields start with your config. A blank field sends nothing, or the faint value if there is one."
 	}

@@ -22,6 +22,7 @@ func ApplyExportPage(page *templates.PageInfo) {
 
 	page.LoginURL = ""
 	page.LoginOptions = nil
+	page.RefreshOptions = nil
 	page.ReauthOptions = nil
 	page.LogoutOptions = nil
 	page.LogoutURL = ""

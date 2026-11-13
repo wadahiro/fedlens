@@ -77,7 +77,11 @@ templ oauth2ActionBar(page PageInfo) {
 				}
 			}
 			if page.RefreshURL != "" {
-				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
+				if page.RefreshOptions != nil {
+					@components.SplitButton(*page.RefreshOptions)
+				} else {
+					<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
+				}
 			}
 			if page.ReauthOptions != nil {
 				@components.SplitButton(*page.ReauthOptions)
