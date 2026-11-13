@@ -189,14 +189,14 @@ func (h *Handler) logoutOptions() *components.RequestOptions {
 		Style:  "danger",
 		Action: h.basePath + "/logout",
 		Fields: []components.RequestField{
-			{Name: "post_logout_redirect_uri", Label: "post_logout_redirect_uri", Kind: "text", Placeholder: components.Fallback(h.topPageURL)},
+			{Name: "post_logout_redirect_uri", Label: "post_logout_redirect_uri", Kind: "text", Value: h.topPageURL, Help: "Empty sends no post_logout_redirect_uri."},
 			{Name: "logout_hint", Label: "logout_hint", Kind: "text", Help: "e.g. user@example.com"},
 			{Name: "ui_locales", Label: "ui_locales", Kind: "text", Help: "e.g. ja en"},
 			{Name: "state", Label: "state", Kind: "text", Help: "An opaque value the IdP returns to post_logout_redirect_uri."},
 			{
 				Name: logoutParamIDTokenHint, Label: "id_token_hint", Kind: "select",
+				Value: h.idTokenHintDefault(),
 				Options: []components.RequestOption{
-					{Value: "", Label: h.idTokenHintDefault()},
 					{Value: idTokenHintSend, Label: "send the session ID Token"},
 					{Value: idTokenHintOmit, Label: "omit"},
 				},
@@ -209,12 +209,16 @@ func (h *Handler) logoutOptions() *components.RequestOptions {
 }
 
 // buildLogoutURL assembles the end_session_endpoint request. The form values win
-// over the defaults, and the extra lines win over the form. It reports whether
+// over the defaults (a post_logout_redirect_uri the form empties is not sent), and
+// the extra lines win over the form. It reports whether
 // the session's ID Token was sent as id_token_hint.
 func buildLogoutURL(endpoint, clientID, topPageURL, idToken string, sendByDefault bool, q url.Values) (string, bool) {
 	values := url.Values{}
 	values.Set("post_logout_redirect_uri", topPageURL)
 	values.Set("client_id", clientID)
+	if q.Has("post_logout_redirect_uri") && strings.TrimSpace(q.Get("post_logout_redirect_uri")) == "" {
+		values.Del("post_logout_redirect_uri")
+	}
 	for _, name := range []string{"post_logout_redirect_uri", "logout_hint", "ui_locales", "state"} {
 		if v := strings.TrimSpace(q.Get(name)); v != "" {
 			values.Set(name, v)
@@ -305,11 +309,11 @@ func requestParams(responseMode string, configured, overrides map[string]string)
 	return out
 }
 
-// idTokenHintDefault says what a Logout that leaves id_token_hint alone does:
+// idTokenHintDefault is what a Logout that leaves id_token_hint alone does:
 // logout_id_token_hint from the config, or sending it when the config says nothing.
 func (h *Handler) idTokenHintDefault() string {
 	if h.Config.LogoutIDTokenHint != nil && !*h.Config.LogoutIDTokenHint {
-		return components.DefaultChoice(idTokenHintOmit)
+		return idTokenHintOmit
 	}
-	return components.DefaultChoice(idTokenHintSend)
+	return idTokenHintSend
 }

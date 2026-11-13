@@ -1,6 +1,7 @@
 package saml
 
 import (
+	samlpkg "github.com/crewjam/saml"
 	"net/url"
 	"strconv"
 	"strings"
@@ -134,8 +135,7 @@ func describeReauthProfile(rc config.SAMLReauthConfig) string {
 // authnRequestOptions builds the options of a button that sends an AuthnRequest.
 // Login and Re-authenticate send the same one, so they share it.
 func (h *Handler) authnRequestOptions(id, label, style, action string) *components.RequestOptions {
-	def := h.Config.AuthRequest
-	start := authRequestValues(def)
+	start := h.formStart()
 	return &components.RequestOptions{
 		ID:     id,
 		Label:  label,
@@ -144,11 +144,11 @@ func (h *Handler) authnRequestOptions(id, label, style, action string) *componen
 		Fields: []components.RequestField{
 			{
 				Name: fieldNameIDFormat, Label: "NameIDPolicy Format", Kind: "text",
-				Value:       start[fieldNameIDFormat],
-				Placeholder: libraryDefault(start, fieldNameIDFormat, "transient"),
-				Options:     nameIDFormatSuggestions(),
+				Value:   start[fieldNameIDFormat],
+				Options: nameIDFormatSuggestions(),
+				Help:    "Empty leaves the Format out of the NameIDPolicy.",
 			},
-			{Name: fieldAllowCreate, Label: "NameIDPolicy AllowCreate", Kind: "select", Value: start[fieldAllowCreate], Options: components.TriStateOptions(components.DefaultChoice(libraryDefault(start, fieldAllowCreate, "true")))},
+			{Name: fieldAllowCreate, Label: "NameIDPolicy AllowCreate", Kind: "select", Value: start[fieldAllowCreate], Options: components.TriStateOptions(components.DefaultChoice(""))},
 			{Name: fieldSPNameQualifier, Label: "NameIDPolicy SPNameQualifier", Kind: "text", Value: start[fieldSPNameQualifier]},
 			{
 				Name: fieldOmitNameIDPolicy, Label: "Omit NameIDPolicy", Kind: "select", Value: start[fieldOmitNameIDPolicy], Options: components.TriStateOptions(components.DefaultChoice("false")),
@@ -170,21 +170,37 @@ func (h *Handler) authnRequestOptions(id, label, style, action string) *componen
 			},
 			{
 				Name: fieldACSURL, Label: "AssertionConsumerServiceURL", Kind: "text",
-				Value:       start[fieldACSURL],
-				Placeholder: libraryDefault(start, fieldACSURL, h.acsURL()),
-				Help:        "Where the request asks the IdP to post the response. A URL other than the SP's tests how the IdP checks it against the metadata.",
+				Value: start[fieldACSURL],
+				Help:  "Where the request asks the IdP to post the response. A URL other than the SP's tests how the IdP checks it against the metadata. Empty leaves it out.",
 			},
 		},
 	}
 }
 
-// parseLoginOptions reads the submitted form against what the config started it
-// with. A field still holding the config's value overrides nothing, which keeps the
+// formStart is what the form's fields start with: the config's values, and for
+// the three settings the SAML library fills in when they are unset (the NameIDPolicy's
+// Format and AllowCreate, and the AssertionConsumerServiceURL) the value it would
+// send. They are real values rather than faint hints so that the form shows the
+// request as it will be sent, and emptying one takes it out of the request.
+func (h *Handler) formStart() map[string]string {
+	start := authRequestValues(h.Config.AuthRequest)
+	fill := func(name, value string) {
+		if _, set := start[name]; !set && value != "" {
+			start[name] = value
+		}
+	}
+	fill(fieldNameIDFormat, string(samlpkg.TransientNameIDFormat))
+	fill(fieldAllowCreate, "true")
+	fill(fieldACSURL, h.acsURL())
+	return start
+}
+
+// parseLoginOptions reads the submitted form against what it started with
+// (formStart). A field still holding its starting value overrides nothing, which keeps the
 // layering (config, then profile, then form): a profile is not undone by a field the
 // user never touched. A changed field becomes an override; a field the config had
 // filled and the user emptied is returned by name, meaning the setting is dropped.
-func parseLoginOptions(q url.Values, base config.SAMLAuthRequestConfig) (config.SAMLAuthRequestConfig, []string) {
-	start := authRequestValues(base)
+func parseLoginOptions(q url.Values, start map[string]string) (config.SAMLAuthRequestConfig, []string) {
 	var override config.SAMLAuthRequestConfig
 	var cleared []string
 	for _, name := range profileFieldOrder {
@@ -269,7 +285,7 @@ func (h *Handler) requestPlanFor(profile *config.SAMLReauthConfig, q url.Values)
 	if profile != nil {
 		effective = effective.Overlay(profile.SAMLAuthRequestConfig)
 	}
-	override, cleared := parseLoginOptions(q, h.Config.AuthRequest)
+	override, cleared := parseLoginOptions(q, h.formStart())
 	return authnRequestPlan{opts: dropSettings(effective.Overlay(override), cleared), omit: cleared}
 }
 
@@ -286,17 +302,6 @@ func triState(value string) *bool {
 	default:
 		return nil
 	}
-}
-
-// libraryDefault is what the SAML library sends for a setting when the form leaves
-// it blank. It only does so while the config does not set the setting: a setting
-// the config set and the user emptied is taken out of the request (omitSettings),
-// so there is nothing to show for it.
-func libraryDefault(start map[string]string, name, value string) string {
-	if _, set := start[name]; set {
-		return ""
-	}
-	return value
 }
 
 // acsURL is the AssertionConsumerServiceURL the library puts in a request.

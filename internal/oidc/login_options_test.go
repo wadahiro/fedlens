@@ -412,20 +412,37 @@ func TestRequestParamsLayersConfigThenOverridesAndRemoves(t *testing.T) {
 	}
 }
 
-func TestLogoutDefaultsShowWhatIsSent(t *testing.T) {
+func TestLogoutFormStartsWithWhatIsSent(t *testing.T) {
 	h := newLoginTestHandler()
 	h.topPageURL = "http://app/oidc/"
 
-	if got := h.idTokenHintDefault(); got != "(send)" {
-		t.Errorf("unset logout_id_token_hint = %q", got)
+	field := func(name string) components.RequestField { return fieldNamed(t, h.logoutOptions().Fields, name) }
+	if got := field("id_token_hint").Value; got != idTokenHintSend {
+		t.Errorf("unset logout_id_token_hint starts as %q", got)
 	}
 	off := false
 	h.Config.LogoutIDTokenHint = &off
-	if got := h.idTokenHintDefault(); got != "(omit)" {
-		t.Errorf("logout_id_token_hint=false = %q", got)
+	if got := field("id_token_hint").Value; got != idTokenHintOmit {
+		t.Errorf("logout_id_token_hint=false starts as %q", got)
 	}
-	redirect := fieldNamed(t, h.logoutOptions().Fields, "post_logout_redirect_uri")
-	if redirect.Placeholder != "http://app/oidc/" {
-		t.Errorf("post_logout_redirect_uri placeholder = %q", redirect.Placeholder)
+	redirect := field("post_logout_redirect_uri")
+	if redirect.Value != "http://app/oidc/" || redirect.Placeholder != "" {
+		t.Errorf("post_logout_redirect_uri = %+v, want the top page URL as a real value", redirect)
+	}
+	for _, o := range field("id_token_hint").Options {
+		if o.Value == "" {
+			t.Error("id_token_hint has an empty choice: every choice must say what is sent")
+		}
+	}
+}
+
+func TestBuildLogoutURLEmptiedRedirectIsNotSent(t *testing.T) {
+	got, _ := logoutQuery(t, "https://idp.test/logout", url.Values{"post_logout_redirect_uri": {""}}, true)
+	if got.Has("post_logout_redirect_uri") {
+		t.Errorf("query = %v, want no post_logout_redirect_uri", got)
+	}
+	got, _ = logoutQuery(t, "https://idp.test/logout", url.Values{"post_logout_redirect_uri": {"http://app/oidc/"}}, true)
+	if got.Get("post_logout_redirect_uri") != "http://app/oidc/" {
+		t.Errorf("query = %v, want the form's value", got)
 	}
 }

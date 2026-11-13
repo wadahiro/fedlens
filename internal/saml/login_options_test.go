@@ -4,6 +4,9 @@ import (
 	"net/url"
 	"testing"
 
+	samlpkg "github.com/crewjam/saml"
+	"github.com/crewjam/saml/samlsp"
+
 	"github.com/wadahiro/fedlens/internal/config"
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
 )
@@ -13,7 +16,7 @@ func TestParseLoginOptionsAFormLeftAsTheConfigGaveItOverridesNothing(t *testing.
 	// what the browser submits when nothing was touched: every field with its initial value
 	q := url.Values{"name_id_format": {"urn:base"}, "force_authn": {"true"}, "allow_create": {""}, "is_passive": {""}, "authn_context_class_ref": {""}}
 
-	override, cleared := parseLoginOptions(q, base)
+	override, cleared := parseLoginOptions(q, authRequestValues(base))
 
 	if override != (config.SAMLAuthRequestConfig{}) || len(cleared) != 0 {
 		t.Errorf("override %+v, cleared %v: an untouched form must not undo a reauth profile", override, cleared)
@@ -30,7 +33,7 @@ func TestParseLoginOptionsChangedFieldsOverrideAndEmptiedOnesAreDropped(t *testi
 		"is_passive":      {"(default)"},                                               // an unknown value is not a setting
 	}
 
-	override, cleared := parseLoginOptions(q, base)
+	override, cleared := parseLoginOptions(q, authRequestValues(base))
 
 	if override.NameIDFormat != "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" || override.SubjectNameID != "alice@example.com" {
 		t.Errorf("text overrides wrong (trimmed?): %+v", override)
@@ -49,7 +52,7 @@ func TestParseLoginOptionsChangedFieldsOverrideAndEmptiedOnesAreDropped(t *testi
 func TestParseLoginOptionsAPlainLinkWithoutTheFormOverridesNothing(t *testing.T) {
 	base := config.SAMLAuthRequestConfig{ForceAuthn: boolPtr(true)}
 
-	override, cleared := parseLoginOptions(url.Values{}, base)
+	override, cleared := parseLoginOptions(url.Values{}, authRequestValues(base))
 
 	if override != (config.SAMLAuthRequestConfig{}) || len(cleared) != 0 {
 		t.Errorf("override %+v, cleared %v: with no form submitted the configured request goes out as it is", override, cleared)
@@ -159,43 +162,24 @@ func TestSAMLFieldsStartWithTheConfigsValues(t *testing.T) {
 	if got := samlField(t, o, "force_authn").Value; got != "true" {
 		t.Errorf("force_authn starts on %q", got)
 	}
-	// a setting the config leaves out starts empty
-	for _, name := range []string{"allow_create", "is_passive", "sp_name_qualifier", "subject_name_id", "authn_context_class_ref"} {
+	// a setting that neither the config nor the library sets starts empty
+	for _, name := range []string{"is_passive", "sp_name_qualifier", "subject_name_id", "authn_context_class_ref"} {
 		if got := samlField(t, o, name).Value; got != "" {
 			t.Errorf("%s starts with %q, want empty", name, got)
 		}
 	}
 }
 
-func TestSAMLFaintTextIsOnlyWhatTheLibrarySends(t *testing.T) {
-	h := &Handler{basePath: "/saml-sp"}
-	o := h.loginOptions()
+func TestSAMLBlankChoicesSendNothing(t *testing.T) {
+	o := (&Handler{basePath: "/saml-sp"}).loginOptions()
 
-	if got := samlField(t, o, "name_id_format").Placeholder; got != "transient" {
-		t.Errorf("name_id_format placeholder = %q, want what the library sends when it is blank", got)
+	for _, name := range []string{"allow_create", "is_passive", "force_authn"} {
+		if got := samlField(t, o, name).Options[0].Label; got != "(not sent)" {
+			t.Errorf("%s first choice = %q: blank must mean not sent, since the library's default is a real value", name, got)
+		}
 	}
-	if got := samlField(t, o, "allow_create").Options[0].Label; got != "(true)" {
-		t.Errorf("allow_create first choice = %q, want the library's default", got)
-	}
-	if got := samlField(t, o, "is_passive").Options[0].Label; got != "(not sent)" {
-		t.Errorf("is_passive first choice = %q", got)
-	}
-	if got := samlField(t, o, "authn_context_class_ref").Placeholder; got != "" {
-		t.Errorf("authn_context_class_ref placeholder = %q: an example must not look like a sent value", got)
-	}
-}
-
-func TestBlankMeansNothingWhereTheConfigSetTheSetting(t *testing.T) {
-	h := &Handler{basePath: "/saml-sp"}
-	h.Config.AuthRequest.NameIDFormat = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
-	h.Config.AuthRequest.AllowCreate = boolPtr(true)
-	o := h.loginOptions()
-
-	if got := samlField(t, o, "name_id_format").Placeholder; got != "" {
-		t.Errorf("name_id_format placeholder = %q: emptied, it is omitted, so no fallback may be shown", got)
-	}
-	if got := samlField(t, o, "allow_create").Options[0].Label; got != "(not sent)" {
-		t.Errorf("allow_create first choice = %q, want (not sent): emptied, the attribute is omitted", got)
+	if got := samlField(t, o, "allow_create").Value; got != "true" {
+		t.Errorf("allow_create starts on %q, want the library's true", got)
 	}
 }
 
@@ -217,8 +201,8 @@ func TestRequestPlanForACSURLFormOverridesConfigAndEmptyingDropsIt(t *testing.T)
 	}
 }
 
-func TestACSURLFieldShowsTheSPsURLOnlyWhenNothingSetsIt(t *testing.T) {
-	h := &Handler{}
+func TestACSURLFieldStartsWithTheSPsURLUnlessConfigured(t *testing.T) {
+	h := &Handler{sp: testMiddleware("http://localhost:3000/saml/acs")}
 	field := func() components.RequestField {
 		for _, f := range h.authnRequestOptions("login", "Login", "", "/login").Fields {
 			if f.Name == "assertion_consumer_service_url" {
@@ -228,11 +212,63 @@ func TestACSURLFieldShowsTheSPsURLOnlyWhenNothingSetsIt(t *testing.T) {
 		t.Fatal("no assertion_consumer_service_url field")
 		return components.RequestField{}
 	}
-	if f := field(); f.Value != "" {
-		t.Errorf("Value = %q: nothing sets it, so the form starts empty", f.Value)
+	if f := field(); f.Value != "http://localhost:3000/saml/acs" {
+		t.Errorf("Value = %q, want the SP's own ACS URL", f.Value)
 	}
 	h.Config.AuthRequest.AssertionConsumerServiceURL = "https://config.example/acs"
-	if f := field(); f.Value != "https://config.example/acs" || f.Placeholder != "" {
-		t.Errorf("field = %+v: a configured value starts the form and leaves no faint default", f)
+	if f := field(); f.Value != "https://config.example/acs" {
+		t.Errorf("Value = %q, want the configured URL", f.Value)
 	}
+}
+
+func TestFormStartCarriesTheLibraryDefaultsAsRealValues(t *testing.T) {
+	h := &Handler{}
+	start := h.formStart()
+	if start["name_id_format"] != "urn:oasis:names:tc:SAML:2.0:nameid-format:transient" || start["allow_create"] != "true" {
+		t.Errorf("start = %v, want the library's Format and AllowCreate", start)
+	}
+
+	h.Config.AuthRequest = config.SAMLAuthRequestConfig{NameIDFormat: "urn:cfg", AllowCreate: boolPtr(false)}
+	start = h.formStart()
+	if start["name_id_format"] != "urn:cfg" || start["allow_create"] != "false" {
+		t.Errorf("start = %v, want the config's values to win over the library's", start)
+	}
+}
+
+func TestEmptyingALibraryDefaultTakesItOutOfTheRequest(t *testing.T) {
+	h := &Handler{}
+	// An untouched form submits the starting values: nothing is overridden.
+	q := url.Values{"name_id_format": {"urn:oasis:names:tc:SAML:2.0:nameid-format:transient"}, "allow_create": {"true"}}
+	if plan := h.requestPlanFor(nil, q); len(plan.omit) != 0 {
+		t.Errorf("untouched form omits %v", plan.omit)
+	}
+	// Emptied with no config at all: the library default must not come back.
+	plan := h.requestPlanFor(nil, url.Values{"name_id_format": {""}, "allow_create": {""}})
+	if len(plan.omit) != 2 {
+		t.Fatalf("omit = %v, want both emptied settings", plan.omit)
+	}
+	req := newRequest()
+	applyAuthRequest(req, plan.opts)
+	omitSettings(req, plan.omit)
+	if req.NameIDPolicy.Format != nil || req.NameIDPolicy.AllowCreate != nil {
+		t.Errorf("NameIDPolicy = %+v, want Format and AllowCreate removed", req.NameIDPolicy)
+	}
+}
+
+func TestLoginFormShowsLibraryDefaultsAsValuesNotPlaceholders(t *testing.T) {
+	h := &Handler{}
+	for _, f := range h.authnRequestOptions("login", "Login", "", "/login").Fields {
+		if f.Placeholder != "" {
+			t.Errorf("%s has the faint placeholder %q: what is sent must be a real value", f.Name, f.Placeholder)
+		}
+		if f.Name == "name_id_format" && f.Value == "" {
+			t.Error("name_id_format must start with the library's Format")
+		}
+	}
+}
+
+// testMiddleware is the minimum of an SP the form reads: its ACS URL.
+func testMiddleware(acs string) *samlsp.Middleware {
+	u, _ := url.Parse(acs)
+	return &samlsp.Middleware{ServiceProvider: samlpkg.ServiceProvider{AcsURL: *u}}
 }
