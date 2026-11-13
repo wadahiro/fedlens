@@ -31,8 +31,9 @@
 - **ID Token Claims** and **Access Token Claims** tables with timestamp formatting and boolean highlighting
 - **UserInfo** endpoint response display
 - **Signature Verification** for ID Token and Access Token (algorithm, key ID, JWKS key matching)
-- **Token Refresh Flow** with refresh token rotation detection
+- **Token Refresh Flow** with refresh token rotation detection, and `scope` / `resource` / extra parameters on the refresh request
 - **Logout Flow** with configurable `id_token_hint`
+- **Request options** behind every action button: [set any authorization, refresh or logout parameter for a single request](#request-options)
 - **Re-authentication Profiles** for step-up authentication with custom parameters
 - **Custom Scopes**, **Response Mode**, and **Extra Auth Parameters**
 - **Protocol Messages** — Authorization Request/Response, Token Request/Response, UserInfo Request/Response with full HTTP capture
@@ -48,7 +49,8 @@ OAuth2 is an authorization framework, not a federation protocol. fedlens include
 - **RFC 8414 Discovery** (Authorization Server Metadata) or manual endpoint configuration
 - **Access Token Claims** table (when JWT) with boolean highlighting, opaque token detection with introspection guidance
 - **Signature Verification** for Access Token (algorithm, key ID, JWKS key matching)
-- **Token Refresh Flow** with refresh token rotation detection
+- **Token Refresh Flow** with refresh token rotation detection, and `scope` / `resource` / extra parameters on the refresh request
+- **Request options** behind the Login, Re-authenticate and Refresh Token buttons ([see below](#request-options))
 - **Token Introspection** (RFC 7662) with HTTP request/response capture
 - **Token Revocation** (RFC 7009) for Access Token and Refresh Token independently
 - **Resource Access** — built-in Resource Server with separate RS credentials, custom resource URL testing, RFC 9728 Protected Resource Metadata
@@ -63,9 +65,13 @@ OAuth2 is an authorization framework, not a federation protocol. fedlens include
 - **SP-Initiated SSO** with HTTP-Redirect and HTTP-POST bindings
 - **IdP-Initiated SSO** support (configurable)
 - **Identity & Claims** — Subject (NameID), SAML Attributes, and Assertion Claims (Issuer, Audience, AuthnContextClassRef, validity period)
+- **NameID** — the received NameID (Format, NameQualifier, SPNameQualifier, SPProvidedID) set beside what the AuthnRequest asked for, so you can see whether the IdP honoured the requested format
+- **Encrypted assertions** — shown both as received and decrypted, so the NameID, attributes and signatures stay readable
 - **Signature Verification** at both Response and Assertion levels
-- **Single Logout (SLO)** — SP-initiated and IdP-initiated with redirect/POST binding support
-- **Re-authentication Profiles** with `ForceAuthn` and custom `AuthnContextClassRef`
+- **Single Logout (SLO)** — SP-initiated and IdP-initiated with redirect/POST binding support. The SP-initiated LogoutRequest names the principal exactly as the assertion did (NameID attributes and SessionIndex)
+- **AuthnRequest options** — NameIDPolicy (Format, AllowCreate, SPNameQualifier), omitting the NameIDPolicy, a Subject NameID hint, `ForceAuthn`, `IsPassive`, `AuthnContextClassRef` and `AssertionConsumerServiceURL`, in the config, a re-authentication profile, or a form behind the button ([see below](#request-options))
+- **LogoutRequest options** — override or leave out each NameID attribute and the SessionIndex, to emulate a sloppy SP
+- **Re-authentication Profiles** — any AuthnRequest option above, e.g. `ForceAuthn` and `AuthnContextClassRef`
 - **External Certificate** support (load from file) or auto-generated self-signed cert
 - **Protocol Messages** — AuthnRequest (URL parameters + decoded XML), SAML Response (POST parameters + decoded XML), LogoutRequest/LogoutResponse with binding details
 - **Reference** — SP-Initiated SSO and IdP-Initiated SSO sequence diagrams, IdP endpoints, IdP certificates with PEM, IdP Metadata XML
@@ -158,15 +164,37 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 | `client_id` | Yes | | Client ID |
 | `client_secret` | Yes | | Client Secret |
 | `redirect_uri` | Yes | | Redirect URI (callback URL) |
-| `scopes` | No | `["openid", "profile", "email"]` | Requested scopes |
-| `pkce` | No | `false` | Enable PKCE |
-| `pkce_method` | No | `S256` | PKCE method (`S256` or `plain`) |
-| `response_type` | No | `code` | Response type |
-| `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path (for mocking SaaS RP) |
-| `extra_auth_params` | No | | Extra auth parameters (e.g. `{ prompt = "consent" }`) |
 | `logout_id_token_hint` | No | `true` | Send `id_token_hint` in logout request |
 | `auth_request_max_age` | No | `"30m"` | How long a sent authorization request stays valid, i.e. how long you may spend on the IdP login screen before the `state` and PKCE verifier cookies expire |
+
+##### OIDC authorization request (`[oidc.auth_request]`)
+
+What the authorization request carries. The same keys written directly under `[[oidc]]` (the layout before this table existed) still work and log a deprecation warning; setting a key in both places with different values is an error.
+
+| Key | Default | Description |
+|---|---|---|
+| `scopes` | `["openid", "profile", "email"]` | Requested scopes |
+| `pkce` | `false` | Enable PKCE |
+| `pkce_method` | `S256` | PKCE method (`S256` or `plain`) |
+| `response_type` | `code` | Response type |
+| `response_mode` | (default) | Response mode (`query`, `fragment`, `form_post`) |
+| `extra_auth_params` | | Extra authorization parameters, e.g. `{ prompt = "consent", max_age = "0" }` |
+
+```toml
+[[oidc]]
+name = "Keycloak OIDC"
+# ... connection settings above the table ...
+
+[oidc.auth_request]
+scopes = ["openid", "profile"]
+pkce = true
+extra_auth_params = { ui_locales = "ja" }
+```
+
+Keys that belong to the connection must stay **above** `[oidc.auth_request]`: TOML puts every key after the header inside that table. A key it does not know is reported as unknown at startup rather than dropped silently.
+
+These values are also what the Login and Re-authenticate options forms start with ([see below](#request-options)).
 
 ##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
 
@@ -199,18 +227,17 @@ Each `[[oauth2]]` block defines a separate OAuth2 Client. Unlike OIDC, there is 
 | `client_id` | Yes | | Client ID |
 | `client_secret` | Yes | | Client Secret |
 | `redirect_uri` | Yes | | Redirect URI (callback URL) |
-| `scopes` | No | `["profile", "email"]` | Requested scopes |
-| `pkce` | No | `false` | Enable PKCE |
-| `pkce_method` | No | `S256` | PKCE method (`S256` or `plain`) |
-| `response_mode` | No | (default) | Response mode (`query`, `fragment`, `form_post`) |
 | `callback_path` | No | `/callback` | Callback endpoint path |
-| `extra_auth_params` | No | | Extra auth parameters |
 | `resource_urls` | No | | Custom Resource Server URLs to test (e.g. `["https://api.example.com/me"]`) |
 | `resource_server_client_id` | No | | Client ID for built-in Resource Server (Token Introspection) |
 | `resource_server_client_secret` | No | | Client Secret for built-in Resource Server (Token Introspection) |
 | `auth_request_max_age` | No | `"30m"` | How long a sent authorization request stays valid, i.e. how long you may spend on the IdP login screen before the `state` and PKCE verifier cookies expire |
 
 \* Either `issuer` (for RFC 8414 Discovery) or both `authorization_url` + `token_url` (manual) are required.
+
+##### OAuth2 authorization request (`[oauth2.auth_request]`)
+
+Same as `[oidc.auth_request]`, without `response_type` (the authorization code flow is the only one the OAuth2 client speaks). `scopes` defaults to `["profile", "email"]`. The direct keys are deprecated in the same way.
 
 ##### OAuth2 Re-authentication Profiles (`[[oauth2.reauth]]`)
 
@@ -235,15 +262,39 @@ Each `[[saml]]` block defines a separate SAML Service Provider.
 | `allow_idp_initiated` | No | `false` | Allow IdP-Initiated SSO. Disables InResponseTo validation entirely: any value is accepted, not just an absent one, and the `SubjectConfirmationData` check is skipped as well |
 | `authn_request_max_age` | No | `"30m"` | How long a sent AuthnRequest stays valid for InResponseTo validation, i.e. how long you may spend on the IdP login screen |
 
+##### SAML AuthnRequest (`[saml.auth_request]`)
+
+What the AuthnRequest carries. Unset values keep what the SAML library sends (NameIDPolicy with Format `transient` and AllowCreate `true`), so a config without this table sends the same request as before.
+
+| Key | Description |
+|---|---|
+| `name_id_format` | NameIDPolicy `Format` (a NameID format URI, e.g. `urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress`). Also advertised in the SP metadata |
+| `allow_create` | NameIDPolicy `AllowCreate` (`true` / `false`; omitted when unset in a profile) |
+| `sp_name_qualifier` | NameIDPolicy `SPNameQualifier` |
+| `omit_name_id_policy` | `true` sends no NameIDPolicy at all, leaving the format to the IdP |
+| `subject_name_id` | Adds a `Subject/NameID` to the request as a hint about who is logging in (the SAML counterpart of OIDC `login_hint`) |
+| `subject_name_id_format` | `Format` of that hint |
+| `force_authn` | `ForceAuthn` |
+| `is_passive` | `IsPassive` |
+| `authn_context_class_ref` | Asks for this `AuthnContextClassRef` (comparison `exact`) |
+| `assertion_consumer_service_url` | `AssertionConsumerServiceURL` the request names. It does not move the endpoint: it tests how the IdP treats a URL that differs from the one in the SP metadata |
+
+```toml
+[saml.auth_request]
+name_id_format = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+allow_create = false
+```
+
+AuthnRequest signing is not enabled, and `ProtocolBinding` is not settable.
+
 ##### SAML Re-authentication Profiles (`[[saml.reauth]]`)
 
-Each `[[saml.reauth]]` block defines a re-authentication profile.
+Each `[[saml.reauth]]` block defines a re-authentication profile. It takes `name` plus any key of `[saml.auth_request]`; its values override the table's for that profile.
 
-| Key | Required | Default | Description |
-|---|---|---|---|
-| `name` | Yes | | Display name for the reauth button |
-| `authn_context_class_ref` | No | | SAML AuthnContextClassRef |
-| `force_authn` | No | `false` | Force re-authentication |
+| Key | Required | Description |
+|---|---|---|
+| `name` | Yes | Display name of the profile |
+| (any `[saml.auth_request]` key) | No | e.g. `authn_context_class_ref`, `force_authn`, `name_id_format` |
 
 ```toml
 [[saml.reauth]]
@@ -305,6 +356,33 @@ scopes = ["read:user", "user:email"]
 ```
 
 This produces tabs: `Keycloak OIDC` | `Entra ID` | `GitHub OAuth` | `Keycloak SAML` | `Okta SAML`
+
+## Request Options
+
+Every action button that sends a request has a caret (`▾`) beside it. The button alone sends the request as configured; the caret opens a form that changes **that one request**, and the number on the caret counts what you changed. The options are sent when the button itself is pressed.
+
+How the forms behave, the same everywhere:
+
+- **The form shows the request as it will be sent.** Fields start with the config file's values (and, where the library or fedlens supplies a default, with that value), so there is no hidden default behind a blank field.
+- **A field you leave alone overrides nothing.** In particular it does not undo a re-authentication profile.
+- **A field you change overrides** the config, and says so next to its label (`overrides config`; `overrides login` on the SAML Logout form, whose values come from the login).
+- **A field you empty is not sent.** Emptying a value that was prefilled takes that parameter out of the request (`config removed`). `scope` is the exception: an authorization request without one is not what is meant, so it cannot be removed.
+- **Reset** returns the fields to their starting values.
+- **Re-authenticate** has a **Profile** select at the top. The profile is applied first and the fields below override it; a field that holds the profile's value shows it faintly (`profile`).
+- The fields are remembered per page for the browser session, so they survive switching tabs.
+
+| Button | Fields |
+|---|---|
+| OIDC **Login** / **Re-authenticate** | `scope`, `response_mode`, `prompt`, `login_hint`, `max_age`, `acr_values`, `ui_locales`, `id_token_hint`, `claims`, and an *Extra parameters* box (one `key=value` per line, applied last, so it can override a field) |
+| OAuth2 **Login** / **Re-authenticate** | `scope`, `response_mode`, and the *Extra parameters* box |
+| OIDC / OAuth2 **Refresh Token** | `scope` (a subset of what was granted, RFC 6749 6), `resource` (RFC 8707), and the *Extra parameters* box, e.g. `audience=my-api`. All start empty, so an untouched refresh sends only the grant |
+| OIDC **Logout** | `post_logout_redirect_uri`, `logout_hint`, `ui_locales`, `state`, `id_token_hint` (`send` / `omit`), and the *Extra parameters* box |
+| SAML **Login** / **Re-authenticate** | `NameIDPolicy Format`, `AllowCreate`, `SPNameQualifier`, `Omit NameIDPolicy`, `Subject NameID` (+ its Format), `ForceAuthn`, `IsPassive`, `AuthnContextClassRef`, `AssertionConsumerServiceURL` |
+| SAML **Logout** | `NameID`, `NameID Format`, `NameQualifier`, `SPNameQualifier`, `SPProvidedID`, `SessionIndex` |
+
+The SAML Logout form starts with the values a correct SP would send: the NameID exactly as the assertion carried it, with the attributes it did not carry left out, and the SessionIndex of the login. Changing or emptying them emulates an SP that gets it wrong, for example one that sends a NameID with the wrong `Format`, or no `SessionIndex` (which asks the IdP to end every session). `Reason` and `NotOnOrAfter` of the LogoutRequest are not settable.
+
+The request that was actually sent is shown in the result's **Protocol Messages**: the authorization URL, the token request parameters, the AuthnRequest XML, and the LogoutRequest XML.
 
 ## How It Works
 
@@ -456,6 +534,7 @@ One deliberate inconsistency: each protocol's rows are named the way that protoc
 | `#result-0-id-token-claims` | ID Token Claims table (OIDC) |
 | `#result-0-access-token-claims` | Access Token Claims table (OIDC) |
 | `#result-0-userinfo-claims` | UserInfo Claims table (OIDC) |
+| `#result-0-nameid` | SAML NameID table (NameID, Format, qualifiers, and the comparison with what was requested) |
 | `#result-0-attributes` | SAML Attributes table |
 | `#result-0-sigs` | Signature Verification section |
 | `#result-0-response` | SAML Response Details section |
@@ -480,14 +559,15 @@ The action bar buttons have fixed `data-testid` attributes. Visibility depends o
 | `reauth-btn` | Re-authenticate button | OIDC / OAuth2 / SAML | Active session |
 | `reauth-options-toggle` | Caret that opens the Re-authenticate options | OIDC / OAuth2 / SAML | Active session |
 | `reauth-opt-profile` | Select for a `[[*.reauth]]` profile (value is its 0-based index; empty = none) | OIDC / OAuth2 / SAML | Inside the options, when profiles are configured |
-| `logout-options-toggle` | Caret that opens the Logout options | OIDC | Active session |
+| `refresh-options-toggle` | Caret that opens the Refresh Token options | OIDC / OAuth2 | Active session + refresh token present |
+| `logout-options-toggle` | Caret that opens the Logout options | OIDC / SAML | Active session |
 | `login-options-toggle` | Caret that opens the Login options | OIDC / OAuth2 / SAML | No session |
-| `<button>-opt-<field>` | One field of that button's options, e.g. `login-opt-prompt`, `login-opt-login_hint`, `logout-opt-post_logout_redirect_uri` | OIDC / OAuth2 / SAML | Inside the options |
+| `<button>-opt-<field>` | One field of that button's options, e.g. `login-opt-prompt`, `login-opt-login_hint`, `refresh-opt-scope`, `refresh-opt-extra`, `logout-opt-post_logout_redirect_uri`, `login-opt-assertion_consumer_service_url`, `logout-opt-session_index` | OIDC / OAuth2 / SAML | Inside the options |
 | `options-card` | The card holding the options of every button that has them | OIDC / OAuth2 / SAML | While it is open |
 | `options-title` | Heading of the card; names the button whose options are shown | OIDC / OAuth2 / SAML | While the card is shown |
 | `<button>-options-panel` | The form of that button's options | OIDC / OAuth2 / SAML | While that button's caret has opened the card |
 | `<button>-options-summary` | The "N modified: ..." summary of that button's options | OIDC / OAuth2 / SAML | While that button's caret has opened the card |
-| `<button>-options-reset` | Reset that button's options to the configured defaults | OIDC / OAuth2 / SAML | While that button's options are modified |
+| `<button>-options-reset` | Reset that button's options to their starting values | OIDC / OAuth2 / SAML | While that button's options are modified |
 | `options-collapse` | Hide the card | OIDC / OAuth2 / SAML | While the card is shown |
 
 The options are sent when the button itself is pressed, so a test sets the fields and then clicks the button.
@@ -527,6 +607,16 @@ await page.getByTestId('reauth-options-toggle').click();
 await page.getByTestId('reauth-opt-profile').selectOption('0');
 await page.getByTestId('reauth-opt-max_age').fill('0');
 await page.getByTestId('reauth-btn').click();
+
+// Refresh with a narrower scope and an extra parameter
+await page.getByTestId('refresh-options-toggle').click();
+await page.getByTestId('refresh-opt-scope').fill('openid');
+await page.getByTestId('refresh-opt-extra').fill('audience=my-api');
+await page.getByTestId('refresh-btn').click();
+
+// Leave a prefilled parameter out of the logout request
+await page.getByTestId('logout-options-toggle').click();
+await page.getByTestId('logout-opt-post_logout_redirect_uri').fill('');
 await page.getByTestId('logout-btn').click();
 ```
 
@@ -557,6 +647,10 @@ await expect(attributes.getByTestId('urn:oid:1.2.840.113549.1.9.1')).toHaveText(
 
 const sigs = page.locator('#result-0-sigs');
 await expect(sigs.getByTestId('verified')).toHaveText('true');
+
+// Did the IdP honour the NameID format the AuthnRequest asked for?
+const nameId = page.locator('#result-0-nameid');
+await expect(nameId.getByTestId('Result')).toHaveText('matches the requested Format');
 ```
 
 **Example: Error assertions**

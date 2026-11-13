@@ -15,14 +15,25 @@ issuer = "http://idp.example.com:8080/realms/fedlens"
 client_id = "fedlens-oidc"
 client_secret = "fedlens-oidc-secret"
 redirect_uri = "http://oidc.example.com:3000/callback"
+# callback_path = "/callback"       # IdP redirect-back path (default: /callback)
+# logout_id_token_hint = true       # Send id_token_hint when logging out (default: true)
+# auth_request_max_age = "30m"      # How long a sent authorization request stays valid (default: 30m)
+
+# Step-up profiles, chosen in the Re-authenticate options
+# [[oidc.reauth]]
+# name = "MFA"
+# extra_auth_params = { acr_values = "urn:example:mfa" }
+
+# What the authorization request carries. Keep it below the connection settings:
+# every key after this header belongs to the table. These values are also what the
+# Login and Re-authenticate options forms start with.
+[oidc.auth_request]
 scopes = ["openid", "profile", "email"]
 # pkce = true
 # pkce_method = "S256"              # S256 or plain (default: S256)
 # response_type = "code"            # code, token, id_token, etc.
 # response_mode = ""                # query, fragment, form_post
-# callback_path = "/callback"       # IdP redirect-back path (default: /callback)
-# extra_auth_params = { prompt = "consent" }
-# auth_request_max_age = "30m"      # How long a sent authorization request stays valid (default: 30m)
+# extra_auth_params = { prompt = "consent", ui_locales = "ja" }
 
 # Path-based routing example (multiple apps on the same host):
 # [[oidc]]
@@ -32,6 +43,8 @@ scopes = ["openid", "profile", "email"]
 # client_id = "yyy"
 # client_secret = "zzz"
 # redirect_uri = "http://localhost:3000/entra/callback"
+#
+# [oidc.auth_request]
 # pkce = true
 # extra_auth_params = { login_hint = "user@example.com" }
 
@@ -46,10 +59,15 @@ revocation_url = "http://idp.example.com:8080/realms/fedlens/protocol/openid-con
 client_id = "fedlens-oauth2"
 client_secret = "fedlens-oauth2-secret"
 redirect_uri = "http://oauth2.example.com:3000/callback"
-scopes = ["profile", "email"]
 resource_server_client_id = "fedlens-rs"
 resource_server_client_secret = "fedlens-rs-secret"
 # auth_request_max_age = "30m"      # How long a sent authorization request stays valid (default: 30m)
+
+[oauth2.auth_request]
+scopes = ["profile", "email"]
+# pkce = true
+# response_mode = ""                # query, fragment, form_post
+# extra_auth_params = { audience = "my-api" }
 
 # With RFC 8414 Discovery:
 # [[oauth2]]
@@ -59,6 +77,8 @@ resource_server_client_secret = "fedlens-rs-secret"
 # client_id = "fedlens-oauth2"
 # client_secret = "fedlens-oauth2-secret"
 # redirect_uri = "http://oauth2.example.com:3000/callback"
+#
+# [oauth2.auth_request]
 # scopes = ["profile", "email"]
 
 # GitHub OAuth (no Discovery, no Introspection):
@@ -70,6 +90,8 @@ resource_server_client_secret = "fedlens-rs-secret"
 # client_id = "your-github-client-id"
 # client_secret = "your-github-client-secret"
 # redirect_uri = "http://github-oauth.example.com:3000/callback"
+#
+# [oauth2.auth_request]
 # scopes = ["read:user", "user:email"]
 
 # SAML SP definitions (multiple allowed)
@@ -86,6 +108,27 @@ root_url = "http://saml.example.com:3000"
 # key_path = "/path/to/key.pem"
 # allow_idp_initiated = true       # Allow IdP-Initiated SSO (default: false)
 # authn_request_max_age = "30m"    # How long a sent AuthnRequest stays valid for InResponseTo validation (default: 30m)
+
+# Re-authentication profiles take any key of [saml.auth_request] below, plus a name.
+# [[saml.reauth]]
+# name = "MFA"
+# authn_context_class_ref = "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
+# force_authn = true
+
+# What the AuthnRequest carries. Unset values keep the library's request
+# (NameIDPolicy Format transient, AllowCreate true). Keep it below the connection
+# settings. These values are also what the Login and Re-authenticate forms start with.
+# [saml.auth_request]
+# name_id_format = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+# allow_create = true
+# sp_name_qualifier = ""
+# omit_name_id_policy = false       # true sends no NameIDPolicy at all
+# subject_name_id = ""              # a hint about who is logging in
+# subject_name_id_format = ""
+# force_authn = false
+# is_passive = false
+# authn_context_class_ref = ""
+# assertion_consumer_service_url = ""   # what the request names; does not move the endpoint
 
 # Path-based routing example:
 # [[saml]]
