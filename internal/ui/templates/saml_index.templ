@@ -33,7 +33,8 @@ type SAMLResultEntryData struct {
 	ACSPostURL         string               // ACS endpoint URL (Destination from Response)
 	ACSResponseParams  []components.ClaimRow // POST form parameters (SAMLResponse, RelayState)
 	AuthnRequestXML    string
-	SAMLResponseXML    string
+	SAMLResponseXML    string // as received
+	DecryptedResponseXML string // with encrypted elements decrypted; empty if none were
 	AuthnRequestURL    string // full redirect URL (HTTP-Redirect binding only)
 	AuthnRequestParams []components.ClaimRow
 	RelayStateSent     string
@@ -324,6 +325,7 @@ templ samlNormalEntryContent(entry SAMLResultEntryData) {
 			} else if entry.SAMLResponseXML != "" {
 				@components.XMLCodeBlock("SAML Response", entry.SAMLResponseXML)
 			}
+			@components.XMLCodeBlock("SAML Response (decrypted by fedlens)", entry.DecryptedResponseXML)
 		</details>
 	}
 }

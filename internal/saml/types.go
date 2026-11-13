@@ -13,9 +13,11 @@ type SAMLResultEntry struct {
 	Subject         string
 	Attributes      map[string][]string
 	AuthnRequestXML string
-	SAMLResponseXML string
-	SignatureInfos  []protocol.SAMLSignatureInfo
-	ResponseInfo    *protocol.SAMLResponseInfo
+	SAMLResponseXML string // as received
+	// DecryptedResponseXML is the response with encrypted elements decrypted; empty when nothing was encrypted.
+	DecryptedResponseXML string
+	SignatureInfos       []protocol.SAMLSignatureInfo
+	ResponseInfo         *protocol.SAMLResponseInfo
 	// RelayState fields
 	RelayStateSent     string // outgoing RelayState (sent with AuthnRequest)
 	RelayStateReceived string // incoming RelayState (received at ACS)
@@ -34,4 +36,13 @@ type SAMLResultEntry struct {
 // DebugSession holds all debug data for a SAML authentication session.
 type DebugSession struct {
 	Results []SAMLResultEntry // Reverse chronological (newest at [0])
+}
+
+// readableResponseXML is the response the views read the NameID, attributes and
+// signatures from: the decrypted form when there is one, as received otherwise.
+func (e SAMLResultEntry) readableResponseXML() string {
+	if e.DecryptedResponseXML != "" {
+		return e.DecryptedResponseXML
+	}
+	return e.SAMLResponseXML
 }

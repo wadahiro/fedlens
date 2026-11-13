@@ -652,7 +652,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	}
 	data.SigVerifiedAll = sigVerifiedAll
 
-	data.NameIDRows = nameIDRows(entry.AuthnRequestXML, entry.SAMLResponseXML)
+	data.NameIDRows = nameIDRows(entry.AuthnRequestXML, entry.readableResponseXML())
 
 	// Assertion Claims (extracted from ResponseInfo groups)
 	if entry.ResponseInfo != nil {
@@ -710,6 +710,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	// Protocol messages
 	data.AuthnRequestXML = protocol.FormatXML(entry.AuthnRequestXML)
 	data.SAMLResponseXML = protocol.FormatXML(entry.SAMLResponseXML)
+	data.DecryptedResponseXML = protocol.FormatXML(entry.DecryptedResponseXML)
 	data.RelayStateSent = entry.RelayStateSent
 	data.RelayStateReceived = entry.RelayStateReceived
 	data.AuthnRequestURL = entry.AuthnRequestURL
@@ -913,8 +914,17 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 	if samlResponseB64 := r.PostForm.Get("SAMLResponse"); samlResponseB64 != "" {
 		if samlResponseXMLBytes, err := base64.StdEncoding.DecodeString(samlResponseB64); err == nil {
 			samlResponseXML := string(samlResponseXMLBytes)
-			signatureInfos := protocol.ExtractSAMLSignatureInfos(samlResponseXML)
-			responseInfo := protocol.ExtractSAMLResponseInfo(samlResponseXML)
+			// An encrypted assertion hides the NameID and attributes from the views below,
+			// so they read the decrypted form while the response as received stays as is.
+			readableXML := samlResponseXML
+			var decryptedXML string
+			if plain, ok, err := decryptResponse(samlResponseXML, h.sp.ServiceProvider.Key); err != nil {
+				log.Printf("Could not decrypt the SAML Response for display: %v", err)
+			} else if ok {
+				decryptedXML, readableXML = plain, plain
+			}
+			signatureInfos := protocol.ExtractSAMLSignatureInfos(readableXML)
+			responseInfo := protocol.ExtractSAMLResponseInfo(readableXML)
 
 			// Retrieve reauth name from cookie
 			var reauthName string
@@ -953,21 +963,22 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 					}
 					// Prepend the completed result entry
 					// Extract Subject and Attributes from SAML Response XML
-					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
+					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(readableXML)
 
 					entry := SAMLResultEntry{
-						Type:               resultType,
-						Timestamp:          time.Now(),
-						Subject:            subject,
-						Attributes:         attributes,
-						AuthnRequestXML:    authnRequestXML,
-						SAMLResponseXML:    samlResponseXML,
-						SAMLResponseBase64: samlResponseB64,
-						SignatureInfos:     signatureInfos,
-						ResponseInfo:       responseInfo,
-						RelayStateSent:     relayStateSent,
-						RelayStateReceived: relayStateReceived,
-						AuthnRequestURL:    authnRequestURL,
+						Type:                 resultType,
+						Timestamp:            time.Now(),
+						Subject:              subject,
+						Attributes:           attributes,
+						AuthnRequestXML:      authnRequestXML,
+						SAMLResponseXML:      samlResponseXML,
+						DecryptedResponseXML: decryptedXML,
+						SAMLResponseBase64:   samlResponseB64,
+						SignatureInfos:       signatureInfos,
+						ResponseInfo:         responseInfo,
+						RelayStateSent:       relayStateSent,
+						RelayStateReceived:   relayStateReceived,
+						AuthnRequestURL:      authnRequestURL,
 					}
 					ds.Results = append([]SAMLResultEntry{entry}, ds.Results...)
 				}
@@ -976,17 +987,18 @@ func (h *Handler) handleACS(w http.ResponseWriter, r *http.Request) {
 				var err error
 				debugID, err = protocol.RandomHex(16)
 				if err == nil {
-					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(samlResponseXML)
+					subject, attributes := protocol.ExtractSAMLSubjectAndAttributes(readableXML)
 
 					entry := SAMLResultEntry{
-						Type:               resultType,
-						Timestamp:          time.Now(),
-						Subject:            subject,
-						Attributes:         attributes,
-						SAMLResponseXML:    samlResponseXML,
-						SAMLResponseBase64: samlResponseB64,
-						SignatureInfos:     signatureInfos,
-						ResponseInfo:       responseInfo,
+						Type:                 resultType,
+						Timestamp:            time.Now(),
+						Subject:              subject,
+						Attributes:           attributes,
+						SAMLResponseXML:      samlResponseXML,
+						DecryptedResponseXML: decryptedXML,
+						SAMLResponseBase64:   samlResponseB64,
+						SignatureInfos:       signatureInfos,
+						ResponseInfo:         responseInfo,
 					}
 					h.debugSessions.Set(debugID, &DebugSession{
 						Results: []SAMLResultEntry{entry},
