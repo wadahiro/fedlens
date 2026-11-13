@@ -50,10 +50,14 @@ templ OAuth2Index(page PageInfo, data OIDCPageData) {
 }
 
 templ oauth2ActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || page.RevokeAccessTokenURL != "" || len(page.ReauthItems) > 0 || len(page.ResourceAccessItems) > 0 {
+	if page.LoginURL != "" || page.RefreshURL != "" || page.IntrospectionURL != "" || page.RevokeAccessTokenURL != "" || page.ReauthOptions != nil || len(page.ResourceAccessItems) > 0 {
 		<div class="action-bar">
 			if page.LoginURL != "" {
-				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
+				if page.LoginOptions != nil {
+					@components.SplitButton(*page.LoginOptions)
+				} else {
+					<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
+				}
 			}
 			if len(page.ResourceAccessItems) > 0 {
 				if len(page.ResourceAccessItems) == 1 {
@@ -75,22 +79,8 @@ templ oauth2ActionBar(page PageInfo) {
 			if page.RefreshURL != "" {
 				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
 			}
-			if len(page.ReauthItems) > 0 {
-				if len(page.ReauthItems) == 1 {
-					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
-				} else {
-					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
-					<div class="dropdown">
-						<button class="secondary outline action-btn" onclick="toggleDropdown(this)" data-testid="reauth-more-btn">
-							More &#9662;
-						</button>
-						<div class="dropdown-menu">
-							for i, item := range page.ReauthItems[1:] {
-								<a href={ templ.SafeURL(item.URL) } class="dropdown-item" data-testid={ fmt.Sprintf("reauth-%d", i) }>{ item.Label }</a>
-							}
-						</div>
-					</div>
-				}
+			if page.ReauthOptions != nil {
+				@components.SplitButton(*page.ReauthOptions)
 			}
 			if page.IntrospectionURL != "" {
 				<a href={ templ.SafeURL(page.IntrospectionURL) } role="button" class="secondary outline action-btn" data-testid="introspection-btn">Introspection (debug)</a>
@@ -100,6 +90,9 @@ templ oauth2ActionBar(page PageInfo) {
 			}
 			if page.RevokeRefreshTokenURL != "" {
 				<a href={ templ.SafeURL(page.RevokeRefreshTokenURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="revoke-rt-btn">Revoke Refresh Token</a>
+			}
+			if sets := page.OptionSets(); len(sets) > 0 {
+				@components.RequestOptionsArea(sets)
 			}
 		</div>
 	}

@@ -170,7 +170,7 @@ Each `[[oidc]]` block defines a separate OIDC Relying Party.
 
 ##### OIDC Re-authentication Profiles (`[[oidc.reauth]]`)
 
-Each `[[oidc.reauth]]` block defines a re-authentication profile with custom parameters.
+Each `[[oidc.reauth]]` block defines a re-authentication profile with custom parameters. Profiles are chosen in the **Re-authenticate options** (the caret next to the Re-authenticate button): the profile's parameters are applied first, and any field you fill in on top overrides them.
 
 | Key | Required | Description |
 |---|---|---|
@@ -477,9 +477,20 @@ The action bar buttons have fixed `data-testid` attributes. Visibility depends o
 | `revoke-rt-btn` | Revoke Refresh Token button | OIDC / OAuth2 | Active session + Revocation endpoint + refresh token present |
 | `resource-access-btn` | Resource Access button | OAuth2 | Resource Server configured (built-in RS requires `resource_server_client_id`) |
 | `refresh-btn` | Refresh Token button | OIDC / OAuth2 | Active session + refresh token present |
-| `reauth-btn` | Re-authenticate (default) | OIDC / OAuth2 / SAML | Active session + `[[*.reauth]]` configured |
-| `reauth-more-btn` | "More ▾" dropdown trigger | OIDC / OAuth2 / SAML | 2+ reauth profiles configured |
-| `reauth-0`, `reauth-1`, ... | Dropdown reauth items (0-indexed) | OIDC / OAuth2 / SAML | Inside "More ▾" dropdown |
+| `reauth-btn` | Re-authenticate button | OIDC / OAuth2 / SAML | Active session |
+| `reauth-options-toggle` | Caret that opens the Re-authenticate options | OIDC / OAuth2 / SAML | Active session |
+| `reauth-opt-profile` | Select for a `[[*.reauth]]` profile (value is its 0-based index; empty = none) | OIDC / OAuth2 / SAML | Inside the options, when profiles are configured |
+| `logout-options-toggle` | Caret that opens the Logout options | OIDC | Active session |
+| `login-options-toggle` | Caret that opens the Login options | OIDC / OAuth2 / SAML | No session |
+| `<button>-opt-<field>` | One field of that button's options, e.g. `login-opt-prompt`, `login-opt-login_hint`, `logout-opt-post_logout_redirect_uri` | OIDC / OAuth2 / SAML | Inside the options |
+| `options-card` | The card holding the options of every button that has them | OIDC / OAuth2 / SAML | While it is open |
+| `options-title` | Heading of the card; names the button whose options are shown | OIDC / OAuth2 / SAML | While the card is shown |
+| `<button>-options-panel` | The form of that button's options | OIDC / OAuth2 / SAML | While that button's caret has opened the card |
+| `<button>-options-summary` | The "N modified: ..." summary of that button's options | OIDC / OAuth2 / SAML | While that button's caret has opened the card |
+| `<button>-options-reset` | Reset that button's options to the configured defaults | OIDC / OAuth2 / SAML | While that button's options are modified |
+| `options-collapse` | Hide the card | OIDC / OAuth2 / SAML | While the card is shown |
+
+The options are sent when the button itself is pressed, so a test sets the fields and then clicks the button.
 
 **`data-testid` on value cells**
 
@@ -509,9 +520,13 @@ await page.getByTestId('login-btn').click();
 // Post-login: trigger actions
 await page.getByTestId('userinfo-btn').click();       // OIDC only
 await page.getByTestId('refresh-btn').click();         // OIDC only
-await page.getByTestId('reauth-btn').click();          // Re-authenticate (default profile)
-await page.getByTestId('reauth-more-btn').click();     // Open dropdown
-await page.getByTestId('reauth-0').click();            // Select first additional profile
+await page.getByTestId('reauth-btn').click();          // Re-authenticate (default)
+
+// Re-authenticate with a configured profile (index 0) and an extra parameter
+await page.getByTestId('reauth-options-toggle').click();
+await page.getByTestId('reauth-opt-profile').selectOption('0');
+await page.getByTestId('reauth-opt-max_age').fill('0');
+await page.getByTestId('reauth-btn').click();
 await page.getByTestId('logout-btn').click();
 ```
 

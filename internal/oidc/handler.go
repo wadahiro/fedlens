@@ -506,21 +506,16 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, export boo
 		if data.HasRefreshToken {
 			page.RefreshURL = h.basePath + "/refresh"
 		}
-		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
-			Label: "Re-authenticate",
-			URL:   h.basePath + "/reauth?step=-1",
-		})
-		for i, rc := range h.Config.Reauth {
-			page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
-				Label: rc.Name,
-				URL:   h.basePath + "/reauth?step=" + strconv.Itoa(i),
-			})
+		page.ReauthOptions = h.reauthOptions()
+		if !h.isOAuth2 && h.providerInfo.EndSessionEndpoint != "" {
+			page.LogoutOptions = h.logoutOptions()
 		}
 	} else {
 		// Not logged in
 		page.Status = "disconnected"
 		page.StatusLabel = "No Session"
 		page.LoginURL = h.basePath + "/login"
+		page.LoginOptions = h.loginOptions()
 	}
 
 	// Resource Access buttons (OAuth2 mode only, available regardless of session)
@@ -999,7 +994,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	h.startAuthFlow(w, r, nil, "")
+	h.startAuthFlow(w, r, parseLoginParams(r.URL.Query(), h.isOAuth2), "")
 }
 
 func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
@@ -1015,16 +1010,16 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stepStr := r.URL.Query().Get("step")
-	step, err := strconv.Atoi(stepStr)
+	step, err := protocol.ParseReauthStep(r.URL.Query())
 	if err != nil {
 		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
 		return
 	}
+	// What the options form carries is applied last, over the profile and the config.
+	form := parseLoginParams(r.URL.Query(), h.isOAuth2)
 
-	// step=-1 is the default re-authenticate (no extra params)
-	if step == -1 {
-		h.startAuthFlow(w, r, nil, "__default__")
+	if step == protocol.DefaultReauthStep {
+		h.startAuthFlow(w, r, form, "__default__")
 		return
 	}
 
@@ -1034,7 +1029,7 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := h.Config.Reauth[step]
-	h.startAuthFlow(w, r, rc.ExtraAuthParams, rc.Name)
+	h.startAuthFlow(w, r, mergeParams(rc.ExtraAuthParams, form), rc.Name)
 }
 
 // startAuthFlow initiates an OIDC authorization request. extraParams are merged on top
@@ -1109,19 +1104,20 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		}
 	}
 
+	// Response mode comes before the extras so that a response_mode chosen in the
+	// login form (passed as extraParams) wins over the configured one.
+	if h.Config.ResponseMode != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("response_mode", h.Config.ResponseMode))
+	}
+
 	// Extra auth params from config
 	for k, v := range h.Config.ExtraAuthParams {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
 
-	// Extra auth params from reauth config (override config's)
+	// Extra auth params from the reauth profile or the login form (override config's)
 	for k, v := range extraParams {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
-	}
-
-	// Response mode
-	if h.Config.ResponseMode != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("response_mode", h.Config.ResponseMode))
 	}
 
 	authURL := h.oauth2Config.AuthCodeURL(state, opts...)
@@ -1527,14 +1523,11 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 	// Build end_session_endpoint URL (OIDC mode only)
 	if !h.isOAuth2 && h.providerInfo.EndSessionEndpoint != "" {
-		logoutURL := h.providerInfo.EndSessionEndpoint + "?post_logout_redirect_uri=" + url.QueryEscape(h.topPageURL) + "&client_id=" + url.QueryEscape(h.Config.ClientID)
-
-		// Add id_token_hint if enabled (default: true)
-		if h.Config.LogoutIDTokenHint == nil || *h.Config.LogoutIDTokenHint {
-			if idTokenRaw != "" {
-				logoutURL += "&id_token_hint=" + url.QueryEscape(idTokenRaw)
-				logoutEntry.LogoutIDTokenRaw = idTokenRaw
-			}
+		sendByDefault := h.Config.LogoutIDTokenHint == nil || *h.Config.LogoutIDTokenHint
+		logoutURL, sentIDToken := buildLogoutURL(h.providerInfo.EndSessionEndpoint, h.Config.ClientID,
+			h.topPageURL, idTokenRaw, sendByDefault, r.URL.Query())
+		if sentIDToken {
+			logoutEntry.LogoutIDTokenRaw = idTokenRaw
 		}
 
 		logoutEntry.LogoutRequestURL = logoutURL

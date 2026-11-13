@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"net/url"
 	"path"
-	"strconv"
 	"strings"
 	"time"
 
@@ -407,21 +406,13 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, export boo
 		page.Status = "connected"
 		page.StatusLabel = "Active Session"
 		page.LogoutURL = h.basePath + "/logout"
-		page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
-			Label: "Re-authenticate",
-			URL:   h.basePath + "/reauth?step=-1",
-		})
-		for i, rc := range h.Config.Reauth {
-			page.ReauthItems = append(page.ReauthItems, templates.ReauthItem{
-				Label: rc.Name,
-				URL:   h.basePath + "/reauth?step=" + strconv.Itoa(i),
-			})
-		}
+		page.ReauthOptions = h.reauthOptions()
 	} else {
 		// Not logged in
 		page.Status = "disconnected"
 		page.StatusLabel = "No Session"
 		page.LoginURL = h.basePath + "/login"
+		page.LoginOptions = h.loginOptions()
 	}
 
 	// Build sidebar sections from result entries
@@ -750,7 +741,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	h.startAuthFlow(w, r, "", h.Config.AuthRequest)
+	h.startAuthFlow(w, r, "", h.Config.AuthRequest.Overlay(parseLoginOptions(r.URL.Query())))
 }
 
 func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
@@ -761,16 +752,16 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	stepStr := r.URL.Query().Get("step")
-	step, err := strconv.Atoi(stepStr)
+	step, err := protocol.ParseReauthStep(r.URL.Query())
 	if err != nil {
 		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
 		return
 	}
+	// What the options form carries is applied last, over the profile and the defaults.
+	form := parseLoginOptions(r.URL.Query())
 
-	// step=-1 is the default re-authenticate (no extra params)
-	if step == -1 {
-		h.startAuthFlow(w, r, "__default__", h.Config.AuthRequest)
+	if step == protocol.DefaultReauthStep {
+		h.startAuthFlow(w, r, "__default__", h.Config.AuthRequest.Overlay(form))
 		return
 	}
 
@@ -780,7 +771,7 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := h.Config.Reauth[step]
-	h.startAuthFlow(w, r, rc.Name, h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig))
+	h.startAuthFlow(w, r, rc.Name, h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig).Overlay(form))
 }
 
 // startAuthFlow initiates a SAML AuthnRequest shaped by opts.

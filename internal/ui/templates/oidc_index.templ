@@ -168,10 +168,14 @@ templ OIDCIndex(page PageInfo, data OIDCPageData) {
 }
 
 templ oidcActionBar(page PageInfo) {
-	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || page.IntrospectionURL != "" || page.RevokeAccessTokenURL != "" || len(page.ReauthItems) > 0 {
+	if page.LoginURL != "" || page.LogoutURL != "" || page.RefreshURL != "" || page.UserInfoURL != "" || page.IntrospectionURL != "" || page.RevokeAccessTokenURL != "" || page.ReauthOptions != nil {
 		<div class="action-bar">
 			if page.LoginURL != "" {
-				<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
+				if page.LoginOptions != nil {
+					@components.SplitButton(*page.LoginOptions)
+				} else {
+					<a href={ templ.SafeURL(page.LoginURL) } role="button" class="action-btn" data-testid="login-btn">Login</a>
+				}
 			}
 			if page.UserInfoURL != "" {
 				<a href={ templ.SafeURL(page.UserInfoURL) } role="button" class="secondary outline action-btn" data-testid="userinfo-btn">UserInfo</a>
@@ -188,25 +192,18 @@ templ oidcActionBar(page PageInfo) {
 			if page.RefreshURL != "" {
 				<a href={ templ.SafeURL(page.RefreshURL) } role="button" class="secondary outline action-btn" data-testid="refresh-btn">Refresh Token</a>
 			}
-			if len(page.ReauthItems) > 0 {
-				if len(page.ReauthItems) == 1 {
-					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
-				} else {
-					<a href={ templ.SafeURL(page.ReauthItems[0].URL) } role="button" class="secondary outline action-btn" data-testid="reauth-btn">{ page.ReauthItems[0].Label }</a>
-					<div class="dropdown">
-						<button class="secondary outline action-btn" onclick="toggleDropdown(this)" data-testid="reauth-more-btn">
-							More &#9662;
-						</button>
-						<div class="dropdown-menu">
-							for i, item := range page.ReauthItems[1:] {
-								<a href={ templ.SafeURL(item.URL) } class="dropdown-item" data-testid={ fmt.Sprintf("reauth-%d", i) }>{ item.Label }</a>
-							}
-						</div>
-					</div>
-				}
+			if page.ReauthOptions != nil {
+				@components.SplitButton(*page.ReauthOptions)
 			}
 			if page.LogoutURL != "" {
-				<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="logout-btn">Logout</a>
+				if page.LogoutOptions != nil {
+					@components.SplitButton(*page.LogoutOptions)
+				} else {
+					<a href={ templ.SafeURL(page.LogoutURL) } role="button" class="secondary outline action-btn action-btn-danger" data-testid="logout-btn">Logout</a>
+				}
+			}
+			if sets := page.OptionSets(); len(sets) > 0 {
+				@components.RequestOptionsArea(sets)
 			}
 		</div>
 	}

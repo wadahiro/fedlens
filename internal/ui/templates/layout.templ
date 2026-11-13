@@ -1,5 +1,7 @@
 package templates
 
+import "github.com/wadahiro/fedlens/internal/ui/templates/components"
+
 // NavTab represents a single navigation tab.
 type NavTab struct {
 	Label    string
@@ -17,12 +19,6 @@ type Section struct {
 	Children  []Section // Sub-sections (e.g. Identity & Claims, Signature, etc.)
 }
 
-// ReauthItem represents a re-authenticate dropdown menu entry.
-type ReauthItem struct {
-	Label string
-	URL   string
-}
-
 // ResourceAccessItem represents a resource access dropdown menu entry.
 type ResourceAccessItem struct {
 	Label string
@@ -36,6 +32,9 @@ type PageInfo struct {
 	Status            string // "connected" or "disconnected"
 	StatusLabel       string // "Active Session" or "No Session"
 	LoginURL          string
+	LoginOptions      *components.RequestOptions // optional request options for the Login button
+	ReauthOptions     *components.RequestOptions // ... for the default Re-authenticate button
+	LogoutOptions     *components.RequestOptions // ... for the Logout button
 	LogoutURL         string
 	UserInfoURL       string
 	IntrospectionURL      string // Token Introspection URL (if endpoint available)
@@ -43,7 +42,6 @@ type PageInfo struct {
 	RevokeRefreshTokenURL string // Revoke Refresh Token URL (if revocation endpoint and refresh token available)
 	RefreshURL            string
 	ClearURL          string // path to clear debug results
-	ReauthItems          []ReauthItem
 	ResourceAccessItems  []ResourceAccessItem
 	Sections             []Section // debug results (RESULTS)
 
@@ -56,6 +54,18 @@ type PageInfo struct {
 	ExportURL  string // path to download the standalone export; empty while exporting
 	References        []Section // reference info (REFERENCE)
 	DefaultTheme      string    // "light", "dark", or "auto"
+}
+
+// OptionSets lists the request options of the buttons shown on the page, in the
+// order the buttons appear.
+func (p PageInfo) OptionSets() []components.RequestOptions {
+	var sets []components.RequestOptions
+	for _, o := range []*components.RequestOptions{p.LoginOptions, p.ReauthOptions, p.LogoutOptions} {
+		if o != nil {
+			sets = append(sets, *o)
+		}
+	}
+	return sets
 }
 
 func sidebarBadgeClass(dot string) string {
@@ -387,6 +397,184 @@ templ Layout(title string, page PageInfo) {
 					var btn = table.closest(".section-group, details, article").querySelector(".copy-json-btn");
 					if (btn) { btn.textContent = "Copied!"; setTimeout(function() { btn.textContent = "Copy as JSON"; }, 2000); }
 				}
+				// Request options. Every button that has options gets a split caret, and all
+				// of their forms live in one card. The caret is the only way in: it shows that
+				// button's form, headed by its name, with a triangle on the card pointing at
+				// the caret. The card exists only while open; the count on each caret says
+				// which buttons have modified values. One delegated handler
+				// drives all of it, so another button only needs its options passed to the
+				// templates.
+				function roCard() {
+					return document.querySelector('[data-testid="options-card"]');
+				}
+				function roForm(id) {
+					return document.querySelector('form.request-options-form[data-ro-id="' + id + '"]');
+				}
+				// What the selected preset (a re-authentication profile) sets, by field name.
+				function roPresetValues(form) {
+					var select = form.querySelector(".ro-preset select");
+					if (!select) return {};
+					var option = select.options[select.selectedIndex];
+					try { return option && option.dataset.values ? JSON.parse(option.dataset.values) : {}; } catch (e) { return {}; }
+				}
+				// Show the preset's values as the placeholders of the fields it would fill in,
+				// and flag the fields that have been typed over it.
+				function roApplyPreset(form) {
+					var values = roPresetValues(form);
+					Array.prototype.forEach.call(form.elements, function(el) {
+						if (!el.name || el.closest(".ro-preset")) return;
+						var inherited = Object.prototype.hasOwnProperty.call(values, el.name) ? values[el.name] : null;
+						if (el.tagName === "SELECT") {
+							var first = el.options[0];
+							if (first.dataset.orig === undefined) first.dataset.orig = first.textContent;
+							first.textContent = inherited !== null ? "(" + inherited + ")" : first.dataset.orig;
+						} else {
+							if (el.dataset.orig === undefined) el.dataset.orig = el.placeholder;
+							el.placeholder = inherited !== null ? inherited : el.dataset.orig;
+						}
+						var label = el.closest("label"), flag = label && label.querySelector(".ro-flag");
+						if (flag) flag.hidden = !(inherited !== null && el.value.trim() !== "");
+					});
+				}
+				function roChanges(form) {
+					var values = roPresetValues(form), changes = [];
+					Array.prototype.forEach.call(form.elements, function(el) {
+						var value = el.value.trim();
+						if (!el.name || !value) return;
+						var option = el.tagName === "SELECT" ? el.options[el.selectedIndex] : null;
+						if (option && option.dataset.short) value = option.dataset.short;
+						var shown = value.replace(/\s+/g, " ");
+						if (shown.length > 24) shown = shown.slice(0, 24) + "\u2026";
+						var overrides = !el.closest(".ro-preset") && Object.prototype.hasOwnProperty.call(values, el.name);
+						changes.push(el.name + "=" + shown + (overrides ? " (overrides profile)" : ""));
+					});
+					return changes;
+				}
+				function renderRequestOptions() {
+					var card = roCard();
+					if (!card) return;
+					var open = card.dataset.open === "true", active = card.dataset.active;
+					var shownCaret = null;
+					document.querySelectorAll("form.request-options-form").forEach(function(form) {
+						var id = form.dataset.roId;
+						roApplyPreset(form);
+						var changes = roChanges(form), modified = changes.length > 0;
+						var shown = open && id === active;
+						var body = card.querySelector('.ro-body[data-ro-id="' + id + '"]');
+						body.hidden = !shown;
+						body.querySelector(".ro-summary").textContent = modified
+							? changes.length + " modified: " + changes.join(", ")
+							: "Blank fields send the faint value shown, or nothing when there is none.";
+						body.querySelector(".ro-reset").hidden = !modified;
+						var caret = document.querySelector('[data-testid="' + id + '-options-toggle"]');
+						if (caret) {
+							var count = caret.querySelector(".ro-count");
+							count.textContent = String(changes.length);
+							count.hidden = !modified;
+							caret.setAttribute("aria-expanded", String(shown));
+							caret.parentElement.classList.toggle("is-open", shown);
+							// With the card closed the count is all the bar shows, so the values
+							// are one hover away.
+							caret.title = body.dataset.label + " options" + (modified ? ": " + changes.join(", ") : "");
+						}
+						if (shown) {
+							shownCaret = caret;
+							card.dataset.danger = body.dataset.danger;
+							card.querySelector(".ro-title").textContent = body.dataset.label + " options";
+						}
+					});
+					if (!open) card.dataset.danger = "false";
+					card.hidden = !open;
+					roLink(card, shownCaret);
+					roFit(card);
+				}
+				// The card grows with its form, so the bar can end up taller than the window.
+				// A sticky bar that tall has an unreachable lower part: let it scroll with
+				// the page for as long as it is.
+				function roFit(card) {
+					var bar = card.parentElement;
+					bar.classList.remove("ro-tall");
+					var headerHeight = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--header-height")) || 0;
+					if (!card.hidden && bar.offsetHeight > window.innerHeight - headerHeight) bar.classList.add("ro-tall");
+					// leaving sticky shifts the card; the triangle's gap is measured again
+					if (bar.classList.contains("ro-tall")) roLink(card, document.querySelector('.split-btn.is-open .split-caret'));
+				}
+				// Point the card's heading at the open button: a triangle whose tip touches the
+				// caret. The card sits in the action bar below the row of buttons, so it only
+				// has to cross the gap between the caret and the card; when the caret is not on
+				// the last row (a narrow window wrapped the bar) there is no clear way down and
+				// the triangle is left out.
+				function roLink(card, caret) {
+					var linked = false;
+					if (caret && !card.hidden && card.dataset.open === "true") {
+						var g = caret.getBoundingClientRect(), c = card.getBoundingClientRect();
+						var gap = c.top - g.bottom;
+						var rowBelow = false;
+						Array.prototype.forEach.call(card.parentElement.children, function(el) {
+							if (el === card || el.hidden) return;
+							var r = el.getBoundingClientRect();
+							if (r.top >= g.bottom - 1 && r.top < c.top) rowBelow = true;
+						});
+						linked = gap >= 0 && gap < 48 && !rowBelow;
+						card.style.setProperty("--tab-x", (g.left - c.left) + "px");
+						card.style.setProperty("--tab-w", g.width + "px");
+						card.style.setProperty("--tab-gap", Math.max(gap, 0) + "px");
+					}
+					card.dataset.linked = String(linked);
+				}
+				document.addEventListener("click", function(e) {
+					var t = e.target.closest(".split-caret, .ro-collapse, .ro-reset");
+					var card = roCard();
+					if (!t || !card) return;
+					var open = card.dataset.open === "true";
+					if (t.classList.contains("ro-reset")) {
+						var form = roForm(t.dataset.roId);
+						if (form) { form.reset(); saveRequestOptions(form); }
+					} else if (t.classList.contains("ro-collapse")) {
+						card.dataset.open = "false";
+					} else {
+						// The caret of the button whose options are shown closes the card.
+						if (open && card.dataset.active === t.dataset.roId) card.dataset.open = "false";
+						else { card.dataset.open = "true"; card.dataset.active = t.dataset.roId; }
+					}
+					renderRequestOptions();
+				});
+				document.addEventListener("input", function(e) {
+					var form = e.target.closest("form.request-options-form");
+					if (!form) return;
+					saveRequestOptions(form);
+					renderRequestOptions();
+				});
+				window.addEventListener("resize", renderRequestOptions);
+				// Switching apps in the sidebar loads another page, which would drop what was
+				// typed. Keep it for the life of this browser tab, per app: the form's action
+				// is unique to each app. Storage can be blocked, so every access is guarded.
+				function requestOptionsKey(form) {
+					return "fedlens.request-options:" + form.getAttribute("action");
+				}
+				function saveRequestOptions(form) {
+					var values = {};
+					Array.prototype.forEach.call(form.elements, function(el) {
+						if (el.name && el.value) values[el.name] = el.value;
+					});
+					try {
+						if (Object.keys(values).length) sessionStorage.setItem(requestOptionsKey(form), JSON.stringify(values));
+						else sessionStorage.removeItem(requestOptionsKey(form));
+					} catch (e) {}
+				}
+				function restoreRequestOptions() {
+					document.querySelectorAll("form.request-options-form").forEach(function(form) {
+						var values;
+						try { values = JSON.parse(sessionStorage.getItem(requestOptionsKey(form)) || "null"); } catch (e) {}
+						if (!values) return;
+						Array.prototype.forEach.call(form.elements, function(el) {
+							if (el.name && Object.prototype.hasOwnProperty.call(values, el.name)) el.value = values[el.name];
+						});
+					});
+					renderRequestOptions();
+				}
+				if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restoreRequestOptions);
+				else restoreRequestOptions();
 				// Dropdown toggle
 				function toggleDropdown(btn) {
 					var menu = btn.nextElementSibling;

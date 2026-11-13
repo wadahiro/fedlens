@@ -21,6 +21,9 @@ func ApplyExportPage(page *templates.PageInfo) {
 	page.ExportedAt = FormatTimestamp(time.Now().UTC().Format(time.RFC3339))
 
 	page.LoginURL = ""
+	page.LoginOptions = nil
+	page.ReauthOptions = nil
+	page.LogoutOptions = nil
 	page.LogoutURL = ""
 	page.UserInfoURL = ""
 	page.IntrospectionURL = ""
@@ -29,7 +32,6 @@ func ApplyExportPage(page *templates.PageInfo) {
 	page.RefreshURL = ""
 	page.ClearURL = ""
 	page.ExportURL = ""
-	page.ReauthItems = nil
 	page.ResourceAccessItems = nil
 
 	// The app tabs link to the other SP/RP entries on this server. An export is

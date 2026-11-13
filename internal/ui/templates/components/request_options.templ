@@ -1,0 +1,110 @@
+package components
+
+// SplitButton renders a button with a caret attached to it. The button submits
+// the request options form, the caret expands that form, and a dot on the caret
+// says that values differ from the configured defaults. Nothing else is placed
+// in the action bar: the options live in the card under the bar (see
+// RequestOptionsArea), so buttons can each carry options without crowding it.
+templ SplitButton(o RequestOptions) {
+	<div class={ SplitClass(o.Style) }>
+		<button type="submit" form={ FormID(o.ID) } class={ ButtonClass(o.Style) } data-testid={ o.ID + "-btn" }>{ o.Label }</button>
+		<button type="button" class={ ButtonClass(o.Style) + " split-caret" } data-ro-id={ o.ID } aria-expanded="false" aria-controls={ PanelID(o.ID) } title={ o.Label + " options" } aria-label={ o.Label + " options" } data-testid={ TestID(o.ID, "toggle") }>
+			<span class="caret"></span>
+			<span class="ro-count" hidden></span>
+		</button>
+	</div>
+}
+
+// RequestOptionsArea renders the request options of every button that has them
+// as one card, placed inside the action bar so that it stays with the buttons
+// when the page scrolls. The caret of a button (see SplitButton) is the only way
+// in: it opens that button's options, and a triangle (the link element) joins
+// the open button to the card so the two read as one shape. The card exists only
+// while it is open; which buttons have modified values is shown by the count on
+// their carets, which is all the closed state needs. The forms are part of the page flow rather than
+// a popup, so they have room for every field and do not close while the user is
+// typing.
+templ RequestOptionsArea(sets []RequestOptions) {
+	<section class="ro-card" hidden data-open="false" data-active="" data-danger="false" data-linked="false" data-testid="options-card">
+		<span class="ro-link" aria-hidden="true"></span>
+		<header>
+			<span class="ro-title" data-testid="options-title">Request options</span>
+			<span class="ro-spacer"></span>
+			<button type="button" class="secondary outline ro-collapse" data-testid="options-collapse">Hide</button>
+		</header>
+		for _, o := range sets {
+			@requestOptionsBody(o)
+		}
+	</section>
+}
+
+// requestOptionsBody is the form of one button, shown while that button is the
+// one whose caret opened the card.
+templ requestOptionsBody(o RequestOptions) {
+	<div id={ PanelID(o.ID) } class="ro-body" hidden data-ro-id={ o.ID } data-label={ o.Label } data-danger={ DangerAttr(o.Style) } data-testid={ TestID(o.ID, "panel") }>
+		<div class="ro-body-head">
+			<span class="ro-summary" data-testid={ TestID(o.ID, "summary") }>Blank fields send the faint value shown, or nothing when there is none.</span>
+			<button type="button" class="secondary outline ro-reset" hidden data-ro-id={ o.ID } data-testid={ TestID(o.ID, "reset") }>Reset</button>
+		</div>
+				<form id={ FormID(o.ID) } method="get" action={ templ.SafeURL(o.Action) } class="request-options-form" data-ro-id={ o.ID } autocomplete="off">
+			if o.Preset != nil {
+				<div class="ro-preset">
+					@requestField(o.ID, *o.Preset)
+				</div>
+				<h4 class="ro-section">Parameters</h4>
+			}
+			for _, f := range o.Fields {
+				@requestField(o.ID, f)
+			}
+			if o.ExtraName != "" {
+				<label class="ro-wide">
+					<span class="ro-label">Extra parameters</span>
+					<textarea name={ o.ExtraName } rows="1" data-testid={ FieldTestID(o.ID, o.ExtraName) }></textarea>
+					<small>{ o.ExtraHelp }</small>
+				</label>
+			}
+		</form>
+	</div>
+}
+
+// requestField renders one input. The flag next to the label is shown by the
+// script while the field overrides what the selected preset sets.
+templ requestField(id string, f RequestField) {
+	<label class={ fieldClass(f) }>
+		<span class="ro-label">{ f.Label }</span>
+		<span class="ro-flag" hidden>overrides profile</span>
+		if f.Kind == "select" {
+			<select name={ f.Name } data-testid={ FieldTestID(id, f.Name) }>
+				for _, opt := range f.Options {
+					if len(opt.Values) > 0 {
+						<option value={ opt.Value } data-short={ opt.Short } data-values={ templ.JSONString(opt.Values) }>{ opt.Label }</option>
+					} else {
+						<option value={ opt.Value } data-short={ opt.Short }>{ opt.Label }</option>
+					}
+				}
+			</select>
+		} else if f.Kind == "textarea" {
+			<textarea name={ f.Name } rows="1" placeholder={ f.Placeholder } data-testid={ FieldTestID(id, f.Name) }></textarea>
+		} else if len(f.Options) > 0 {
+			<input type="text" name={ f.Name } placeholder={ f.Placeholder } list={ "ro-list-" + id + "-" + f.Name } autocomplete="off" data-testid={ FieldTestID(id, f.Name) }/>
+			<datalist id={ "ro-list-" + id + "-" + f.Name }>
+				for _, opt := range f.Options {
+					<option value={ opt.Value }>{ opt.Label }</option>
+				}
+			</datalist>
+		} else {
+			<input type="text" name={ f.Name } placeholder={ f.Placeholder } autocomplete="off" data-testid={ FieldTestID(id, f.Name) }/>
+		}
+		if f.Help != "" {
+			<small>{ f.Help }</small>
+		}
+	</label>
+}
+
+// fieldClass lets long or structured fields span the whole row of the grid.
+func fieldClass(f RequestField) string {
+	if f.Kind == "textarea" {
+		return "ro-wide"
+	}
+	return ""
+}

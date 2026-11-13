@@ -396,7 +396,7 @@ kbd.protocol-oauth2 {
 
 /* === Protocol data display === */
 pre {
-  max-height: 60vh;
+  max-height: 70vh;
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
@@ -674,6 +674,8 @@ kbd.sidebar-badge {
 /* === Action Bar (sticky below site header) === */
 .action-bar {
   display: flex;
+  /* The options card is a full-width item that drops to a line of its own. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   margin: -1.5rem -1.5rem 1.5rem;
@@ -684,10 +686,22 @@ kbd.sidebar-badge {
   z-index: 50;
   background-color: var(--pico-background-color);
 }
+/* A sticky bar taller than the window cannot be scrolled past, so the part below the
+   fold would be unreachable. While the open form makes the bar that tall it scrolls
+   with the page instead (see renderRequestOptions). */
+.action-bar.ro-tall {
+  position: static;
+}
 .action-btn {
   padding: 0.25rem 0.75rem !important;
   font-size: 0.8125rem !important;
   margin: 0 !important;
+  white-space: nowrap;
+}
+/* Pico stretches button[type="submit"] to the full width, and its selector
+   outranks a lone class. The action bar lays its buttons out in a row. */
+.action-bar .action-btn {
+  width: auto;
 }
 .action-btn-danger {
   --pico-color: var(--pico-del-color) !important;
@@ -985,4 +999,304 @@ kbd.result-error {
 
 .is-hidden {
   display: none;
+}
+
+/* === Login split button and request options === */
+.split-btn {
+  display: inline-flex;
+}
+.action-bar .split-btn .action-btn {
+  margin: 0 !important;
+}
+.action-bar .split-btn .action-btn:first-child {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.action-bar .split-btn .split-caret {
+  width: auto;
+  padding: 0.25rem 0.5rem !important;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  border-left-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+/* A CSS triangle instead of a glyph: the glyph is tiny and looks sideways once rotated. */
+.split-caret .caret {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  border-left: 0.3125rem solid transparent;
+  border-right: 0.3125rem solid transparent;
+  border-top: 0.375rem solid currentColor;
+  vertical-align: middle;
+  transition: transform 0.15s;
+}
+.split-caret[aria-expanded="true"] .caret {
+  transform: rotate(180deg);
+}
+/* The button whose options are open is filled in the colour the card takes and
+   ringed, so the pair reads as one. */
+/* One red for the filled danger state in both themes: Pico's own red turns pale in
+   dark mode, which cannot carry white text. */
+:root {
+  --ro-danger: #c0392b;
+}
+.split-btn {
+  --ro-accent: var(--pico-primary);
+  border-radius: var(--pico-border-radius);
+}
+.split-btn:has(.action-btn-danger) {
+  --ro-accent: var(--ro-danger);
+}
+.split-btn.is-open {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ro-accent) 30%, transparent);
+}
+.action-bar .split-btn.is-open .action-btn {
+  background-color: var(--ro-accent) !important;
+  border-color: var(--ro-accent) !important;
+  color: var(--pico-primary-inverse) !important;
+  --pico-color: var(--pico-primary-inverse) !important;
+  --pico-border-color: var(--ro-accent) !important;
+}
+/* The line between the button and its caret: the fill's own colour would hide it. */
+.action-bar .split-btn.is-open .split-caret {
+  border-left-color: color-mix(in srgb, var(--pico-primary-inverse) 55%, transparent) !important;
+}
+/* How many values of this button's options differ from the configured defaults: a
+   filled oval in the button's accent colour, so it stands out on the outline
+   buttons. On a button that is itself filled (the primary one, or any button while
+   open) the colours swap, or the oval would vanish into the button. */
+.split-caret .ro-count {
+  margin-left: 0.375rem;
+  min-width: 1.75rem;
+  padding: 0.125rem 0.625rem;
+  border-radius: 999px;
+  background-color: var(--ro-accent);
+  color: var(--pico-primary-inverse);
+  /* Not bold and not small: heavy small digits fill in and are hard to read. */
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  text-align: center;
+}
+.split-btn.split-filled .split-caret .ro-count,
+.split-btn.is-open .split-caret .ro-count {
+  background-color: var(--pico-primary-inverse);
+  color: var(--ro-accent);
+}
+.split-caret .ro-count[hidden] {
+  display: none;
+}
+/* The options area lives inside the action bar, under the row of buttons and above
+   the bar's bottom rule, so it stays with the buttons while the page scrolls. The
+   open button and the card's heading are joined by a curved neck (.ro-link) and
+   share one accent colour, so they read as a single shape. */
+.ro-card {
+  --ro-accent: var(--pico-primary);
+  --ro-tip: 16px;
+  position: relative;
+  flex: 0 0 100%;
+  /* with the bar's row gap this is how far the triangle reaches from the caret */
+  margin-top: 0.375rem;
+}
+.ro-card[data-danger="true"] {
+  --ro-accent: var(--ro-danger);
+}
+.ro-card[hidden] {
+  display: none;
+}
+.ro-card > header {
+  display: none;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem 0.5rem 1rem;
+  font-size: 0.8125rem;
+  background-color: var(--ro-accent);
+  border-radius: var(--pico-border-radius) var(--pico-border-radius) 0 0;
+  color: var(--pico-primary-inverse);
+}
+.ro-card[data-open="true"] > header {
+  display: flex;
+}
+.ro-card[data-open="true"] {
+  animation: ro-in 0.15s ease-out;
+}
+@keyframes ro-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ro-card[data-open="true"] {
+    animation: none;
+  }
+}
+.ro-title {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+.ro-spacer {
+  flex: 1;
+}
+/* A triangle on the card's heading, its tip touching the caret of the open button.
+   It is the caret's colour, so caret, triangle and heading read as one shape. */
+.ro-link {
+  display: none;
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  /* centred under the caret: --tab-x and --tab-w are the caret's */
+  left: calc(var(--tab-x, 0px) + var(--tab-w, 0px) / 2 - var(--ro-tip));
+  top: calc(-1 * var(--tab-gap, 0px));
+  width: 0;
+  height: 0;
+  border-left: var(--ro-tip) solid transparent;
+  border-right: var(--ro-tip) solid transparent;
+  /* 2px more than the gap: the base sinks into the heading, so a fractional card
+     position or a rounded border width can never leave a seam between them. */
+  border-bottom: calc(var(--tab-gap, 0px) + 2px) solid var(--ro-accent);
+}
+.ro-card[data-open="true"][data-linked="true"] .ro-link {
+  display: block;
+}
+.ro-card > header .ro-collapse {
+  color: inherit;
+  --pico-color: var(--pico-primary-inverse);
+  --pico-border-color: color-mix(in srgb, var(--pico-primary-inverse) 65%, transparent);
+}
+.ro-collapse,
+.ro-reset {
+  flex: none;
+  width: auto;
+  margin: 0;
+  padding: 0.125rem 0.625rem;
+  font-size: 0.75rem;
+}
+.ro-body {
+  padding: 0.5rem 1rem 0.875rem;
+  border: 1px solid var(--pico-muted-border-color);
+  border-top: 0;
+  border-radius: 0 0 var(--pico-border-radius) var(--pico-border-radius);
+  background-color: var(--pico-card-sectioning-background-color);
+}
+.ro-body[hidden] {
+  display: none;
+}
+.ro-body-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.25rem;
+  font-size: 0.8125rem;
+}
+.ro-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--pico-muted-color);
+}
+/* The preset is not one of the parameters but what they are applied on top of, so
+   it sits in a band of its own above them. */
+.ro-preset {
+  grid-column: 1 / -1;
+  padding: 0.625rem 0.75rem;
+  border: 1px dashed var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+  background-color: var(--pico-background-color);
+}
+.ro-preset label {
+  max-width: 32rem;
+}
+.ro-section {
+  grid-column: 1 / -1;
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pico-muted-color);
+}
+/* Shown next to the label of a field typed over the selected preset's value. */
+.ro-flag {
+  margin-left: 0.5rem;
+  padding: 0 0.375rem;
+  border-radius: 0.5rem;
+  background-color: var(--pico-primary-focus);
+  color: var(--pico-primary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+.ro-flag[hidden] {
+  display: none;
+}
+.request-options-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: 0.375rem 1rem;
+}
+.request-options-form label {
+  position: relative;
+  display: block;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+/* A multi-line field takes a whole row to itself. */
+.request-options-form label.ro-wide {
+  grid-column: 1 / -1;
+}
+.request-options-form .ro-label {
+  font-weight: 600;
+}
+.request-options-form input,
+.request-options-form select,
+.request-options-form textarea {
+  width: 100%;
+  height: auto;
+  min-height: 2.125rem;
+  margin: 0.25rem 0 0;
+  padding: 0.375rem 0.5rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+.request-options-form textarea {
+  resize: vertical;
+  min-height: 2.125rem;
+  /* One line while empty, growing with what is pasted (a token, a JSON document).
+     Where field-sizing is not supported the single row stays and can be resized. */
+  field-sizing: content;
+  max-height: 9rem;
+}
+/* A field's note appears only while the field has focus, floating under it, so the
+   notes do not make every row taller and the form stays compact. */
+.request-options-form label > small {
+  display: none;
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin: 2px 0 0;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--pico-muted-border-color);
+  border-radius: var(--pico-border-radius);
+  background-color: var(--pico-card-background-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 0.75rem;
+  color: var(--pico-muted-color);
+}
+.request-options-form label:focus-within > small {
+  display: block;
+}
+/* The profile's note stays in view: it explains how the profile and the fields combine. */
+.ro-preset label > small {
+  display: block;
+  position: static;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
 }
