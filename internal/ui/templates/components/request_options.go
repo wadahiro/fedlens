@@ -16,14 +16,18 @@ type RequestOption struct {
 	Values map[string]string
 }
 
-// RequestField is one input of the request options form. Every field starts
-// empty: an empty value means "keep the configured default", and Placeholder
-// shows what that default is.
+// RequestField is one input of the request options form. A field starts with the
+// config file's value (Value). Placeholder, shown faintly, is only ever a value that
+// is sent when the field is blank because fedlens or a selected profile supplies it.
 type RequestField struct {
 	Name        string
 	Label       string
 	Help        string
 	Placeholder string
+	// Value is what the field holds to begin with: the config file's value. The form
+	// then shows the request as it will be sent, and a "modified" field is one that
+	// differs from this. For a select it is the Value of the option that starts selected.
+	Value string
 	// Kind is "select", "text" or "textarea". Use textarea for values that are
 	// long or structured, such as JSON.
 	Kind    string

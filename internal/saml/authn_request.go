@@ -56,3 +56,21 @@ func applyNameIDPolicy(req *samlpkg.AuthnRequest, opts config.SAMLAuthRequestCon
 		req.NameIDPolicy.SPNameQualifier = &qualifier
 	}
 }
+
+// omitSettings removes from the request the settings the user emptied. Settings that
+// are simply unset are already absent; the two the SAML library fills in by itself
+// when they are unset (the NameIDPolicy's Format and AllowCreate) have to be taken
+// out explicitly, or emptying the field would still send them.
+func omitSettings(req *samlpkg.AuthnRequest, names []string) {
+	if req.NameIDPolicy == nil {
+		return
+	}
+	for _, name := range names {
+		switch name {
+		case fieldNameIDFormat:
+			req.NameIDPolicy.Format = nil
+		case fieldAllowCreate:
+			req.NameIDPolicy.AllowCreate = nil
+		}
+	}
+}

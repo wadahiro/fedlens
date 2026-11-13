@@ -231,3 +231,39 @@ func TestExtraParametersHasNoPlaceholder(t *testing.T) {
 		t.Error("the format is explained in the field's note")
 	}
 }
+
+func TestFieldsRenderTheirInitialValue(t *testing.T) {
+	o := loginOptions()
+	o.Fields = []RequestField{
+		{Name: "ui_locales", Label: "ui_locales", Kind: "text", Value: "ja"},
+		{Name: "claims", Label: "claims", Kind: "textarea", Value: `{"a":1}`},
+		{Name: "prompt", Label: "prompt", Kind: "select", Value: "consent", Options: []RequestOption{
+			{Value: "", Label: "(not sent)"}, {Value: "login", Label: "login"}, {Value: "consent", Label: "consent"},
+		}},
+		{Name: "login_hint", Label: "login_hint", Kind: "text"},
+	}
+	html := area(t, o)
+
+	if !strings.Contains(html, `name="ui_locales" value="ja"`) {
+		t.Errorf("a text field starts with the config's value:\n%s", html)
+	}
+	if !strings.Contains(html, `>{&#34;a&#34;:1}</textarea>`) {
+		t.Errorf("a textarea starts with the config's value:\n%s", html)
+	}
+	if !strings.Contains(html, `value="consent"`) || strings.Count(html, " selected") != 1 {
+		t.Errorf("exactly the config's choice starts selected:\n%s", html)
+	}
+	if strings.Contains(html, `name="login_hint" value="`) && !strings.Contains(html, `name="login_hint" value=""`) {
+		t.Errorf("a field the config does not set starts empty:\n%s", html)
+	}
+}
+
+func TestEachFieldCarriesTheFlagsThatSayWhatItOverrides(t *testing.T) {
+	o := loginOptions()
+	o.Fields = []RequestField{{Name: "ui_locales", Label: "ui_locales", Kind: "text"}}
+	html := area(t, o)
+
+	if !strings.Contains(html, `ro-flag ro-flag-config" hidden`) || !strings.Contains(html, `ro-flag ro-flag-profile" hidden`) {
+		t.Errorf("a field needs a hidden flag for the config and one for the profile, which the script fills in:\n%s", html)
+	}
+}

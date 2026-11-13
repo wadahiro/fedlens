@@ -994,7 +994,7 @@ func (h *Handler) buildResultEntryData(index int, entry ResultEntry) templates.O
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	h.startAuthFlow(w, r, parseLoginParams(r.URL.Query(), h.isOAuth2), "")
+	h.startAuthFlow(w, r, parseLoginParams(r.URL.Query(), h.isOAuth2, h.authorizationDefaults()), "")
 }
 
 func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
@@ -1016,7 +1016,7 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// What the options form carries is applied last, over the profile and the config.
-	form := parseLoginParams(r.URL.Query(), h.isOAuth2)
+	form := parseLoginParams(r.URL.Query(), h.isOAuth2, h.authorizationDefaults())
 
 	if step == protocol.DefaultReauthStep {
 		h.startAuthFlow(w, r, form, "__default__")
@@ -1104,19 +1104,9 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, extraPar
 		}
 	}
 
-	// Response mode comes before the extras so that a response_mode chosen in the
-	// login form (passed as extraParams) wins over the configured one.
-	if h.Config.ResponseMode != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("response_mode", h.Config.ResponseMode))
-	}
-
-	// Extra auth params from config
-	for k, v := range h.Config.ExtraAuthParams {
-		opts = append(opts, oauth2.SetAuthURLParam(k, v))
-	}
-
-	// Extra auth params from the reauth profile or the login form (override config's)
-	for k, v := range extraParams {
+	// The configured parameters, then what the reauth profile or the login form
+	// overrides or removes (see requestParams).
+	for k, v := range requestParams(h.Config.ResponseMode, h.Config.ExtraAuthParams, extraParams) {
 		opts = append(opts, oauth2.SetAuthURLParam(k, v))
 	}
 

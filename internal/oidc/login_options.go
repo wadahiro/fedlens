@@ -26,31 +26,25 @@ type authorizationDefaults struct {
 
 // loginOptionFields lists the inputs of the form of a button that starts an
 // authorization request. OAuth2 gets only scope and response_mode: prompt,
-// login_hint and the rest are OpenID Connect parameters. A faint placeholder is
-// only ever a value that is sent when the field is left blank; examples of what to
-// type are in the note shown on focus.
+// login_hint and the rest are OpenID Connect parameters. Each field starts with the
+// config file's value, so the form shows the request as it will be sent.
 func loginOptionFields(isOAuth2 bool, d authorizationDefaults) []components.RequestField {
-	configured := func(name string) string { return components.Fallback(d.Extra[name]) }
-	choiceOf := func(configuredValue string) string {
-		return components.DefaultChoice(configuredValue)
+	text := func(name, help string, kind string) components.RequestField {
+		return components.RequestField{Name: name, Label: name, Kind: kind, Value: d.Extra[name], Help: help}
 	}
 	scope := components.RequestField{
-		Name:        loginParamScope,
-		Label:       "scope",
-		Kind:        "text",
-		Placeholder: components.Fallback(strings.Join(d.Scopes, " ")),
-		Help:        "Space-separated. Replaces the configured scopes for this request.",
+		Name:  loginParamScope,
+		Label: "scope",
+		Kind:  "text",
+		Value: strings.Join(d.Scopes, " "),
+		Help:  "Space-separated. Replaces the configured scopes for this request.",
 	}
 	responseMode := components.RequestField{
-		Name:  "response_mode",
-		Label: "response_mode",
-		Kind:  "select",
-		Options: []components.RequestOption{
-			{Value: "", Label: choiceOf(d.ResponseMode)},
-			{Value: "query", Label: "query"},
-			{Value: "fragment", Label: "fragment"},
-			{Value: "form_post", Label: "form_post"},
-		},
+		Name:    "response_mode",
+		Label:   "response_mode",
+		Kind:    "select",
+		Value:   d.ResponseMode,
+		Options: withOption(notSent(), d.ResponseMode, "query", "fragment", "form_post"),
 	}
 	if isOAuth2 {
 		return []components.RequestField{scope, responseMode}
@@ -59,24 +53,38 @@ func loginOptionFields(isOAuth2 bool, d authorizationDefaults) []components.Requ
 		scope,
 		responseMode,
 		{
-			Name:  "prompt",
-			Label: "prompt",
-			Kind:  "select",
-			Options: []components.RequestOption{
-				{Value: "", Label: choiceOf(d.Extra["prompt"])},
-				{Value: "none", Label: "none"},
-				{Value: "login", Label: "login"},
-				{Value: "consent", Label: "consent"},
-				{Value: "select_account", Label: "select_account"},
-			},
+			Name:    "prompt",
+			Label:   "prompt",
+			Kind:    "select",
+			Value:   d.Extra["prompt"],
+			Options: withOption(notSent(), d.Extra["prompt"], "none", "login", "consent", "select_account"),
 		},
-		{Name: "login_hint", Label: "login_hint", Kind: "text", Placeholder: configured("login_hint"), Help: "e.g. user@example.com"},
-		{Name: "max_age", Label: "max_age", Kind: "text", Placeholder: configured("max_age"), Help: "Seconds. Maximum authentication age. Unrelated to auth_request_max_age in the config."},
-		{Name: "acr_values", Label: "acr_values", Kind: "text", Placeholder: configured("acr_values"), Help: "Space-separated, in order of preference."},
-		{Name: "ui_locales", Label: "ui_locales", Kind: "text", Placeholder: configured("ui_locales"), Help: "e.g. ja en"},
-		{Name: "id_token_hint", Label: "id_token_hint", Kind: "textarea", Placeholder: configured("id_token_hint"), Help: "A previously issued ID Token (JWT)."},
-		{Name: "claims", Label: "claims", Kind: "textarea", Placeholder: configured("claims"), Help: `JSON claims request parameter, e.g. {"id_token":{"email":null}}`},
+		text("login_hint", "e.g. user@example.com", "text"),
+		text("max_age", "Seconds. Maximum authentication age. Unrelated to auth_request_max_age in the config.", "text"),
+		text("acr_values", "Space-separated, in order of preference.", "text"),
+		text("ui_locales", "e.g. ja en", "text"),
+		text("id_token_hint", "A previously issued ID Token (JWT).", "textarea"),
+		text("claims", `JSON claims request parameter, e.g. {"id_token":{"email":null}}`, "textarea"),
 	}
+}
+
+// notSent is the empty choice of a select: nothing is sent for the parameter.
+func notSent() []components.RequestOption {
+	return []components.RequestOption{{Value: "", Label: components.DefaultChoice("")}}
+}
+
+// withOption appends the given choices, plus the config's own value when it is not
+// one of them, so the select can start on what the config sets.
+func withOption(options []components.RequestOption, configured string, choices ...string) []components.RequestOption {
+	known := false
+	for _, c := range choices {
+		options = append(options, components.RequestOption{Value: c, Label: c})
+		known = known || c == configured
+	}
+	if configured != "" && !known {
+		options = append(options, components.RequestOption{Value: configured, Label: configured})
+	}
+	return options
 }
 
 func (h *Handler) authorizationDefaults() authorizationDefaults {
@@ -235,14 +243,35 @@ func buildLogoutURL(endpoint, clientID, topPageURL, idToken string, sendByDefaul
 	return endpoint + separator + values.Encode(), sent
 }
 
-// parseLoginParams turns the submitted form into authorization request
-// parameters. Blank fields are dropped so they keep the configured behaviour,
-// and the extra lines are applied last so they can override a field.
-func parseLoginParams(q url.Values, isOAuth2 bool) map[string]string {
+// parseLoginParams turns the submitted form into the parameters it overrides. A
+// field that still holds what the config gave it overrides nothing, which keeps the
+// layering (config, then profile, then form): a profile is not undone by a field the
+// user never touched. A changed field overrides; a field the config filled and the
+// user emptied is returned as "", meaning the parameter is not sent (see
+// requestParams). The extra lines are applied last so they can override a field.
+func parseLoginParams(q url.Values, isOAuth2 bool, d authorizationDefaults) map[string]string {
 	params := map[string]string{}
+	configured := func(name string) string {
+		switch name {
+		case loginParamScope:
+			return strings.Join(d.Scopes, " ")
+		case "response_mode":
+			return d.ResponseMode
+		default:
+			return d.Extra[name]
+		}
+	}
 	for _, f := range loginOptionFields(isOAuth2, authorizationDefaults{}) {
-		if v := strings.TrimSpace(q.Get(f.Name)); v != "" {
+		if !q.Has(f.Name) { // the form was not submitted (a plain link): nothing to override
+			continue
+		}
+		v := strings.TrimSpace(q.Get(f.Name))
+		switch {
+		case v == configured(f.Name):
+		case v != "":
 			params[f.Name] = v
+		case f.Name != loginParamScope: // scope cannot be removed: a request without one is not what is meant
+			params[f.Name] = ""
 		}
 	}
 	for k, v := range components.ParseKeyValueLines(q.Get(loginParamExtra)) {
@@ -252,6 +281,28 @@ func parseLoginParams(q url.Values, isOAuth2 bool) map[string]string {
 		return nil
 	}
 	return params
+}
+
+// requestParams resolves the parameters an authorization request carries beyond the
+// standard ones: the configured response_mode and extra_auth_params, then the
+// overrides of a reauth profile and the form, where an empty value removes the
+// parameter.
+func requestParams(responseMode string, configured, overrides map[string]string) map[string]string {
+	out := map[string]string{}
+	if responseMode != "" {
+		out["response_mode"] = responseMode
+	}
+	for k, v := range configured {
+		out[k] = v
+	}
+	for k, v := range overrides {
+		if v == "" {
+			delete(out, k)
+		} else {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // idTokenHintDefault says what a Logout that leaves id_token_hint alone does:

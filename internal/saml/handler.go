@@ -741,7 +741,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 }
 
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
-	h.startAuthFlow(w, r, "", h.Config.AuthRequest.Overlay(parseLoginOptions(r.URL.Query())))
+	h.startAuthFlow(w, r, "", h.requestPlanFor(nil, r.URL.Query()))
 }
 
 func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
@@ -757,11 +757,8 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Invalid reauth step", http.StatusBadRequest)
 		return
 	}
-	// What the options form carries is applied last, over the profile and the defaults.
-	form := parseLoginOptions(r.URL.Query())
-
 	if step == protocol.DefaultReauthStep {
-		h.startAuthFlow(w, r, "__default__", h.Config.AuthRequest.Overlay(form))
+		h.startAuthFlow(w, r, "__default__", h.requestPlanFor(nil, r.URL.Query()))
 		return
 	}
 
@@ -771,11 +768,11 @@ func (h *Handler) handleReauth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := h.Config.Reauth[step]
-	h.startAuthFlow(w, r, rc.Name, h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig).Overlay(form))
+	h.startAuthFlow(w, r, rc.Name, h.requestPlanFor(&rc, r.URL.Query()))
 }
 
-// startAuthFlow initiates a SAML AuthnRequest shaped by opts.
-func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthName string, opts config.SAMLAuthRequestConfig) {
+// startAuthFlow initiates a SAML AuthnRequest shaped by plan.
+func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthName string, plan authnRequestPlan) {
 	// Determine binding
 	binding := samlpkg.HTTPRedirectBinding
 	bindingLocation := h.sp.ServiceProvider.GetSSOBindingLocation(binding)
@@ -798,7 +795,8 @@ func (h *Handler) startAuthFlow(w http.ResponseWriter, r *http.Request, reauthNa
 	// unsigned (SignRequest is false). Once signing is supported, an embedded
 	// POST-binding signature would no longer cover these changes and the request
 	// has to be re-signed after this call.
-	applyAuthRequest(authReq, opts)
+	applyAuthRequest(authReq, plan.opts)
+	omitSettings(authReq, plan.omit)
 
 	// Store reauth name in cookie
 	if reauthName != "" {

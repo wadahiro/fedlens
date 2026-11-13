@@ -126,3 +126,28 @@ func TestApplyAuthRequestFlagsAndContext(t *testing.T) {
 		t.Errorf("RequestedAuthnContext = %+v", rac)
 	}
 }
+
+func TestOmitSettingsTakesOutWhatTheLibraryFillsIn(t *testing.T) {
+	req := newRequest() // Format transient and AllowCreate true, as the library generates it
+
+	omitSettings(req, []string{"name_id_format", "allow_create"})
+
+	if req.NameIDPolicy.Format != nil || req.NameIDPolicy.AllowCreate != nil {
+		t.Errorf("NameIDPolicy = %+v, want the library's defaults taken out", req.NameIDPolicy)
+	}
+	xml := requestXML(t, req)
+	if strings.Contains(xml, "AllowCreate") || strings.Contains(xml, `Format="`+string(samlpkg.TransientNameIDFormat)+`"`) {
+		t.Errorf("the serialized request still carries them:\n%s", xml)
+	}
+}
+
+func TestOmitSettingsLeavesWhatWasNotEmptied(t *testing.T) {
+	req := newRequest()
+
+	omitSettings(req, []string{"force_authn"}) // not a NameIDPolicy setting: nothing to take out
+
+	if req.NameIDPolicy.Format == nil || req.NameIDPolicy.AllowCreate == nil {
+		t.Error("only the emptied settings may be taken out")
+	}
+	omitSettings(&samlpkg.AuthnRequest{}, []string{"allow_create"}) // no policy at all: must not panic
+}

@@ -417,36 +417,64 @@ templ Layout(title string, page PageInfo) {
 					var option = select.options[select.selectedIndex];
 					try { return option && option.dataset.values ? JSON.parse(option.dataset.values) : {}; } catch (e) { return {}; }
 				}
-				// Show the preset's values as the placeholders of the fields it would fill in,
-				// and flag the fields that have been typed over it.
+				// What a field started with: the config file's value ("" when it set none).
+				function roInitial(el) {
+					if (el.tagName === "SELECT") {
+						for (var i = 0; i < el.options.length; i++) if (el.options[i].defaultSelected) return el.options[i].value;
+						return el.options.length ? el.options[0].value : "";
+					}
+					return el.defaultValue;
+				}
+				// A field is modified when it differs from what it started with. Clearing a
+				// field that started with a value counts, since it stops that parameter being sent.
+				function roIsChanged(el) {
+					return el.tagName === "SELECT" ? el.value !== roInitial(el) : el.value !== el.defaultValue;
+				}
+				function roShort(text, max) {
+					var t = text.replace(/\s+/g, " ").trim();
+					return t.length > max ? t.slice(0, max) + "\u2026" : t;
+				}
+				// Show the preset's values as the placeholders of the blank fields it would fill
+				// in, and say on each field it sets what the profile does there: a field left
+				// as it started is overruled by the profile, a field changed overrides it.
 				function roApplyPreset(form) {
 					var values = roPresetValues(form);
 					Array.prototype.forEach.call(form.elements, function(el) {
 						if (!el.name || el.closest(".ro-preset")) return;
 						var inherited = Object.prototype.hasOwnProperty.call(values, el.name) ? values[el.name] : null;
+						var blank = el.value.trim() === "";
 						if (el.tagName === "SELECT") {
 							var first = el.options[0];
 							if (first.dataset.orig === undefined) first.dataset.orig = first.textContent;
-							first.textContent = inherited !== null ? "(" + inherited + ")" : first.dataset.orig;
+							first.textContent = inherited !== null && blank ? "(" + inherited + ")" : first.dataset.orig;
 						} else {
 							if (el.dataset.orig === undefined) el.dataset.orig = el.placeholder;
 							el.placeholder = inherited !== null ? inherited : el.dataset.orig;
 						}
-						var label = el.closest("label"), flag = label && label.querySelector(".ro-flag");
-						if (flag) flag.hidden = !(inherited !== null && el.value.trim() !== "");
+						var label = el.closest("label");
+						if (!label) return;
+						var changed = roIsChanged(el), initial = roInitial(el);
+						// Said on the field itself: what it does to the config's value, and to the profile's.
+						var configFlag = label.querySelector(".ro-flag-config"), profileFlag = label.querySelector(".ro-flag-profile");
+						if (configFlag) {
+							configFlag.hidden = !(changed && initial !== "");
+							configFlag.textContent = blank ? "config removed" : "overrides config";
+						}
+						if (profileFlag) {
+							profileFlag.hidden = inherited === null;
+							if (inherited !== null) profileFlag.textContent = changed && !blank ? "overrides profile" : "profile";
+						}
 					});
 				}
 				function roChanges(form) {
-					var values = roPresetValues(form), changes = [];
+					var changes = [];
 					Array.prototype.forEach.call(form.elements, function(el) {
+						if (!el.name || !roIsChanged(el)) return;
 						var value = el.value.trim();
-						if (!el.name || !value) return;
+						if (value === "") { changes.push(el.name + " removed"); return; }
 						var option = el.tagName === "SELECT" ? el.options[el.selectedIndex] : null;
 						if (option && option.dataset.short) value = option.dataset.short;
-						var shown = value.replace(/\s+/g, " ");
-						if (shown.length > 24) shown = shown.slice(0, 24) + "\u2026";
-						var overrides = !el.closest(".ro-preset") && Object.prototype.hasOwnProperty.call(values, el.name);
-						changes.push(el.name + "=" + shown + (overrides ? " (overrides profile)" : ""));
+						changes.push(el.name + "=" + roShort(value, 24));
 					});
 					return changes;
 				}
@@ -464,7 +492,7 @@ templ Layout(title string, page PageInfo) {
 						body.hidden = !shown;
 						body.querySelector(".ro-summary").textContent = modified
 							? changes.length + " modified: " + changes.join(", ")
-							: "Blank fields send the faint value shown, or nothing when there is none.";
+							: "Fields start with your config. A blank field sends nothing, or the faint value if there is one.";
 						body.querySelector(".ro-reset").hidden = !modified;
 						var caret = document.querySelector('[data-testid="' + id + '-options-toggle"]');
 						if (caret) {
@@ -555,7 +583,7 @@ templ Layout(title string, page PageInfo) {
 				function saveRequestOptions(form) {
 					var values = {};
 					Array.prototype.forEach.call(form.elements, function(el) {
-						if (el.name && el.value) values[el.name] = el.value;
+						if (el.name && roIsChanged(el)) values[el.name] = el.value;
 					});
 					try {
 						if (Object.keys(values).length) sessionStorage.setItem(requestOptionsKey(form), JSON.stringify(values));

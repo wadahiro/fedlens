@@ -43,7 +43,7 @@ templ RequestOptionsArea(sets []RequestOptions) {
 templ requestOptionsBody(o RequestOptions) {
 	<div id={ PanelID(o.ID) } class="ro-body" hidden data-ro-id={ o.ID } data-label={ o.Label } data-danger={ DangerAttr(o.Style) } data-testid={ TestID(o.ID, "panel") }>
 		<div class="ro-body-head">
-			<span class="ro-summary" data-testid={ TestID(o.ID, "summary") }>Blank fields send the faint value shown, or nothing when there is none.</span>
+			<span class="ro-summary" data-testid={ TestID(o.ID, "summary") }>Fields start with your config. A blank field sends nothing, or the faint value if there is one.</span>
 			<button type="button" class="secondary outline ro-reset" hidden data-ro-id={ o.ID } data-testid={ TestID(o.ID, "reset") }>Reset</button>
 		</div>
 				<form id={ FormID(o.ID) } method="get" action={ templ.SafeURL(o.Action) } class="request-options-form" data-ro-id={ o.ID } autocomplete="off">
@@ -72,28 +72,29 @@ templ requestOptionsBody(o RequestOptions) {
 templ requestField(id string, f RequestField) {
 	<label class={ fieldClass(f) }>
 		<span class="ro-label">{ f.Label }</span>
-		<span class="ro-flag" hidden>overrides profile</span>
+		<span class="ro-flag ro-flag-config" hidden></span>
+		<span class="ro-flag ro-flag-profile" hidden></span>
 		if f.Kind == "select" {
 			<select name={ f.Name } data-testid={ FieldTestID(id, f.Name) }>
 				for _, opt := range f.Options {
 					if len(opt.Values) > 0 {
-						<option value={ opt.Value } data-short={ opt.Short } data-values={ templ.JSONString(opt.Values) }>{ opt.Label }</option>
+						<option value={ opt.Value } data-short={ opt.Short } data-values={ templ.JSONString(opt.Values) } selected?={ opt.Value == f.Value }>{ opt.Label }</option>
 					} else {
-						<option value={ opt.Value } data-short={ opt.Short }>{ opt.Label }</option>
+						<option value={ opt.Value } data-short={ opt.Short } selected?={ opt.Value == f.Value }>{ opt.Label }</option>
 					}
 				}
 			</select>
 		} else if f.Kind == "textarea" {
-			<textarea name={ f.Name } rows="1" placeholder={ f.Placeholder } data-testid={ FieldTestID(id, f.Name) }></textarea>
+			<textarea name={ f.Name } rows="1" placeholder={ f.Placeholder } data-testid={ FieldTestID(id, f.Name) }>{ f.Value }</textarea>
 		} else if len(f.Options) > 0 {
-			<input type="text" name={ f.Name } placeholder={ f.Placeholder } list={ "ro-list-" + id + "-" + f.Name } autocomplete="off" data-testid={ FieldTestID(id, f.Name) }/>
+			<input type="text" name={ f.Name } value={ f.Value } placeholder={ f.Placeholder } list={ "ro-list-" + id + "-" + f.Name } autocomplete="off" data-testid={ FieldTestID(id, f.Name) }/>
 			<datalist id={ "ro-list-" + id + "-" + f.Name }>
 				for _, opt := range f.Options {
 					<option value={ opt.Value }>{ opt.Label }</option>
 				}
 			</datalist>
 		} else {
-			<input type="text" name={ f.Name } placeholder={ f.Placeholder } autocomplete="off" data-testid={ FieldTestID(id, f.Name) }/>
+			<input type="text" name={ f.Name } value={ f.Value } placeholder={ f.Placeholder } autocomplete="off" data-testid={ FieldTestID(id, f.Name) }/>
 		}
 		if f.Help != "" {
 			<small>{ f.Help }</small>

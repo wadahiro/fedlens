@@ -79,9 +79,10 @@ var profileFieldOrder = []string{
 	fieldSubjectNameID, fieldSubjectNameIDFormat, fieldForceAuthn, fieldIsPassive, fieldAuthnContextClassRef,
 }
 
-// profileValues returns what a profile sets, keyed by form field name, so the
-// form can show those values as the placeholders of the fields it would override.
-func profileValues(rc config.SAMLReauthConfig) map[string]string {
+// authRequestValues returns the settings of an auth_request config, keyed by form
+// field name: what a profile sets, and what the config file starts the form with.
+// A setting that is not set is absent.
+func authRequestValues(c config.SAMLAuthRequestConfig) map[string]string {
 	values := map[string]string{}
 	set := func(name, value string) {
 		if value != "" {
@@ -93,16 +94,22 @@ func profileValues(rc config.SAMLReauthConfig) map[string]string {
 			values[name] = strconv.FormatBool(*value)
 		}
 	}
-	set(fieldNameIDFormat, rc.NameIDFormat)
-	setBool(fieldAllowCreate, rc.AllowCreate)
-	set(fieldSPNameQualifier, rc.SPNameQualifier)
-	setBool(fieldOmitNameIDPolicy, rc.OmitNameIDPolicy)
-	set(fieldSubjectNameID, rc.SubjectNameID)
-	set(fieldSubjectNameIDFormat, rc.SubjectNameIDFormat)
-	setBool(fieldForceAuthn, rc.ForceAuthn)
-	setBool(fieldIsPassive, rc.IsPassive)
-	set(fieldAuthnContextClassRef, rc.AuthnContextClassRef)
+	set(fieldNameIDFormat, c.NameIDFormat)
+	setBool(fieldAllowCreate, c.AllowCreate)
+	set(fieldSPNameQualifier, c.SPNameQualifier)
+	setBool(fieldOmitNameIDPolicy, c.OmitNameIDPolicy)
+	set(fieldSubjectNameID, c.SubjectNameID)
+	set(fieldSubjectNameIDFormat, c.SubjectNameIDFormat)
+	setBool(fieldForceAuthn, c.ForceAuthn)
+	setBool(fieldIsPassive, c.IsPassive)
+	set(fieldAuthnContextClassRef, c.AuthnContextClassRef)
 	return values
+}
+
+// profileValues returns what a profile sets, keyed by form field name, so the
+// form can show those values as the placeholders of the fields it would override.
+func profileValues(rc config.SAMLReauthConfig) map[string]string {
+	return authRequestValues(rc.SAMLAuthRequestConfig)
 }
 
 // describeReauthProfile names a profile together with what it sets, so the choice
@@ -125,6 +132,7 @@ func describeReauthProfile(rc config.SAMLReauthConfig) string {
 // Login and Re-authenticate send the same one, so they share it.
 func (h *Handler) authnRequestOptions(id, label, style, action string) *components.RequestOptions {
 	def := h.Config.AuthRequest
+	start := authRequestValues(def)
 	return &components.RequestOptions{
 		ID:     id,
 		Label:  label,
@@ -133,68 +141,123 @@ func (h *Handler) authnRequestOptions(id, label, style, action string) *componen
 		Fields: []components.RequestField{
 			{
 				Name: fieldNameIDFormat, Label: "NameIDPolicy Format", Kind: "text",
-				Placeholder: configuredOr(shortNameIDFormat(def.NameIDFormat), "transient"),
+				Value:       start[fieldNameIDFormat],
+				Placeholder: libraryDefault(start, fieldNameIDFormat, "transient"),
 				Options:     nameIDFormatSuggestions(),
 			},
-			{Name: fieldAllowCreate, Label: "NameIDPolicy AllowCreate", Kind: "select", Options: components.TriStateOptions(boolChoice(def.AllowCreate, "true"))},
-			{Name: fieldSPNameQualifier, Label: "NameIDPolicy SPNameQualifier", Kind: "text", Placeholder: components.Fallback(def.SPNameQualifier)},
+			{Name: fieldAllowCreate, Label: "NameIDPolicy AllowCreate", Kind: "select", Value: start[fieldAllowCreate], Options: components.TriStateOptions(components.DefaultChoice(libraryDefault(start, fieldAllowCreate, "true")))},
+			{Name: fieldSPNameQualifier, Label: "NameIDPolicy SPNameQualifier", Kind: "text", Value: start[fieldSPNameQualifier]},
 			{
-				Name: fieldOmitNameIDPolicy, Label: "Omit NameIDPolicy", Kind: "select", Options: components.TriStateOptions(boolChoice(def.OmitNameIDPolicy, "false")),
+				Name: fieldOmitNameIDPolicy, Label: "Omit NameIDPolicy", Kind: "select", Value: start[fieldOmitNameIDPolicy], Options: components.TriStateOptions(components.DefaultChoice("false")),
 				Help: "true sends no NameIDPolicy element, leaving the choice to the IdP.",
 			},
 			{
-				Name: fieldSubjectNameID, Label: "Subject NameID", Kind: "text", Placeholder: components.Fallback(def.SubjectNameID),
+				Name: fieldSubjectNameID, Label: "Subject NameID", Kind: "text", Value: start[fieldSubjectNameID],
 				Help: "Hints which user is logging in, e.g. user@example.com",
 			},
 			{
-				Name: fieldSubjectNameIDFormat, Label: "Subject NameID Format", Kind: "text",
-				Placeholder: components.Fallback(shortNameIDFormat(def.SubjectNameIDFormat)),
-				Options:     nameIDFormatSuggestions(),
+				Name: fieldSubjectNameIDFormat, Label: "Subject NameID Format", Kind: "text", Value: start[fieldSubjectNameIDFormat],
+				Options: nameIDFormatSuggestions(),
 			},
-			{Name: fieldForceAuthn, Label: "ForceAuthn", Kind: "select", Options: components.TriStateOptions(boolChoice(def.ForceAuthn, ""))},
-			{Name: fieldIsPassive, Label: "IsPassive", Kind: "select", Options: components.TriStateOptions(boolChoice(def.IsPassive, ""))},
+			{Name: fieldForceAuthn, Label: "ForceAuthn", Kind: "select", Value: start[fieldForceAuthn], Options: components.TriStateOptions(components.DefaultChoice(""))},
+			{Name: fieldIsPassive, Label: "IsPassive", Kind: "select", Value: start[fieldIsPassive], Options: components.TriStateOptions(components.DefaultChoice(""))},
 			{
-				Name: fieldAuthnContextClassRef, Label: "AuthnContextClassRef", Kind: "text",
-				Placeholder: components.Fallback(def.AuthnContextClassRef),
-				Help:        "e.g. urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+				Name: fieldAuthnContextClassRef, Label: "AuthnContextClassRef", Kind: "text", Value: start[fieldAuthnContextClassRef],
+				Help: "e.g. urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
 			},
 		},
 	}
 }
 
-// configuredOr is the placeholder of a field with a built-in fallback: the config
-// file's value when there is one, else the value fedlens' SAML library sends.
-func configuredOr(configured, libraryDefault string) string {
-	if configured != "" {
-		return components.Fallback(configured)
+// parseLoginOptions reads the submitted form against what the config started it
+// with. A field still holding the config's value overrides nothing, which keeps the
+// layering (config, then profile, then form): a profile is not undone by a field the
+// user never touched. A changed field becomes an override; a field the config had
+// filled and the user emptied is returned by name, meaning the setting is dropped.
+func parseLoginOptions(q url.Values, base config.SAMLAuthRequestConfig) (config.SAMLAuthRequestConfig, []string) {
+	start := authRequestValues(base)
+	var override config.SAMLAuthRequestConfig
+	var cleared []string
+	for _, name := range profileFieldOrder {
+		if !q.Has(name) { // the form was not submitted (a plain link): nothing to override
+			continue
+		}
+		v := strings.TrimSpace(q.Get(name))
+		if v == start[name] {
+			continue
+		}
+		if v == "" {
+			cleared = append(cleared, name)
+			continue
+		}
+		switch name {
+		case fieldNameIDFormat:
+			override.NameIDFormat = v
+		case fieldAllowCreate:
+			override.AllowCreate = triState(v)
+		case fieldSPNameQualifier:
+			override.SPNameQualifier = v
+		case fieldOmitNameIDPolicy:
+			override.OmitNameIDPolicy = triState(v)
+		case fieldSubjectNameID:
+			override.SubjectNameID = v
+		case fieldSubjectNameIDFormat:
+			override.SubjectNameIDFormat = v
+		case fieldForceAuthn:
+			override.ForceAuthn = triState(v)
+		case fieldIsPassive:
+			override.IsPassive = triState(v)
+		case fieldAuthnContextClassRef:
+			override.AuthnContextClassRef = v
+		}
 	}
-	return components.Fallback(libraryDefault)
+	return override, cleared
 }
 
-// boolChoice labels the empty choice of a tri-state select: the config file's
-// value when it sets one, else the value sent when nothing sets it ("" = nothing).
-func boolChoice(configured *bool, valueWhenUnset string) string {
-	if configured != nil {
-		return components.DefaultChoice(strconv.FormatBool(*configured))
-	}
-	return components.DefaultChoice(valueWhenUnset)
+// authnRequestPlan is what one AuthnRequest is built from: the settings to apply
+// and the settings the user emptied, which must not appear in the request at all
+// (not even as the SAML library's own default).
+type authnRequestPlan struct {
+	opts config.SAMLAuthRequestConfig
+	omit []string
 }
 
-// parseLoginOptions reads the submitted form. Blank fields stay unset so that
-// Overlay keeps the configured value for them.
-func parseLoginOptions(q url.Values) config.SAMLAuthRequestConfig {
-	text := func(name string) string { return strings.TrimSpace(q.Get(name)) }
-	return config.SAMLAuthRequestConfig{
-		NameIDFormat:         text(fieldNameIDFormat),
-		AllowCreate:          triState(q.Get(fieldAllowCreate)),
-		SPNameQualifier:      text(fieldSPNameQualifier),
-		OmitNameIDPolicy:     triState(q.Get(fieldOmitNameIDPolicy)),
-		SubjectNameID:        text(fieldSubjectNameID),
-		SubjectNameIDFormat:  text(fieldSubjectNameIDFormat),
-		ForceAuthn:           triState(q.Get(fieldForceAuthn)),
-		IsPassive:            triState(q.Get(fieldIsPassive)),
-		AuthnContextClassRef: text(fieldAuthnContextClassRef),
+// dropSettings unsets the named settings.
+func dropSettings(c config.SAMLAuthRequestConfig, names []string) config.SAMLAuthRequestConfig {
+	for _, name := range names {
+		switch name {
+		case fieldNameIDFormat:
+			c.NameIDFormat = ""
+		case fieldAllowCreate:
+			c.AllowCreate = nil
+		case fieldSPNameQualifier:
+			c.SPNameQualifier = ""
+		case fieldOmitNameIDPolicy:
+			c.OmitNameIDPolicy = nil
+		case fieldSubjectNameID:
+			c.SubjectNameID = ""
+		case fieldSubjectNameIDFormat:
+			c.SubjectNameIDFormat = ""
+		case fieldForceAuthn:
+			c.ForceAuthn = nil
+		case fieldIsPassive:
+			c.IsPassive = nil
+		case fieldAuthnContextClassRef:
+			c.AuthnContextClassRef = ""
+		}
 	}
+	return c
+}
+
+// requestPlanFor resolves one AuthnRequest: the config's settings, then a reauth
+// profile's if one was chosen, then what the form overrides or removes.
+func (h *Handler) requestPlanFor(profile *config.SAMLReauthConfig, q url.Values) authnRequestPlan {
+	effective := h.Config.AuthRequest
+	if profile != nil {
+		effective = effective.Overlay(profile.SAMLAuthRequestConfig)
+	}
+	override, cleared := parseLoginOptions(q, h.Config.AuthRequest)
+	return authnRequestPlan{opts: dropSettings(effective.Overlay(override), cleared), omit: cleared}
 }
 
 // triState maps the select values "true" and "false" to a pointer; anything
@@ -212,14 +275,13 @@ func triState(value string) *bool {
 	}
 }
 
-// shortNameIDFormat names a standard NameID format by its short name
-// ("emailAddress"), so that the marker after it in a placeholder stays in view;
-// any other value is kept as it is.
-func shortNameIDFormat(format string) string {
-	for _, s := range nameIDFormatSuggestions() {
-		if s.Value == format {
-			return s.Label
-		}
+// libraryDefault is what the SAML library sends for a setting when the form leaves
+// it blank. It only does so while the config does not set the setting: a setting
+// the config set and the user emptied is taken out of the request (omitSettings),
+// so there is nothing to show for it.
+func libraryDefault(start map[string]string, name, value string) string {
+	if _, set := start[name]; set {
+		return ""
 	}
-	return format
+	return value
 }

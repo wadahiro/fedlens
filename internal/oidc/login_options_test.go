@@ -20,7 +20,7 @@ func TestParseLoginParamsKeepsOnlyFilledFields(t *testing.T) {
 		"login_hint": {""},
 		"max_age":    {"0"},
 	}
-	got := parseLoginParams(q, false)
+	got := parseLoginParams(q, false, authorizationDefaults{})
 
 	want := map[string]string{"scope": "openid email", "prompt": "login", "max_age": "0"}
 	if len(got) != len(want) {
@@ -34,7 +34,7 @@ func TestParseLoginParamsKeepsOnlyFilledFields(t *testing.T) {
 }
 
 func TestParseLoginParamsEmptyFormMeansNoOverrides(t *testing.T) {
-	if got := parseLoginParams(url.Values{"prompt": {""}}, false); got != nil {
+	if got := parseLoginParams(url.Values{"prompt": {""}}, false, authorizationDefaults{}); got != nil {
 		t.Errorf("params = %v, want nil so the configured request is untouched", got)
 	}
 }
@@ -44,7 +44,7 @@ func TestParseLoginParamsExtraLinesOverrideFields(t *testing.T) {
 		"prompt": {"login"},
 		"extra":  {"prompt=consent\nclaims={\"a\":\"b=c\"}\n# note\n\nbad line"},
 	}
-	got := parseLoginParams(q, false)
+	got := parseLoginParams(q, false, authorizationDefaults{})
 
 	if got["prompt"] != "consent" {
 		t.Errorf("prompt = %q, want the extra line to win", got["prompt"])
@@ -58,7 +58,7 @@ func TestParseLoginParamsExtraLinesOverrideFields(t *testing.T) {
 }
 
 func TestParseLoginParamsOAuth2IgnoresOIDCFields(t *testing.T) {
-	got := parseLoginParams(url.Values{"scope": {"read"}, "prompt": {"login"}}, true)
+	got := parseLoginParams(url.Values{"scope": {"read"}, "prompt": {"login"}}, true, authorizationDefaults{})
 	if got["scope"] != "read" {
 		t.Errorf("scope = %q", got["scope"])
 	}
@@ -281,41 +281,134 @@ func fieldNamed(t *testing.T, fields []components.RequestField, name string) com
 	return components.RequestField{}
 }
 
-func TestBlankFieldsShowWhatTheConfigSends(t *testing.T) {
+func TestFieldsStartWithTheConfigsValues(t *testing.T) {
 	fields := loginOptionFields(false, authorizationDefaults{
 		Scopes:       []string{"openid", "profile"},
 		ResponseMode: "query",
 		Extra:        map[string]string{"ui_locales": "ja", "prompt": "consent"},
 	})
 
-	if got := fieldNamed(t, fields, "scope").Placeholder; got != "openid profile" {
-		t.Errorf("scope placeholder = %q", got)
+	if got := fieldNamed(t, fields, "scope").Value; got != "openid profile" {
+		t.Errorf("scope starts with %q", got)
 	}
-	if got := fieldNamed(t, fields, "ui_locales").Placeholder; got != "ja" {
-		t.Errorf("ui_locales placeholder = %q, want the value extra_auth_params sends", got)
+	if got := fieldNamed(t, fields, "ui_locales").Value; got != "ja" {
+		t.Errorf("ui_locales starts with %q, the value extra_auth_params sends", got)
 	}
-	if got := fieldNamed(t, fields, "response_mode").Options[0].Label; got != "(query)" {
-		t.Errorf("response_mode first choice = %q", got)
+	for _, name := range []string{"response_mode", "prompt"} {
+		f := fieldNamed(t, fields, name)
+		if f.Options[0].Value != "" || f.Options[0].Label != "(not sent)" {
+			t.Errorf("%s first choice = %+v, want the empty (not sent) choice", name, f.Options[0])
+		}
 	}
-	if got := fieldNamed(t, fields, "prompt").Options[0].Label; got != "(consent)" {
-		t.Errorf("prompt first choice = %q", got)
+	if got := fieldNamed(t, fields, "response_mode").Value; got != "query" {
+		t.Errorf("response_mode starts on %q", got)
 	}
 }
 
-func TestFieldsTheConfigDoesNotSetShowNoPlaceholder(t *testing.T) {
+func TestFieldsTheConfigDoesNotSetStartEmpty(t *testing.T) {
 	fields := loginOptionFields(false, authorizationDefaults{Scopes: []string{"openid"}})
 
-	for _, name := range []string{"login_hint", "max_age", "acr_values", "ui_locales", "id_token_hint", "claims"} {
+	for _, name := range []string{"login_hint", "max_age", "acr_values", "ui_locales", "id_token_hint", "claims", "prompt", "response_mode"} {
 		f := fieldNamed(t, fields, name)
-		if f.Placeholder != "" {
-			t.Errorf("%s placeholder = %q: a blank field sends nothing, so nothing may look like a value", name, f.Placeholder)
+		if f.Value != "" || f.Placeholder != "" {
+			t.Errorf("%s = %q / %q: a field the config does not set starts empty, with nothing faint that looks like a value", name, f.Value, f.Placeholder)
 		}
 	}
-	if got := fieldNamed(t, fields, "prompt").Options[0].Label; got != "(not sent)" {
-		t.Errorf("prompt first choice = %q, want (not sent)", got)
-	}
 	if fieldNamed(t, fields, "login_hint").Help == "" {
-		t.Error("the example moves to the note shown on focus")
+		t.Error("the example is in the note shown on focus")
+	}
+}
+
+func TestAConfigValueOutsideTheListedChoicesStillStartsSelected(t *testing.T) {
+	fields := loginOptionFields(false, authorizationDefaults{Extra: map[string]string{"prompt": "create"}})
+
+	prompt := fieldNamed(t, fields, "prompt")
+	found := false
+	for _, o := range prompt.Options {
+		found = found || o.Value == "create"
+	}
+	if !found || prompt.Value != "create" {
+		t.Errorf("prompt = %q with options %+v, want the config's own value offered and selected", prompt.Value, prompt.Options)
+	}
+}
+
+func configuredDefaults() authorizationDefaults {
+	return authorizationDefaults{
+		Scopes:       []string{"openid", "profile"},
+		ResponseMode: "query",
+		Extra:        map[string]string{"ui_locales": "ja", "prompt": "consent"},
+	}
+}
+
+func TestAFieldLeftAsTheConfigGaveItOverridesNothing(t *testing.T) {
+	// what the browser submits when nothing was touched: every field, with its initial value
+	q := url.Values{"scope": {"openid profile"}, "response_mode": {"query"}, "prompt": {"consent"},
+		"ui_locales": {"ja"}, "login_hint": {""}, "max_age": {""}, "acr_values": {""}, "id_token_hint": {""}, "claims": {""}}
+
+	if got := parseLoginParams(q, false, configuredDefaults()); got != nil {
+		t.Errorf("params = %v, want none: an untouched form must not undo a reauth profile", got)
+	}
+}
+
+func TestAChangedFieldOverridesAndAnEmptiedOneRemoves(t *testing.T) {
+	q := url.Values{"scope": {"openid"}, "response_mode": {""}, "prompt": {"consent"}, "ui_locales": {"en"}, "login_hint": {"a@b.test"}}
+
+	got := parseLoginParams(q, false, configuredDefaults())
+
+	want := map[string]string{
+		"scope":         "openid",   // changed
+		"response_mode": "",         // the config set one and it was emptied: not sent
+		"ui_locales":    "en",       // changed
+		"login_hint":    "a@b.test", // new
+	}
+	if len(got) != len(want) {
+		t.Fatalf("params = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if gv, ok := got[k]; !ok || gv != v {
+			t.Errorf("%s = %q (present %v), want %q", k, gv, ok, v)
+		}
+	}
+	if _, ok := got["prompt"]; ok {
+		t.Error("prompt is unchanged and must not be an override")
+	}
+}
+
+func TestEmptyingAFieldTheConfigNeverSetIsNothing(t *testing.T) {
+	q := url.Values{"login_hint": {""}, "scope": {""}}
+
+	got := parseLoginParams(q, false, configuredDefaults())
+
+	if _, ok := got["login_hint"]; ok {
+		t.Error("a blank field the config did not fill is not a removal")
+	}
+	if _, ok := got["scope"]; ok {
+		t.Error("scope cannot be removed")
+	}
+}
+
+func TestAPlainLinkWithoutTheFormOverridesNothing(t *testing.T) {
+	if got := parseLoginParams(url.Values{}, false, configuredDefaults()); got != nil {
+		t.Errorf("params = %v: with no form submitted the configured request goes out as it is", got)
+	}
+}
+
+func TestRequestParamsLayersConfigThenOverridesAndRemoves(t *testing.T) {
+	got := requestParams("query",
+		map[string]string{"ui_locales": "ja", "prompt": "consent"},
+		map[string]string{"ui_locales": "en", "prompt": "", "acr_values": "2"})
+
+	want := map[string]string{"response_mode": "query", "ui_locales": "en", "acr_values": "2"}
+	if len(got) != len(want) {
+		t.Fatalf("params = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
+	}
+	if got := requestParams("query", nil, map[string]string{"response_mode": ""}); len(got) != 0 {
+		t.Errorf("params = %v, want the configured response_mode removed", got)
 	}
 }
 

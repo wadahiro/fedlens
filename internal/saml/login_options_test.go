@@ -8,60 +8,95 @@ import (
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
 )
 
-func TestParseLoginOptionsBlankFormChangesNothing(t *testing.T) {
-	got := parseLoginOptions(url.Values{"name_id_format": {""}, "allow_create": {""}, "force_authn": {""}})
+func TestParseLoginOptionsAFormLeftAsTheConfigGaveItOverridesNothing(t *testing.T) {
+	base := config.SAMLAuthRequestConfig{NameIDFormat: "urn:base", ForceAuthn: boolPtr(true)}
+	// what the browser submits when nothing was touched: every field with its initial value
+	q := url.Values{"name_id_format": {"urn:base"}, "force_authn": {"true"}, "allow_create": {""}, "is_passive": {""}, "authn_context_class_ref": {""}}
 
-	if got.NameIDFormat != "" || got.AllowCreate != nil || got.ForceAuthn != nil || got.IsPassive != nil || got.OmitNameIDPolicy != nil {
-		t.Errorf("blank form must leave every option unset: %+v", got)
+	override, cleared := parseLoginOptions(q, base)
+
+	if override != (config.SAMLAuthRequestConfig{}) || len(cleared) != 0 {
+		t.Errorf("override %+v, cleared %v: an untouched form must not undo a reauth profile", override, cleared)
 	}
 }
 
-func TestParseLoginOptionsTriState(t *testing.T) {
-	got := parseLoginOptions(url.Values{
-		"allow_create": {"false"},
-		"force_authn":  {"true"},
-		"is_passive":   {"(default)"},
-	})
+func TestParseLoginOptionsChangedFieldsOverrideAndEmptiedOnesAreDropped(t *testing.T) {
+	base := config.SAMLAuthRequestConfig{NameIDFormat: "urn:base", ForceAuthn: boolPtr(true), AllowCreate: boolPtr(true)}
+	q := url.Values{
+		"name_id_format":  {"  urn:oasis:names:tc:SAML:2.0:nameid-format:persistent "}, // changed
+		"force_authn":     {""},                                                        // the config set it; emptied
+		"allow_create":    {"false"},                                                   // changed to explicit false
+		"subject_name_id": {" alice@example.com "},                                     // new
+		"is_passive":      {"(default)"},                                               // an unknown value is not a setting
+	}
 
-	if got.AllowCreate == nil || *got.AllowCreate {
-		t.Errorf("AllowCreate = %v, want explicit false", got.AllowCreate)
+	override, cleared := parseLoginOptions(q, base)
+
+	if override.NameIDFormat != "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" || override.SubjectNameID != "alice@example.com" {
+		t.Errorf("text overrides wrong (trimmed?): %+v", override)
 	}
-	if got.ForceAuthn == nil || !*got.ForceAuthn {
-		t.Errorf("ForceAuthn = %v, want true", got.ForceAuthn)
+	if override.AllowCreate == nil || *override.AllowCreate {
+		t.Errorf("AllowCreate = %v, want an explicit false", override.AllowCreate)
 	}
-	if got.IsPassive != nil {
-		t.Errorf("IsPassive = %v, want unset for an unknown value", got.IsPassive)
+	if override.IsPassive != nil {
+		t.Errorf("IsPassive = %v, want unset", override.IsPassive)
+	}
+	if len(cleared) != 1 || cleared[0] != "force_authn" {
+		t.Errorf("cleared = %v, want only force_authn", cleared)
 	}
 }
 
-func TestParseLoginOptionsTextFieldsAreTrimmed(t *testing.T) {
-	got := parseLoginOptions(url.Values{
-		"name_id_format":    {"  urn:oasis:names:tc:SAML:2.0:nameid-format:persistent "},
-		"subject_name_id":   {" alice@example.com "},
-		"sp_name_qualifier": {"https://sp.example.com"},
-	})
+func TestParseLoginOptionsAPlainLinkWithoutTheFormOverridesNothing(t *testing.T) {
+	base := config.SAMLAuthRequestConfig{ForceAuthn: boolPtr(true)}
 
-	if got.NameIDFormat != "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent" {
-		t.Errorf("NameIDFormat = %q", got.NameIDFormat)
-	}
-	if got.SubjectNameID != "alice@example.com" || got.SPNameQualifier != "https://sp.example.com" {
-		t.Errorf("text fields wrong: %+v", got)
+	override, cleared := parseLoginOptions(url.Values{}, base)
+
+	if override != (config.SAMLAuthRequestConfig{}) || len(cleared) != 0 {
+		t.Errorf("override %+v, cleared %v: with no form submitted the configured request goes out as it is", override, cleared)
 	}
 }
 
-func TestFormOverridesConfiguredDefaultsPerField(t *testing.T) {
-	yes := true
+func TestRequestPlanForLayersConfigProfileAndForm(t *testing.T) {
+	yes, no := true, false
 	h := &Handler{}
-	h.Config.AuthRequest.ForceAuthn = &yes
-	h.Config.AuthRequest.NameIDFormat = "urn:configured"
-
-	got := h.Config.AuthRequest.Overlay(parseLoginOptions(url.Values{"force_authn": {"false"}}))
-
-	if got.ForceAuthn == nil || *got.ForceAuthn {
-		t.Errorf("ForceAuthn = %v, want the form's explicit false", got.ForceAuthn)
+	h.Config.AuthRequest = config.SAMLAuthRequestConfig{NameIDFormat: "urn:default", ForceAuthn: &no, AuthnContextClassRef: "urn:acr:config"}
+	profile := config.SAMLReauthConfig{Name: "p"}
+	profile.ForceAuthn = &yes
+	profile.AuthnContextClassRef = "urn:acr:profile"
+	q := url.Values{
+		"name_id_format":          {"urn:default"},  // untouched
+		"force_authn":             {"false"},        // untouched
+		"authn_context_class_ref": {"urn:acr:form"}, // changed
 	}
-	if got.NameIDFormat != "urn:configured" {
-		t.Errorf("NameIDFormat = %q, want the configured value kept", got.NameIDFormat)
+
+	got := h.requestPlanFor(&profile, q).opts
+
+	if got.ForceAuthn == nil || !*got.ForceAuthn {
+		t.Errorf("ForceAuthn = %v, want the profile's true: the field is untouched, so it must not undo the profile", got.ForceAuthn)
+	}
+	if got.AuthnContextClassRef != "urn:acr:form" {
+		t.Errorf("AuthnContextClassRef = %q, want the form to win over the profile", got.AuthnContextClassRef)
+	}
+	if got.NameIDFormat != "urn:default" {
+		t.Errorf("NameIDFormat = %q, want the config's kept", got.NameIDFormat)
+	}
+}
+
+func TestRequestPlanForDropsASettingTheUserEmptied(t *testing.T) {
+	h := &Handler{}
+	h.Config.AuthRequest = config.SAMLAuthRequestConfig{ForceAuthn: boolPtr(true), SubjectNameID: "a@b.test"}
+
+	plan := h.requestPlanFor(nil, url.Values{"force_authn": {""}, "subject_name_id": {"a@b.test"}})
+	got := plan.opts
+
+	if got.ForceAuthn != nil {
+		t.Errorf("ForceAuthn = %v, want it dropped: the user emptied a field the config had set", got.ForceAuthn)
+	}
+	if got.SubjectNameID != "a@b.test" {
+		t.Errorf("SubjectNameID = %q, want the untouched setting kept", got.SubjectNameID)
+	}
+	if len(plan.omit) != 1 || plan.omit[0] != "force_authn" {
+		t.Errorf("omit = %v, want the emptied setting listed so it is kept out of the request", plan.omit)
 	}
 }
 
@@ -76,28 +111,6 @@ func TestDescribeReauthProfileListsWhatItSets(t *testing.T) {
 	}
 	if got := describeReauthProfile(config.SAMLReauthConfig{Name: "Plain"}); got != "Plain" {
 		t.Errorf("got %q, want the bare name", got)
-	}
-}
-
-func TestSAMLReauthProfileThenFormOverlay(t *testing.T) {
-	yes, no := true, false
-	h := &Handler{}
-	h.Config.AuthRequest.ForceAuthn = &no
-	h.Config.AuthRequest.NameIDFormat = "urn:default"
-	rc := config.SAMLReauthConfig{Name: "p"}
-	rc.ForceAuthn = &yes
-	rc.AuthnContextClassRef = "urn:acr:profile"
-
-	got := h.Config.AuthRequest.Overlay(rc.SAMLAuthRequestConfig).Overlay(parseLoginOptions(url.Values{"authn_context_class_ref": {"urn:acr:form"}}))
-
-	if got.ForceAuthn == nil || !*got.ForceAuthn {
-		t.Errorf("ForceAuthn = %v, want the profile's true over the default false", got.ForceAuthn)
-	}
-	if got.AuthnContextClassRef != "urn:acr:form" {
-		t.Errorf("AuthnContextClassRef = %q, want the form to win over the profile", got.AuthnContextClassRef)
-	}
-	if got.NameIDFormat != "urn:default" {
-		t.Errorf("NameIDFormat = %q, want the default kept", got.NameIDFormat)
 	}
 }
 
@@ -134,22 +147,35 @@ func samlField(t *testing.T, o *components.RequestOptions, name string) componen
 	return components.RequestField{}
 }
 
-func TestSAMLBlankFieldsShowWhatIsSent(t *testing.T) {
-	yes := true
+func TestSAMLFieldsStartWithTheConfigsValues(t *testing.T) {
 	h := &Handler{basePath: "/saml-sp"}
 	h.Config.AuthRequest.NameIDFormat = "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
-	h.Config.AuthRequest.ForceAuthn = &yes
+	h.Config.AuthRequest.ForceAuthn = boolPtr(true)
 	o := h.loginOptions()
 
-	if got := samlField(t, o, "name_id_format").Placeholder; got != "emailAddress" {
-		t.Errorf("name_id_format placeholder = %q", got)
+	if got := samlField(t, o, "name_id_format").Value; got != "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress" {
+		t.Errorf("name_id_format starts with %q", got)
 	}
-	if got := samlField(t, o, "force_authn").Options[0].Label; got != "(true)" {
-		t.Errorf("force_authn first choice = %q", got)
+	if got := samlField(t, o, "force_authn").Value; got != "true" {
+		t.Errorf("force_authn starts on %q", got)
 	}
-	// nothing configured: what the library sends, or nothing at all
+	// a setting the config leaves out starts empty
+	for _, name := range []string{"allow_create", "is_passive", "sp_name_qualifier", "subject_name_id", "authn_context_class_ref"} {
+		if got := samlField(t, o, name).Value; got != "" {
+			t.Errorf("%s starts with %q, want empty", name, got)
+		}
+	}
+}
+
+func TestSAMLFaintTextIsOnlyWhatTheLibrarySends(t *testing.T) {
+	h := &Handler{basePath: "/saml-sp"}
+	o := h.loginOptions()
+
+	if got := samlField(t, o, "name_id_format").Placeholder; got != "transient" {
+		t.Errorf("name_id_format placeholder = %q, want what the library sends when it is blank", got)
+	}
 	if got := samlField(t, o, "allow_create").Options[0].Label; got != "(true)" {
-		t.Errorf("allow_create first choice = %q, want the library's own default named as such", got)
+		t.Errorf("allow_create first choice = %q, want the library's default", got)
 	}
 	if got := samlField(t, o, "is_passive").Options[0].Label; got != "(not sent)" {
 		t.Errorf("is_passive first choice = %q", got)
@@ -159,18 +185,16 @@ func TestSAMLBlankFieldsShowWhatIsSent(t *testing.T) {
 	}
 }
 
-func TestSAMLNameIDFormatFallsBackToTheLibraryDefault(t *testing.T) {
+func TestBlankMeansNothingWhereTheConfigSetTheSetting(t *testing.T) {
 	h := &Handler{basePath: "/saml-sp"}
-	if got := samlField(t, h.loginOptions(), "name_id_format").Placeholder; got != "transient" {
-		t.Errorf("name_id_format placeholder = %q", got)
-	}
-}
+	h.Config.AuthRequest.NameIDFormat = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+	h.Config.AuthRequest.AllowCreate = boolPtr(true)
+	o := h.loginOptions()
 
-func TestShortNameIDFormat(t *testing.T) {
-	if got := shortNameIDFormat("urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"); got != "persistent" {
-		t.Errorf("got %q, want the short name of a standard format", got)
+	if got := samlField(t, o, "name_id_format").Placeholder; got != "" {
+		t.Errorf("name_id_format placeholder = %q: emptied, it is omitted, so no fallback may be shown", got)
 	}
-	if got := shortNameIDFormat("urn:vendor:custom"); got != "urn:vendor:custom" {
-		t.Errorf("got %q, want an unknown format kept as it is", got)
+	if got := samlField(t, o, "allow_create").Options[0].Label; got != "(not sent)" {
+		t.Errorf("allow_create first choice = %q, want (not sent): emptied, the attribute is omitted", got)
 	}
 }
