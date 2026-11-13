@@ -652,12 +652,13 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	}
 	data.SigVerifiedAll = sigVerifiedAll
 
+	data.NameIDRows = nameIDRows(entry.AuthnRequestXML, entry.SAMLResponseXML)
+
 	// Assertion Claims (extracted from ResponseInfo groups)
 	if entry.ResponseInfo != nil {
 		// Map of group name -> field labels to extract for Assertion Claims
 		wantFields := map[string]map[string]bool{
 			"Response":       {"Issuer": true},
-			"Subject":        {"NameID Format": true},
 			"Conditions":     {"Audience": true, "NotBefore": true, "NotOnOrAfter": true},
 			"AuthnStatement": {"AuthnInstant": true, "SessionIndex": true, "AuthnContextClassRef": true},
 		}
@@ -727,7 +728,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 	}
 
 	// Build sidebar children (sub-sections)
-	if len(entry.Attributes) > 0 || entry.Subject != "" || len(data.AssertionClaims) > 0 {
+	if len(entry.Attributes) > 0 || entry.Subject != "" || len(data.AssertionClaims) > 0 || len(data.NameIDRows) > 0 {
 		data.Children = append(data.Children, templates.Section{ID: id + "-claims", Label: "Identity & Claims"})
 	}
 	if len(entry.SignatureInfos) > 0 {

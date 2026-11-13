@@ -28,6 +28,7 @@ type SAMLResultEntryData struct {
 	Attributes      []components.ClaimRow
 	Signatures      []SAMLSignatureData
 	ResponseGroups  []components.RowGroup
+	NameIDRows         []components.ClaimRow // Received NameID beside what the AuthnRequest asked for
 	AssertionClaims    []components.ClaimRow // Assertion-level auth info (Issuer, Audience, AuthnContextClassRef, etc.)
 	ACSPostURL         string               // ACS endpoint URL (Destination from Response)
 	ACSResponseParams  []components.ClaimRow // POST form parameters (SAMLResponse, RelayState)
@@ -282,12 +283,13 @@ templ samlLogoutEntryContent(entry SAMLResultEntryData) {
 
 templ samlNormalEntryContent(entry SAMLResultEntryData) {
 	<!-- Identity & Claims -->
-	if len(entry.Attributes) > 0 || entry.Subject != "" || len(entry.AssertionClaims) > 0 {
+	if len(entry.Attributes) > 0 || entry.Subject != "" || len(entry.AssertionClaims) > 0 || len(entry.NameIDRows) > 0 {
 		<details id={ entry.ID + "-claims" } class="result-subsection" open>
 			<summary>Identity & Claims</summary>
 			if entry.Subject != "" {
 				@components.SubjectTable("Subject (NameID)", entry.Subject)
 			}
+			@components.ClaimsTable(entry.ID + "-nameid", "NameID", entry.NameIDRows)
 			@components.ClaimsTable(entry.ID + "-attributes", "SAML Attributes", entry.Attributes)
 			@components.ClaimsTable(entry.ID + "-assertion", "Assertion Claims", entry.AssertionClaims)
 		</details>
