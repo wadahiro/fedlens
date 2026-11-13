@@ -151,3 +151,42 @@ func TestOmitSettingsLeavesWhatWasNotEmptied(t *testing.T) {
 	}
 	omitSettings(&samlpkg.AuthnRequest{}, []string{"allow_create"}) // no policy at all: must not panic
 }
+
+func TestApplyAuthRequestAssertionConsumerServiceURL(t *testing.T) {
+	req := newRequest()
+	req.AssertionConsumerServiceURL = "http://localhost:3000/saml/acs" // what the library fills in
+
+	applyAuthRequest(req, config.SAMLAuthRequestConfig{AssertionConsumerServiceURL: "https://evil.example/acs"})
+
+	if req.AssertionConsumerServiceURL != "https://evil.example/acs" {
+		t.Errorf("AssertionConsumerServiceURL = %q", req.AssertionConsumerServiceURL)
+	}
+	if !strings.Contains(requestXML(t, req), `AssertionConsumerServiceURL="https://evil.example/acs"`) {
+		t.Error("the URL must reach the XML")
+	}
+}
+
+func TestApplyAuthRequestKeepsLibraryACSURLWhenUnset(t *testing.T) {
+	req := newRequest()
+	req.AssertionConsumerServiceURL = "http://localhost:3000/saml/acs"
+	applyAuthRequest(req, config.SAMLAuthRequestConfig{})
+	if req.AssertionConsumerServiceURL != "http://localhost:3000/saml/acs" {
+		t.Errorf("AssertionConsumerServiceURL = %q, want the library's", req.AssertionConsumerServiceURL)
+	}
+}
+
+func TestOmitSettingsTakesOutTheACSURL(t *testing.T) {
+	req := newRequest()
+	req.AssertionConsumerServiceURL = "http://localhost:3000/saml/acs"
+	omitSettings(req, []string{"assertion_consumer_service_url"})
+	if req.AssertionConsumerServiceURL != "" || strings.Contains(requestXML(t, req), "AssertionConsumerServiceURL") {
+		t.Errorf("an emptied field must leave the attribute out: %q", req.AssertionConsumerServiceURL)
+	}
+
+	// With no NameIDPolicy there is nothing to take out of it, and the ACS URL still goes.
+	bare := &samlpkg.AuthnRequest{AssertionConsumerServiceURL: "x"}
+	omitSettings(bare, []string{"assertion_consumer_service_url", "name_id_format"})
+	if bare.AssertionConsumerServiceURL != "" {
+		t.Error("the ACS URL must be removed even when the request has no NameIDPolicy")
+	}
+}

@@ -54,6 +54,11 @@ type SAMLAuthRequestConfig struct {
 	IsPassive            *bool  `toml:"is_passive"`
 	AuthnContextClassRef string `toml:"authn_context_class_ref"`
 
+	// AssertionConsumerServiceURL replaces the ACS URL the request names, which
+	// otherwise is the SP's own. It does not move the endpoint: it tests how an IdP
+	// treats a URL that differs from, or is missing from, the SP's metadata.
+	AssertionConsumerServiceURL string `toml:"assertion_consumer_service_url"`
+
 	// SubjectNameID adds a Subject/NameID to the request as a hint about who is
 	// logging in (the SAML counterpart of OIDC login_hint).
 	SubjectNameID       string `toml:"subject_name_id"`
@@ -88,6 +93,9 @@ func (c SAMLAuthRequestConfig) Overlay(o SAMLAuthRequestConfig) SAMLAuthRequestC
 	}
 	if o.AuthnContextClassRef != "" {
 		c.AuthnContextClassRef = o.AuthnContextClassRef
+	}
+	if o.AssertionConsumerServiceURL != "" {
+		c.AssertionConsumerServiceURL = o.AssertionConsumerServiceURL
 	}
 	return c
 }

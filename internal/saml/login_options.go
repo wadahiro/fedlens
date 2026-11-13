@@ -37,6 +37,7 @@ const (
 	fieldForceAuthn           = "force_authn"
 	fieldIsPassive            = "is_passive"
 	fieldAuthnContextClassRef = "authn_context_class_ref"
+	fieldACSURL               = "assertion_consumer_service_url"
 )
 
 // loginOptions builds the options shown next to the Login button.
@@ -77,6 +78,7 @@ func (h *Handler) reauthProfileField() components.RequestField {
 var profileFieldOrder = []string{
 	fieldNameIDFormat, fieldAllowCreate, fieldSPNameQualifier, fieldOmitNameIDPolicy,
 	fieldSubjectNameID, fieldSubjectNameIDFormat, fieldForceAuthn, fieldIsPassive, fieldAuthnContextClassRef,
+	fieldACSURL,
 }
 
 // authRequestValues returns the settings of an auth_request config, keyed by form
@@ -103,6 +105,7 @@ func authRequestValues(c config.SAMLAuthRequestConfig) map[string]string {
 	setBool(fieldForceAuthn, c.ForceAuthn)
 	setBool(fieldIsPassive, c.IsPassive)
 	set(fieldAuthnContextClassRef, c.AuthnContextClassRef)
+	set(fieldACSURL, c.AssertionConsumerServiceURL)
 	return values
 }
 
@@ -165,6 +168,12 @@ func (h *Handler) authnRequestOptions(id, label, style, action string) *componen
 				Name: fieldAuthnContextClassRef, Label: "AuthnContextClassRef", Kind: "text", Value: start[fieldAuthnContextClassRef],
 				Help: "e.g. urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
 			},
+			{
+				Name: fieldACSURL, Label: "AssertionConsumerServiceURL", Kind: "text",
+				Value:       start[fieldACSURL],
+				Placeholder: libraryDefault(start, fieldACSURL, h.acsURL()),
+				Help:        "Where the request asks the IdP to post the response. A URL other than the SP's tests how the IdP checks it against the metadata.",
+			},
 		},
 	}
 }
@@ -209,6 +218,8 @@ func parseLoginOptions(q url.Values, base config.SAMLAuthRequestConfig) (config.
 			override.IsPassive = triState(v)
 		case fieldAuthnContextClassRef:
 			override.AuthnContextClassRef = v
+		case fieldACSURL:
+			override.AssertionConsumerServiceURL = v
 		}
 	}
 	return override, cleared
@@ -244,6 +255,8 @@ func dropSettings(c config.SAMLAuthRequestConfig, names []string) config.SAMLAut
 			c.IsPassive = nil
 		case fieldAuthnContextClassRef:
 			c.AuthnContextClassRef = ""
+		case fieldACSURL:
+			c.AssertionConsumerServiceURL = ""
 		}
 	}
 	return c
@@ -284,4 +297,12 @@ func libraryDefault(start map[string]string, name, value string) string {
 		return ""
 	}
 	return value
+}
+
+// acsURL is the AssertionConsumerServiceURL the library puts in a request.
+func (h *Handler) acsURL() string {
+	if h.sp == nil {
+		return ""
+	}
+	return h.sp.ServiceProvider.AcsURL.String()
 }

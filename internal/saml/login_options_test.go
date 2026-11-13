@@ -198,3 +198,41 @@ func TestBlankMeansNothingWhereTheConfigSetTheSetting(t *testing.T) {
 		t.Errorf("allow_create first choice = %q, want (not sent): emptied, the attribute is omitted", got)
 	}
 }
+
+func TestRequestPlanForACSURLFormOverridesConfigAndEmptyingDropsIt(t *testing.T) {
+	h := &Handler{}
+	h.Config.AuthRequest = config.SAMLAuthRequestConfig{AssertionConsumerServiceURL: "https://config.example/acs"}
+
+	untouched := h.requestPlanFor(nil, url.Values{"assertion_consumer_service_url": {"https://config.example/acs"}})
+	if untouched.opts.AssertionConsumerServiceURL != "https://config.example/acs" || len(untouched.omit) != 0 {
+		t.Errorf("untouched = %+v", untouched)
+	}
+	changed := h.requestPlanFor(nil, url.Values{"assertion_consumer_service_url": {"https://form.example/acs"}})
+	if changed.opts.AssertionConsumerServiceURL != "https://form.example/acs" {
+		t.Errorf("changed = %+v", changed)
+	}
+	emptied := h.requestPlanFor(nil, url.Values{"assertion_consumer_service_url": {""}})
+	if emptied.opts.AssertionConsumerServiceURL != "" || len(emptied.omit) != 1 || emptied.omit[0] != "assertion_consumer_service_url" {
+		t.Errorf("emptied = %+v", emptied)
+	}
+}
+
+func TestACSURLFieldShowsTheSPsURLOnlyWhenNothingSetsIt(t *testing.T) {
+	h := &Handler{}
+	field := func() components.RequestField {
+		for _, f := range h.authnRequestOptions("login", "Login", "", "/login").Fields {
+			if f.Name == "assertion_consumer_service_url" {
+				return f
+			}
+		}
+		t.Fatal("no assertion_consumer_service_url field")
+		return components.RequestField{}
+	}
+	if f := field(); f.Value != "" {
+		t.Errorf("Value = %q: nothing sets it, so the form starts empty", f.Value)
+	}
+	h.Config.AuthRequest.AssertionConsumerServiceURL = "https://config.example/acs"
+	if f := field(); f.Value != "https://config.example/acs" || f.Placeholder != "" {
+		t.Errorf("field = %+v: a configured value starts the form and leaves no faint default", f)
+	}
+}

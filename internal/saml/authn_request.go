@@ -28,6 +28,10 @@ func applyAuthRequest(req *samlpkg.AuthnRequest, opts config.SAMLAuthRequestConf
 		req.IsPassive = opts.IsPassive
 	}
 
+	if opts.AssertionConsumerServiceURL != "" {
+		req.AssertionConsumerServiceURL = opts.AssertionConsumerServiceURL
+	}
+
 	if opts.AuthnContextClassRef != "" {
 		req.RequestedAuthnContext = &samlpkg.RequestedAuthnContext{
 			Comparison:           "exact",
@@ -58,19 +62,23 @@ func applyNameIDPolicy(req *samlpkg.AuthnRequest, opts config.SAMLAuthRequestCon
 }
 
 // omitSettings removes from the request the settings the user emptied. Settings that
-// are simply unset are already absent; the two the SAML library fills in by itself
-// when they are unset (the NameIDPolicy's Format and AllowCreate) have to be taken
-// out explicitly, or emptying the field would still send them.
+// are simply unset are already absent; the ones the SAML library fills in by itself
+// when they are unset (the NameIDPolicy's Format and AllowCreate, and the
+// AssertionConsumerServiceURL) have to be taken out explicitly, or emptying the
+// field would still send them.
 func omitSettings(req *samlpkg.AuthnRequest, names []string) {
-	if req.NameIDPolicy == nil {
-		return
-	}
 	for _, name := range names {
 		switch name {
 		case fieldNameIDFormat:
-			req.NameIDPolicy.Format = nil
+			if req.NameIDPolicy != nil {
+				req.NameIDPolicy.Format = nil
+			}
 		case fieldAllowCreate:
-			req.NameIDPolicy.AllowCreate = nil
+			if req.NameIDPolicy != nil {
+				req.NameIDPolicy.AllowCreate = nil
+			}
+		case fieldACSURL:
+			req.AssertionConsumerServiceURL = ""
 		}
 	}
 }

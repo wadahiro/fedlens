@@ -216,3 +216,13 @@ func TestSAMLOverlayNameIDAndSubjectFields(t *testing.T) {
 		t.Errorf("overlay result wrong: %+v", got)
 	}
 }
+
+func TestSAMLAuthRequestOverlayCarriesACSURL(t *testing.T) {
+	base := SAMLAuthRequestConfig{AssertionConsumerServiceURL: "https://base/acs"}
+	if got := base.Overlay(SAMLAuthRequestConfig{}); got.AssertionConsumerServiceURL != "https://base/acs" {
+		t.Errorf("an unset profile value must keep the base: %q", got.AssertionConsumerServiceURL)
+	}
+	if got := base.Overlay(SAMLAuthRequestConfig{AssertionConsumerServiceURL: "https://profile/acs"}); got.AssertionConsumerServiceURL != "https://profile/acs" {
+		t.Errorf("the profile must win: %q", got.AssertionConsumerServiceURL)
+	}
+}
