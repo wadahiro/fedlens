@@ -51,6 +51,7 @@ type SAMLResultEntryData struct {
 	LogoutRequestParams  []components.ClaimRow
 	LogoutResponseXML    string              // SP-initiated: incoming LogoutResponse XML
 	LogoutRequestXML     string              // IdP-initiated: incoming LogoutRequest XML
+	LogoutRequestSentXML string              // SP-initiated: the LogoutRequest XML that was sent
 	LogoutResponseURL    string              // IdP-initiated: outgoing LogoutResponse URL
 	LogoutResponseParams []components.ClaimRow
 }
@@ -262,6 +263,7 @@ templ samlLogoutEntryContent(entry SAMLResultEntryData) {
 			} else if entry.LogoutRequestURL != "" {
 				@components.CodeBlock("Logout Request (Sent)", entry.LogoutRequestURL)
 			}
+			@components.XMLCodeBlock("Logout Request (Sent) XML", entry.LogoutRequestSentXML)
 			<!-- SP-initiated: incoming LogoutResponse XML (no LogoutRequestXML means SP-initiated) -->
 			if entry.LogoutRequestXML == "" && entry.LogoutResponseXML != "" {
 				@components.XMLCodeBlock("Logout Response (Received)", entry.LogoutResponseXML)

@@ -528,6 +528,7 @@ func buildSAMLResultEntryData(index int, entry SAMLResultEntry) templates.SAMLRe
 		if entry.LogoutRequestURL != "" {
 			data.LogoutRequestURL = entry.LogoutRequestURL
 			data.LogoutRequestParams = parseToClaimRows(protocol.ParseURLParams(entry.LogoutRequestURL))
+			data.LogoutRequestSentXML = protocol.FormatXML(entry.LogoutRequestSentXML)
 		}
 
 		// LogoutResponse details
@@ -1275,11 +1276,16 @@ func (h *Handler) sameSite() http.SameSite {
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Get NameID from current session before deleting it
-	var nameID string
+	var nameID, sessionIndex string
 	if session, err := h.sp.Session.GetSession(r); err == nil && session != nil {
 		if claims, ok := session.(samlsp.JWTSessionClaims); ok {
 			nameID = claims.Subject
+			sessionIndex = claims.Attributes.Get("SessionIndex")
 		}
+	}
+	var received *protocol.SAMLNameID
+	if c, err := r.Cookie("saml_debug_id"); err == nil {
+		received = receivedNameID(h.debugSessions.GetByID(c.Value))
 	}
 
 	// Build Logout entry
@@ -1291,9 +1297,10 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Build SLO redirect URL
 	if nameID != "" {
 		if sloURL := h.sp.ServiceProvider.GetSLOBindingLocation(samlpkg.HTTPRedirectBinding); sloURL != "" {
-			redirectURL, err := h.sp.ServiceProvider.MakeRedirectLogoutRequest(nameID, h.rootURLStr+"/")
+			logoutReq, err := makeLogoutRequest(&h.sp.ServiceProvider, sloURL, nameID, received, sessionIndex)
 			if err == nil {
-				logoutEntry.LogoutRequestURL = redirectURL.String()
+				logoutEntry.LogoutRequestURL = logoutReq.Redirect(h.rootURLStr + "/").String()
+				logoutEntry.LogoutRequestSentXML = logoutRequestXML(logoutReq)
 			} else {
 				log.Printf("Failed to create SAML logout request: %v", err)
 			}
