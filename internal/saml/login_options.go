@@ -114,8 +114,16 @@ func authRequestValues(c config.SAMLAuthRequestConfig) map[string]string {
 
 // profileValues returns what a profile sets, keyed by form field name, so the
 // form can show those values as the placeholders of the fields it would override.
+//
+// A profile that leaves the Format out has no value to show, so it shows the same
+// "(not sent)" the selects use. That text must not go through authRequestValues, which
+// also fills the form's real values.
 func profileValues(rc config.SAMLReauthConfig) map[string]string {
-	return authRequestValues(rc.SAMLAuthRequestConfig)
+	values := authRequestValues(rc.SAMLAuthRequestConfig)
+	if o := rc.OmitNameIDFormat; o != nil && *o && rc.NameIDFormat == "" {
+		values[fieldNameIDFormat] = components.DefaultChoice("")
+	}
+	return values
 }
 
 // describeReauthProfile names a profile together with what it sets, so the choice

@@ -272,3 +272,14 @@ func testMiddleware(acs string) *samlsp.Middleware {
 	u, _ := url.Parse(acs)
 	return &samlsp.Middleware{ServiceProvider: samlpkg.ServiceProvider{AcsURL: *u}}
 }
+
+func TestProfileValuesShowAnOmittedFormat(t *testing.T) {
+	yes := true
+	rc := config.SAMLReauthConfig{SAMLAuthRequestConfig: config.SAMLAuthRequestConfig{OmitNameIDFormat: &yes}}
+	if got := profileValues(rc)[fieldNameIDFormat]; got != "(not sent)" {
+		t.Errorf("name_id_format = %q, want a (not sent) hint", got)
+	}
+	if _, set := authRequestValues(rc.SAMLAuthRequestConfig)[fieldNameIDFormat]; set {
+		t.Error("the form's real values must not carry the hint")
+	}
+}
