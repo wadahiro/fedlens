@@ -320,6 +320,8 @@ issuer = "https://keycloak.example.com/realms/test"
 client_id = "fedlens"
 client_secret = "secret"
 redirect_uri = "http://kc-oidc.example.com:3000/callback"
+
+[oidc.auth_request]
 pkce = true
 
 [[oidc]]
@@ -329,6 +331,8 @@ issuer = "https://login.microsoftonline.com/xxx/v2.0"
 client_id = "yyy"
 client_secret = "zzz"
 redirect_uri = "http://entra-oidc.example.com:3000/callback"
+
+[oidc.auth_request]
 extra_auth_params = { login_hint = "user@example.com" }
 
 [[saml]]
@@ -353,6 +357,8 @@ token_url = "https://github.com/login/oauth/access_token"
 client_id = "your-github-client-id"
 client_secret = "your-github-client-secret"
 redirect_uri = "http://github-oauth.example.com:3000/callback"
+
+[oauth2.auth_request]
 scopes = ["read:user", "user:email"]
 ```
 
