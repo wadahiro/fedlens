@@ -269,6 +269,7 @@ What the AuthnRequest carries. Unset values keep what the SAML library sends (Na
 | Key | Description |
 |---|---|
 | `name_id_format` | NameIDPolicy `Format` (a NameID format URI, e.g. `urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress`). Also advertised in the SP metadata |
+| `omit_name_id_format` | `true` keeps the NameIDPolicy but sends no `Format` (instead of the default `transient`), so the IdP chooses. An explicit `name_id_format` wins over it |
 | `allow_create` | NameIDPolicy `AllowCreate` (`true` / `false`; omitted when unset in a profile) |
 | `sp_name_qualifier` | NameIDPolicy `SPNameQualifier` |
 | `omit_name_id_policy` | `true` sends no NameIDPolicy at all, leaving the format to the IdP |

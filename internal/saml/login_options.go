@@ -1,10 +1,12 @@
 package saml
 
 import (
-	samlpkg "github.com/crewjam/saml"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+
+	samlpkg "github.com/crewjam/saml"
 
 	"github.com/wadahiro/fedlens/internal/config"
 	"github.com/wadahiro/fedlens/internal/ui/templates/components"
@@ -189,7 +191,9 @@ func (h *Handler) formStart() map[string]string {
 			start[name] = value
 		}
 	}
-	fill(fieldNameIDFormat, string(samlpkg.TransientNameIDFormat))
+	if o := h.Config.AuthRequest.OmitNameIDFormat; o == nil || !*o {
+		fill(fieldNameIDFormat, string(samlpkg.TransientNameIDFormat))
+	}
 	fill(fieldAllowCreate, "true")
 	fill(fieldACSURL, h.acsURL())
 	return start
@@ -286,7 +290,13 @@ func (h *Handler) requestPlanFor(profile *config.SAMLReauthConfig, q url.Values)
 		effective = effective.Overlay(profile.SAMLAuthRequestConfig)
 	}
 	override, cleared := parseLoginOptions(q, h.formStart())
-	return authnRequestPlan{opts: dropSettings(effective.Overlay(override), cleared), omit: cleared}
+	effective = effective.Overlay(override)
+	omit := cleared
+	// The library adds a Format when none is set, so leaving it out has to be explicit.
+	if o := effective.OmitNameIDFormat; o != nil && *o && effective.NameIDFormat == "" && !slices.Contains(omit, fieldNameIDFormat) {
+		omit = append(slices.Clone(omit), fieldNameIDFormat)
+	}
+	return authnRequestPlan{opts: dropSettings(effective, cleared), omit: omit}
 }
 
 // triState maps the select values "true" and "false" to a pointer; anything

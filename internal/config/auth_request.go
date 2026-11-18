@@ -43,10 +43,13 @@ type OAuth2AuthRequestConfig struct {
 //
 // Unset NameIDPolicy values keep the library default (Format transient,
 // AllowCreate true) so existing setups send the same request as before.
-// OmitNameIDPolicy drops the whole element, which is how to see what an IdP does
+// OmitNameIDFormat keeps the element but drops its Format attribute (the library
+// would otherwise add transient), which leaves the format to the IdP. A Format that
+// is set wins over it. OmitNameIDPolicy drops the whole element, which is how to see what an IdP does
 // when the SP states no preference.
 type SAMLAuthRequestConfig struct {
 	NameIDFormat         string `toml:"name_id_format"`
+	OmitNameIDFormat     *bool  `toml:"omit_name_id_format"`
 	AllowCreate          *bool  `toml:"allow_create"`
 	SPNameQualifier      string `toml:"sp_name_qualifier"`
 	OmitNameIDPolicy     *bool  `toml:"omit_name_id_policy"`
@@ -67,8 +70,15 @@ type SAMLAuthRequestConfig struct {
 
 // Overlay returns a copy of c in which every value set in o replaces the one in c.
 func (c SAMLAuthRequestConfig) Overlay(o SAMLAuthRequestConfig) SAMLAuthRequestConfig {
+	if o.OmitNameIDFormat != nil {
+		c.OmitNameIDFormat = o.OmitNameIDFormat
+		if *o.OmitNameIDFormat {
+			c.NameIDFormat = ""
+		}
+	}
 	if o.NameIDFormat != "" {
 		c.NameIDFormat = o.NameIDFormat
+		c.OmitNameIDFormat = nil
 	}
 	if o.AllowCreate != nil {
 		c.AllowCreate = o.AllowCreate

@@ -226,3 +226,18 @@ func TestSAMLAuthRequestOverlayCarriesACSURL(t *testing.T) {
 		t.Errorf("the profile must win: %q", got.AssertionConsumerServiceURL)
 	}
 }
+
+func TestSAMLOverlayOmitNameIDFormat(t *testing.T) {
+	yes := true
+	base := SAMLAuthRequestConfig{NameIDFormat: "urn:x"}
+
+	got := base.Overlay(SAMLAuthRequestConfig{OmitNameIDFormat: &yes})
+	if got.NameIDFormat != "" || got.OmitNameIDFormat == nil || !*got.OmitNameIDFormat {
+		t.Errorf("omit over a format = %+v, want the format dropped", got)
+	}
+
+	got = got.Overlay(SAMLAuthRequestConfig{NameIDFormat: "urn:y"})
+	if got.NameIDFormat != "urn:y" || got.OmitNameIDFormat != nil {
+		t.Errorf("format over omit = %+v, want the format to win", got)
+	}
+}

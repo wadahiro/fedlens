@@ -121,6 +121,7 @@ root_url = "http://saml.example.com:3000"
 # [saml.auth_request]
 # name_id_format = "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
 # allow_create = true
+# omit_name_id_format = false       # true keeps NameIDPolicy but sends no Format (the IdP chooses)
 # sp_name_qualifier = ""
 # omit_name_id_policy = false       # true sends no NameIDPolicy at all
 # subject_name_id = ""              # a hint about who is logging in

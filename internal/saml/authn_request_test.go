@@ -1,6 +1,7 @@
 package saml
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
@@ -188,5 +189,36 @@ func TestOmitSettingsTakesOutTheACSURL(t *testing.T) {
 	omitSettings(bare, []string{"assertion_consumer_service_url", "name_id_format"})
 	if bare.AssertionConsumerServiceURL != "" {
 		t.Error("the ACS URL must be removed even when the request has no NameIDPolicy")
+	}
+}
+
+func TestOmitNameIDFormatKeepsThePolicyWithoutFormat(t *testing.T) {
+	h := &Handler{}
+	h.Config.AuthRequest = config.SAMLAuthRequestConfig{OmitNameIDFormat: boolPtr(true)}
+	plan := h.requestPlanFor(nil, url.Values{})
+
+	req := newRequest()
+	applyAuthRequest(req, plan.opts)
+	omitSettings(req, plan.omit)
+
+	xml := requestXML(t, req)
+	if !strings.Contains(xml, "NameIDPolicy") {
+		t.Fatalf("NameIDPolicy must stay:\n%s", xml)
+	}
+	if strings.Contains(xml, "<samlp:NameIDPolicy Format=") || strings.Contains(xml, `Format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient"`) {
+		t.Errorf("Format must not be sent:\n%s", xml)
+	}
+}
+
+func TestExplicitFormatBeatsOmitNameIDFormat(t *testing.T) {
+	h := &Handler{}
+	h.Config.AuthRequest = config.SAMLAuthRequestConfig{OmitNameIDFormat: boolPtr(true)}
+	plan := h.requestPlanFor(nil, url.Values{fieldNameIDFormat: {"urn:x"}})
+
+	req := newRequest()
+	applyAuthRequest(req, plan.opts)
+	omitSettings(req, plan.omit)
+	if !strings.Contains(requestXML(t, req), `Format="urn:x"`) {
+		t.Error("a Format typed into the form must be sent")
 	}
 }
